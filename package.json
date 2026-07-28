@@ -1,0 +1,21 @@
+{
+  "name": "real-state",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace=@real-state/web",
+    "build": "npm run build --workspace=@real-state/web",
+    "lint": "npm run lint --workspace=@real-state/web",
+    "db:start": "npx supabase start",
+    "db:stop": "npx supabase stop",
+    "db:reset": "npx supabase db reset",
+    "db:push": "npx supabase db push",
+    "db:link": "npx supabase link"
+  },
+  "devDependencies": {
+    "supabase": "^2.26.9"
+  }
+}

@@ -10,7 +10,19 @@ The architecture is designed to satisfy five priorities:
 4. Enforce strong authorization and auditability.
 5. Provide a premium enterprise UI with reusable foundations.
 
-## 2. Recommended Delivery Model
+## 2. Backend Platform Decision
+
+**Supabase is the system of record** for this project:
+
+- PostgreSQL database + migrations in `supabase/migrations`
+- Supabase Auth for users (`auth.users` + `public.profiles`)
+- Row Level Security on domain tables
+- Next.js app talks to Supabase via `@supabase/ssr` / `@supabase/supabase-js`
+- Optional Node API (`apps/api`) remains available for future complex workflows/jobs
+
+See [supabase-setup.md](./supabase-setup.md) for connection steps.
+
+## 3. Recommended Delivery Model
 
 Use a modular monolith in a monorepo for the first major release.
 

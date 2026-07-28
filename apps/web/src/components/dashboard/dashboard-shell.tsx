@@ -17,7 +17,17 @@ const currencyFormatter = new Intl.NumberFormat("en-US", {
 
 const numberFormatter = new Intl.NumberFormat("en-US");
 
-export function DashboardShell() {
+type DashboardShellProps = {
+  kpis?: Kpi[];
+  occupancyRateLabel?: string;
+  dataSourceLabel?: string;
+};
+
+export function DashboardShell({
+  kpis = dashboardKpis,
+  occupancyRateLabel = "85.2%",
+  dataSourceLabel = "Demo data",
+}: DashboardShellProps) {
   const maxOccupancy = Math.max(
     ...occupancySeries.map((point) => point.occupied + point.vacant),
   );
@@ -33,12 +43,13 @@ export function DashboardShell() {
             Monitor occupancy, revenue, bookings, tenant activity, and
             maintenance operations from one executive control center.
           </p>
+          <p className="hero-copy">Data source: {dataSourceLabel}</p>
         </div>
 
         <div className="hero-stats">
           <div className="hero-stat">
             <span>Live Occupancy</span>
-            <strong>85.2%</strong>
+            <strong>{occupancyRateLabel}</strong>
             <small>+2.1% vs last month</small>
           </div>
           <div className="hero-stat">
@@ -50,7 +61,7 @@ export function DashboardShell() {
       </section>
 
       <section className="kpi-grid" aria-label="Key performance indicators">
-        {dashboardKpis.map((item) => (
+        {kpis.map((item) => (
           <KpiCard key={item.label} item={item} />
         ))}
       </section>
@@ -269,24 +280,36 @@ function ActivityCard({ item }: { item: ActivityItem }) {
   );
 }
 
-export function DashboardSummaryStats() {
+type SummaryStatsProps = {
+  buildings?: number;
+  units?: number;
+  maintenance?: number;
+  occupancyRateLabel?: string;
+};
+
+export function DashboardSummaryStats({
+  buildings = 128,
+  units = 4860,
+  maintenance = 93,
+  occupancyRateLabel = "85.2%",
+}: SummaryStatsProps) {
   return (
     <div className="summary-strip" aria-label="Portfolio summary values">
       <div>
         <span>Buildings</span>
-        <strong>{numberFormatter.format(128)}</strong>
+        <strong>{numberFormatter.format(buildings)}</strong>
       </div>
       <div>
         <span>Units</span>
-        <strong>{numberFormatter.format(4860)}</strong>
+        <strong>{numberFormatter.format(units)}</strong>
       </div>
       <div>
         <span>Open Maintenance</span>
-        <strong>{numberFormatter.format(93)}</strong>
+        <strong>{numberFormatter.format(maintenance)}</strong>
       </div>
       <div>
         <span>Occupancy</span>
-        <strong>85.2%</strong>
+        <strong>{occupancyRateLabel}</strong>
       </div>
     </div>
   );

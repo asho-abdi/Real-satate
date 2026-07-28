@@ -7,8 +7,11 @@ build/
 coverage/
 .env
 .env.*
+!.env.example
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 *.tsbuildinfo
+supabase/.temp/
+supabase/.branches/
