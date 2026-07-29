@@ -1,3 +1,4 @@
+import { backendApi } from "./backend-api";
 import { createClient } from "../lib/supabase/server";
 import type {
   AmenityRecord,
@@ -15,7 +16,17 @@ export type PropertyHydration = {
   categories: CategoryRecord[];
   amenities: AmenityRecord[];
   images: ImageRecord[];
-  source: "supabase";
+  source: "api" | "supabase";
+};
+
+type BootstrapPayload = {
+  properties: Array<{ id: string; name: string }>;
+  buildings: Array<Record<string, any>>;
+  floors: Array<Record<string, any>>;
+  units: Array<Record<string, any>>;
+  categories: Array<Record<string, any>>;
+  amenities: Array<Record<string, any>>;
+  images: Array<Record<string, any>>;
 };
 
 function mapAvailability(value: string): UnitRecord["availability"] {
@@ -71,17 +82,148 @@ function mapFloorStatus(value: string): FloorRecord["status"] {
   }
 }
 
-export async function fetchPropertyHydration(): Promise<PropertyHydration | null> {
+function mapBootstrap(
+  payload: BootstrapPayload,
+  source: "api" | "supabase",
+): PropertyHydration {
+  const propertyNames = new Map(payload.properties.map((property) => [property.id, property.name]));
+  const buildingNames = new Map(payload.buildings.map((building) => [building.id, building.name]));
+  const floorNames = new Map(
+    payload.floors.map((floor) => [floor.id, floor.name ?? `Floor ${floor.floor_number}`]),
+  );
+  const categoryNames = new Map(payload.categories.map((category) => [category.id, category.name]));
+
+  const unitsByBuilding = new Map<string, number>();
+  for (const unit of payload.units) {
+    unitsByBuilding.set(unit.building_id, (unitsByBuilding.get(unit.building_id) ?? 0) + 1);
+  }
+
+  const floorsByBuilding = new Map<string, number>();
+  for (const floor of payload.floors) {
+    floorsByBuilding.set(
+      floor.building_id,
+      (floorsByBuilding.get(floor.building_id) ?? 0) + 1,
+    );
+  }
+
+  const unitsByFloor = new Map<string, number>();
+  for (const unit of payload.units) {
+    unitsByFloor.set(unit.floor_id, (unitsByFloor.get(unit.floor_id) ?? 0) + 1);
+  }
+
+  const buildings: BuildingRecord[] = payload.buildings.map((building) => ({
+    id: building.id,
+    name: building.name,
+    property: propertyNames.get(building.property_id) ?? "Unknown property",
+    manager: building.manager_name ?? "-",
+    status: mapBuildingStatus(building.status),
+    floors: String(floorsByBuilding.get(building.id) ?? building.number_of_floors ?? 0),
+    units: String(unitsByBuilding.get(building.id) ?? 0),
+  }));
+
+  const floors: FloorRecord[] = payload.floors.map((floor) => ({
+    id: floor.id,
+    building: buildingNames.get(floor.building_id) ?? "Unknown building",
+    name: floor.name ?? `Floor ${floor.floor_number}`,
+    level: String(floor.floor_number),
+    status: mapFloorStatus(floor.status),
+    units: String(unitsByFloor.get(floor.id) ?? 0),
+  }));
+
+  const units: UnitRecord[] = payload.units.map((unit) => ({
+    id: unit.id,
+    building: buildingNames.get(unit.building_id) ?? "Unknown building",
+    floor: floorNames.get(unit.floor_id) ?? "-",
+    code: unit.code,
+    category: unit.category_id
+      ? (categoryNames.get(unit.category_id) ?? unit.unit_type)
+      : unit.unit_type,
+    status: mapUnitStatus(unit.status),
+    availability: mapAvailability(unit.availability),
+    rate: unit.base_rate != null ? `$${Number(unit.base_rate).toLocaleString("en-US")}` : "-",
+    images: "0",
+    amenities: "0",
+  }));
+
+  const categories: CategoryRecord[] = payload.categories.map((category) => ({
+    id: category.id,
+    name: category.name,
+    occupancyMode:
+      category.occupancy_mode === "residential"
+        ? "Residential"
+        : category.occupancy_mode === "commercial"
+          ? "Commercial"
+          : "Short-Term",
+    baseRate: `$${Number(category.base_rate ?? 0).toLocaleString("en-US")}`,
+    description: category.description ?? "",
+    status: category.status === "active" ? "Active" : "Draft",
+  }));
+
+  const amenities: AmenityRecord[] = payload.amenities.map((amenity) => ({
+    id: amenity.id,
+    name: amenity.name,
+    scope:
+      amenity.scope === "building"
+        ? "Building"
+        : amenity.scope === "unit"
+          ? "Unit"
+          : "Shared",
+    status: amenity.status === "active" ? "Active" : "Hidden",
+    unitsAssigned: "0",
+  }));
+
+  const images: ImageRecord[] = payload.images.map((image) => {
+    const categoryMap: Record<string, ImageRecord["category"]> = {
+      exterior: "Exterior",
+      interior: "Interior",
+      amenity: "Amenity",
+      floor_plan: "Floor Plan",
+    };
+
+    return {
+      id: image.id,
+      title: image.title,
+      building: image.building_id ? (buildingNames.get(image.building_id) ?? "-") : "-",
+      unit: "-",
+      category: categoryMap[image.category] ?? "Interior",
+      status: image.status === "published" ? "Published" : "Draft",
+      url: image.url,
+    };
+  });
+
+  return {
+    buildings,
+    floors,
+    units,
+    categories,
+    amenities,
+    images,
+    source,
+  };
+}
+
+function isSupabaseConfigured() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
 
-  if (
+  return !(
     !url ||
     !anonKey ||
     url.includes("YOUR_PROJECT_REF") ||
     anonKey.includes("YOUR_ANON_KEY") ||
     anonKey.includes("PASTE_YOUR_ANON")
-  ) {
+  );
+}
+
+export async function fetchPropertyHydration(): Promise<PropertyHydration | null> {
+  try {
+    const bootstrap = await backendApi.propertyBootstrap();
+    return mapBootstrap(bootstrap, "api");
+  } catch (error) {
+    console.error("Property hydration API failed, trying Supabase fallback", error);
+  }
+
+  if (!isSupabaseConfigured()) {
     return null;
   }
 
@@ -107,135 +249,18 @@ export async function fetchPropertyHydration(): Promise<PropertyHydration | null
       return null;
     }
 
-    const propertyNames = new Map(
-      (propertiesRes.data ?? []).map((property) => [property.id, property.name]),
+    return mapBootstrap(
+      {
+        properties: propertiesRes.data ?? [],
+        buildings: buildingsRes.data ?? [],
+        floors: floorsRes.data ?? [],
+        units: unitsRes.data ?? [],
+        categories: categoriesRes.data ?? [],
+        amenities: amenitiesRes.data ?? [],
+        images: imagesRes.data ?? [],
+      },
+      "supabase",
     );
-    const buildingNames = new Map(
-      (buildingsRes.data ?? []).map((building) => [building.id, building.name]),
-    );
-    const floorNames = new Map(
-      (floorsRes.data ?? []).map((floor) => [
-        floor.id,
-        floor.name ?? `Floor ${floor.floor_number}`,
-      ]),
-    );
-    const categoryNames = new Map(
-      (categoriesRes.data ?? []).map((category) => [category.id, category.name]),
-    );
-    const amenityCounts = new Map<string, number>();
-    for (const unit of unitsRes.data ?? []) {
-      amenityCounts.set(unit.id, 0);
-    }
-
-    const unitsByBuilding = new Map<string, number>();
-    for (const unit of unitsRes.data ?? []) {
-      unitsByBuilding.set(unit.building_id, (unitsByBuilding.get(unit.building_id) ?? 0) + 1);
-    }
-
-    const floorsByBuilding = new Map<string, number>();
-    for (const floor of floorsRes.data ?? []) {
-      floorsByBuilding.set(
-        floor.building_id,
-        (floorsByBuilding.get(floor.building_id) ?? 0) + 1,
-      );
-    }
-
-    const unitsByFloor = new Map<string, number>();
-    for (const unit of unitsRes.data ?? []) {
-      unitsByFloor.set(unit.floor_id, (unitsByFloor.get(unit.floor_id) ?? 0) + 1);
-    }
-
-    const buildings: BuildingRecord[] = (buildingsRes.data ?? []).map((building) => ({
-      id: building.id,
-      name: building.name,
-      property: propertyNames.get(building.property_id) ?? "Unknown property",
-      manager: building.manager_name ?? "-",
-      status: mapBuildingStatus(building.status),
-      floors: String(floorsByBuilding.get(building.id) ?? building.number_of_floors ?? 0),
-      units: String(unitsByBuilding.get(building.id) ?? 0),
-    }));
-
-    const floors: FloorRecord[] = (floorsRes.data ?? []).map((floor) => ({
-      id: floor.id,
-      building: buildingNames.get(floor.building_id) ?? "Unknown building",
-      name: floor.name ?? `Floor ${floor.floor_number}`,
-      level: String(floor.floor_number),
-      status: mapFloorStatus(floor.status),
-      units: String(unitsByFloor.get(floor.id) ?? 0),
-    }));
-
-    const units: UnitRecord[] = (unitsRes.data ?? []).map((unit) => ({
-      id: unit.id,
-      building: buildingNames.get(unit.building_id) ?? "Unknown building",
-      floor: floorNames.get(unit.floor_id) ?? "-",
-      code: unit.code,
-      category: unit.category_id
-        ? categoryNames.get(unit.category_id) ?? unit.unit_type
-        : unit.unit_type,
-      status: mapUnitStatus(unit.status),
-      availability: mapAvailability(unit.availability),
-      rate: unit.base_rate != null ? `$${Number(unit.base_rate).toLocaleString("en-US")}` : "-",
-      images: "0",
-      amenities: String(amenityCounts.get(unit.id) ?? 0),
-    }));
-
-    const categories: CategoryRecord[] = (categoriesRes.data ?? []).map((category) => ({
-      id: category.id,
-      name: category.name,
-      occupancyMode:
-        category.occupancy_mode === "residential"
-          ? "Residential"
-          : category.occupancy_mode === "commercial"
-            ? "Commercial"
-            : "Short-Term",
-      baseRate: `$${Number(category.base_rate).toLocaleString("en-US")}`,
-      description: category.description ?? "",
-      status: category.status === "active" ? "Active" : "Draft",
-    }));
-
-    const amenities: AmenityRecord[] = (amenitiesRes.data ?? []).map((amenity) => ({
-      id: amenity.id,
-      name: amenity.name,
-      scope:
-        amenity.scope === "building"
-          ? "Building"
-          : amenity.scope === "unit"
-            ? "Unit"
-            : "Shared",
-      status: amenity.status === "active" ? "Active" : "Hidden",
-      unitsAssigned: "0",
-    }));
-
-    const images: ImageRecord[] = (imagesRes.data ?? []).map((image) => {
-      const categoryMap: Record<string, ImageRecord["category"]> = {
-        exterior: "Exterior",
-        interior: "Interior",
-        amenity: "Amenity",
-        floor_plan: "Floor Plan",
-      };
-
-      return {
-        id: image.id,
-        title: image.title,
-        building: image.building_id
-          ? buildingNames.get(image.building_id) ?? "-"
-          : "-",
-        unit: "-",
-        category: categoryMap[image.category] ?? "Interior",
-        status: image.status === "published" ? "Published" : "Draft",
-        url: image.url,
-      };
-    });
-
-    return {
-      buildings,
-      floors,
-      units,
-      categories,
-      amenities,
-      images,
-      source: "supabase",
-    };
   } catch (error) {
     console.error("Property hydration error", error);
     return null;

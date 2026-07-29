@@ -7,7 +7,12 @@
   ],
   "scripts": {
     "dev": "npm run dev --workspace=@real-state/web",
-    "build": "npm run build --workspace=@real-state/web",
+    "dev:web": "npm run dev --workspace=@real-state/web",
+    "dev:api": "npm run dev --workspace=@real-state/api",
+    "build": "npm run build --workspace=@real-state/web && npm run build --workspace=@real-state/api",
+    "build:web": "npm run build --workspace=@real-state/web",
+    "build:api": "npm run build --workspace=@real-state/api",
+    "start:api": "npm run start --workspace=@real-state/api",
     "lint": "npm run lint --workspace=@real-state/web",
     "db:start": "npx supabase start",
     "db:stop": "npx supabase stop",

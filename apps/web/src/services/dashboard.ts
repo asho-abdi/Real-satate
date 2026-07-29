@@ -1,16 +1,39 @@
+import { backendApi, type DashboardKpis } from "./backend-api";
 import { createClient } from "../lib/supabase/server";
 
-export async function fetchDashboardKpisServer() {
+export type LiveDashboardKpis = DashboardKpis & {
+  source: "api" | "supabase";
+};
+
+function isApiConfigured() {
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api/v1";
+  return Boolean(apiUrl);
+}
+
+function isSupabaseConfigured() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-  if (
+  return !(
     !url ||
     !anonKey ||
     url.includes("YOUR_PROJECT_REF") ||
     anonKey.includes("YOUR_ANON_KEY") ||
     anonKey.includes("PASTE_YOUR_ANON")
-  ) {
+  );
+}
+
+export async function fetchDashboardKpisServer(): Promise<LiveDashboardKpis | null> {
+  if (isApiConfigured()) {
+    try {
+      const data = await backendApi.dashboardKpis();
+      return { ...data, source: "api" };
+    } catch (error) {
+      console.error("Dashboard KPI API fetch failed, trying Supabase fallback", error);
+    }
+  }
+
+  if (!isSupabaseConfigured()) {
     return null;
   }
 
@@ -52,7 +75,7 @@ export async function fetchDashboardKpisServer() {
       airbnbBookings: reservations.count ?? 0,
       maintenanceRequests: maintenance.count ?? 0,
       occupancyRate,
-      source: "supabase" as const,
+      source: "supabase",
     };
   } catch (error) {
     console.error("Dashboard KPI fetch error", error);
