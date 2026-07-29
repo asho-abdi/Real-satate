@@ -11,6 +11,7 @@ export function createServiceClient() {
   }
 
   return createClient<Database>(url, serviceKey, {
+    db: { schema: "real_estate" },
     auth: {
       persistSession: false,
       autoRefreshToken: false,

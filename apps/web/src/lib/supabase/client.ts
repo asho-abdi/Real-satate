@@ -11,13 +11,20 @@ export function createClient() {
     );
   }
 
-  return createBrowserClient<Database>(url, anonKey);
+  return createBrowserClient<Database>(url, anonKey, {
+    db: { schema: "real_estate" },
+  });
 }
 
 export function isSupabaseConfigured() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
+
   return Boolean(
-    process.env.NEXT_PUBLIC_SUPABASE_URL &&
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY &&
-      !process.env.NEXT_PUBLIC_SUPABASE_URL.includes("YOUR_PROJECT_REF"),
+    url &&
+      anonKey &&
+      !url.includes("YOUR_PROJECT_REF") &&
+      !anonKey.includes("YOUR_ANON_KEY") &&
+      !anonKey.includes("PASTE_YOUR_ANON"),
   );
 }

@@ -12,6 +12,7 @@ export async function createClient() {
   }
 
   return createServerClient<Database>(url, anonKey, {
+    db: { schema: "real_estate" },
     cookies: {
       getAll() {
         return cookieStore.getAll();

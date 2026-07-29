@@ -8,7 +8,8 @@ export async function fetchDashboardKpisServer() {
     !url ||
     !anonKey ||
     url.includes("YOUR_PROJECT_REF") ||
-    anonKey.includes("YOUR_ANON_KEY")
+    anonKey.includes("YOUR_ANON_KEY") ||
+    anonKey.includes("PASTE_YOUR_ANON")
   ) {
     return null;
   }

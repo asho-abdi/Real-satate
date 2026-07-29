@@ -9,11 +9,11 @@ import {
   floorStatusOptions,
   imageStatusOptions,
   initialAmenities,
-  initialBuildings,
-  initialCategories,
-  initialFloors,
-  initialImages,
-  initialUnits,
+  initialBuildings as initialBuildingsData,
+  initialCategories as initialCategoriesData,
+  initialFloors as initialFloorsData,
+  initialImages as initialImagesData,
+  initialUnits as initialUnitsData,
   tabLabels,
   unitStatusOptions,
   amenityScopeOptions,
@@ -52,7 +52,23 @@ const singularLabels: Record<ModuleTab, string> = {
   images: "Image",
 };
 
-export function PropertyManagementModule() {
+export function PropertyManagementModule({
+  initialBuildings = initialBuildingsData,
+  initialFloors = initialFloorsData,
+  initialUnits = initialUnitsData,
+  initialCategories = initialCategoriesData,
+  initialAmenities = initialAmenitiesData,
+  initialImages = initialImagesData,
+  dataSourceLabel = "Demo data",
+}: {
+  initialBuildings?: BuildingRecord[];
+  initialFloors?: FloorRecord[];
+  initialUnits?: UnitRecord[];
+  initialCategories?: CategoryRecord[];
+  initialAmenities?: AmenityRecord[];
+  initialImages?: ImageRecord[];
+  dataSourceLabel?: string;
+} = {}) {
   const [activeTab, setActiveTab] = useState<ModuleTab>(defaultTab);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
@@ -278,6 +294,7 @@ export function PropertyManagementModule() {
             Manage buildings, floors, units, categories, statuses, availability,
             images, and amenities from one responsive admin workspace.
           </p>
+          <p className={styles.heroMeta}>Data source: {dataSourceLabel}</p>
         </div>
         <button className={styles.primaryButton} onClick={openCreateModal} type="button">
           Add {singularLabels[activeTab]}
