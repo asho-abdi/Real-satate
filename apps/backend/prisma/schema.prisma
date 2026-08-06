@@ -1,0 +1,264 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// =============================================================================
+// Simple 2-Building Property Rental System
+// =============================================================================
+
+enum UnitType {
+  COMMERCIAL_SHOP
+  APARTMENT
+  STUDIO_APARTMENT
+  ONE_BEDROOM
+  TWO_BEDROOM
+  THREE_BEDROOM
+}
+
+enum UnitUsage {
+  SHOP
+  APARTMENT
+  GUEST
+}
+
+enum UnitStatus {
+  AVAILABLE
+  OCCUPIED
+  RESERVED
+}
+
+enum BookingStatus {
+  CONFIRMED
+  CHECKED_IN
+  CHECKED_OUT
+  CANCELLED
+}
+
+enum LeaseStatus {
+  ACTIVE
+  ENDED
+}
+
+enum PaymentStatus {
+  PAID
+  UNPAID
+  PARTIAL
+}
+
+enum PaymentMethod {
+  CASH
+  E_BESA
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+}
+
+model User {
+  id                   String    @id @default(uuid()) @db.Uuid
+  email                String    @unique
+  passwordHash         String
+  firstName            String
+  lastName             String
+  phone                String?
+  isActive             Boolean   @default(true)
+  role                 String    @default("ADMIN")
+  resetPasswordToken   String?
+  resetPasswordExpires DateTime?
+  lastLoginAt          DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  refreshTokens RefreshToken[]
+}
+
+model RefreshToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @db.Uuid
+  tokenHash String
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([tokenHash])
+}
+
+model Building {
+  id          String    @id @default(uuid()) @db.Uuid
+  code        String    @unique
+  name        String
+  address     String?
+  floorsCount Int       @default(0)
+  notes       String?
+  deletedAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  floors Floor[]
+  units  Unit[]
+}
+
+model Floor {
+  id          String    @id @default(uuid()) @db.Uuid
+  buildingId  String    @db.Uuid
+  name        String
+  level       Int
+  deletedAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  building Building @relation(fields: [buildingId], references: [id])
+  units    Unit[]
+
+  @@unique([buildingId, level])
+  @@index([buildingId])
+}
+
+model Unit {
+  id          String     @id @default(uuid()) @db.Uuid
+  buildingId  String     @db.Uuid
+  floorId     String     @db.Uuid
+  roomNumber  String
+  unitType    UnitType
+  usage       UnitUsage
+  monthlyRent Decimal    @db.Decimal(12, 2)
+  discount    Decimal    @default(0) @db.Decimal(12, 2)
+  status      UnitStatus @default(AVAILABLE)
+  deletedAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  building Building @relation(fields: [buildingId], references: [id])
+  floor    Floor    @relation(fields: [floorId], references: [id])
+  bookings Booking[]
+  tenants  Tenant[]
+  businesses Business[]
+
+  @@unique([buildingId, roomNumber])
+  @@index([floorId])
+  @@index([status])
+  @@index([usage])
+}
+
+model Booking {
+  id               String        @id @default(uuid()) @db.Uuid
+  code             String        @unique
+  unitId           String        @db.Uuid
+  fullName         String
+  phone            String
+  idNumber         String
+  nationality      String?
+  gender           Gender?
+  emergencyContact String?
+  checkIn          DateTime
+  checkOut         DateTime
+  nights           Int
+  monthlyRent      Decimal       @db.Decimal(12, 2)
+  dailyRent        Decimal       @db.Decimal(12, 2)
+  discount         Decimal       @default(0) @db.Decimal(12, 2)
+  totalAmount      Decimal       @db.Decimal(12, 2)
+  paymentMethod    PaymentMethod @default(CASH)
+  status           BookingStatus @default(CONFIRMED)
+  deletedAt        DateTime?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  unit Unit @relation(fields: [unitId], references: [id])
+
+  @@index([unitId])
+  @@index([status])
+  @@index([checkIn])
+  @@index([phone])
+  @@index([fullName])
+}
+
+model Tenant {
+  id               String     @id @default(uuid()) @db.Uuid
+  fullName         String
+  phone            String
+  idNumber         String
+  nationality      String?
+  gender           Gender?
+  emergencyContact String?
+  unitId           String     @db.Uuid
+  monthlyRent      Decimal    @db.Decimal(12, 2)
+  discount         Decimal    @default(0) @db.Decimal(12, 2)
+  leaseStart       DateTime
+  leaseEnd         DateTime?
+  status           LeaseStatus @default(ACTIVE)
+  deletedAt        DateTime?
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+
+  unit     Unit             @relation(fields: [unitId], references: [id])
+  payments MonthlyPayment[]
+
+  @@index([unitId])
+  @@index([phone])
+  @@index([status])
+}
+
+model Business {
+  id            String      @id @default(uuid()) @db.Uuid
+  businessName  String
+  contactName   String
+  phone         String
+  licenseNumber String?
+  unitId        String      @db.Uuid
+  monthlyRent   Decimal     @db.Decimal(12, 2)
+  discount      Decimal     @default(0) @db.Decimal(12, 2)
+  leaseStart    DateTime
+  leaseEnd      DateTime?
+  status        LeaseStatus @default(ACTIVE)
+  deletedAt     DateTime?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  unit     Unit             @relation(fields: [unitId], references: [id])
+  payments MonthlyPayment[]
+
+  @@index([unitId])
+  @@index([phone])
+  @@index([status])
+}
+
+model MonthlyPayment {
+  id          String         @id @default(uuid()) @db.Uuid
+  tenantId    String?        @db.Uuid
+  businessId  String?        @db.Uuid
+  month       String
+  amountDue   Decimal        @db.Decimal(12, 2)
+  amountPaid  Decimal        @default(0) @db.Decimal(12, 2)
+  status      PaymentStatus  @default(UNPAID)
+  paymentDate DateTime?
+  method      PaymentMethod?
+  notes       String?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  tenant   Tenant?   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  business Business? @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, month])
+  @@unique([businessId, month])
+  @@index([status])
+  @@index([month])
+}
+
+model Setting {
+  id        String   @id @default(uuid()) @db.Uuid
+  key       String   @unique
+  value     Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}

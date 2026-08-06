@@ -1,0 +1,295 @@
+import { Router } from 'express';
+import prisma from '../../config/database.js';
+import { authenticate } from '../../middlewares/auth.js';
+import { authorize } from '../../middlewares/authorize.js';
+import { asyncHandler } from '../../utils/asyncHandler.js';
+import { success } from '../../utils/apiResponse.js';
+import { AppError } from '../../utils/AppError.js';
+import { bookingTotal } from '../../utils/rent.js';
+
+const router = Router();
+router.use(authenticate);
+
+const bookingInclude = {
+  unit: {
+    include: {
+      building: { select: { id: true, code: true, name: true } },
+      floor: { select: { id: true, name: true, level: true } },
+    },
+  },
+};
+
+function serializeBooking(b) {
+  if (!b) return b;
+  return {
+    ...b,
+    monthlyRent: Number(b.monthlyRent),
+    dailyRent: Number(b.dailyRent),
+    discount: Number(b.discount),
+    totalAmount: Number(b.totalAmount),
+  };
+}
+
+function startOfDay(d) {
+  const x = new Date(d);
+  x.setHours(0, 0, 0, 0);
+  return x;
+}
+
+async function nextBookingCode(tx = prisma) {
+  const latest = await tx.booking.findFirst({
+    orderBy: { createdAt: 'desc' },
+    select: { code: true },
+  });
+  const match = latest?.code?.match(/(\d+)$/);
+  const next = match ? Number(match[1]) + 1 : 1001;
+  return `BK-${next}`;
+}
+
+async function hasOverlappingBooking(tx, unitId, checkIn, checkOut, excludeId = null) {
+  const start = startOfDay(checkIn);
+  const end = startOfDay(checkOut);
+  const overlapping = await tx.booking.findFirst({
+    where: {
+      unitId,
+      deletedAt: null,
+      status: { in: ['CONFIRMED', 'CHECKED_IN'] },
+      ...(excludeId ? { id: { not: excludeId } } : {}),
+      checkIn: { lt: end },
+      checkOut: { gt: start },
+    },
+    select: { id: true, code: true },
+  });
+  return overlapping;
+}
+
+router.get(
+  '/',
+  authorize('bookings:read'),
+  asyncHandler(async (req, res) => {
+    const { search } = req.query;
+    const where = {
+      deletedAt: null,
+      unit: { deletedAt: null, building: { deletedAt: null } },
+      ...(search
+        ? {
+            OR: [
+              { fullName: { contains: String(search), mode: 'insensitive' } },
+              { phone: { contains: String(search), mode: 'insensitive' } },
+              { unit: { roomNumber: { contains: String(search), mode: 'insensitive' } } },
+              { code: { contains: String(search), mode: 'insensitive' } },
+            ],
+          }
+        : {}),
+    };
+
+    const data = await prisma.booking.findMany({
+      where,
+      include: bookingInclude,
+      orderBy: { checkIn: 'desc' },
+    });
+    return success(res, data.map(serializeBooking));
+  }),
+);
+
+router.post(
+  '/',
+  authorize('bookings:create'),
+  asyncHandler(async (req, res) => {
+    const {
+      unitId,
+      fullName,
+      phone,
+      idNumber,
+      nationality,
+      gender,
+      emergencyContact,
+      checkIn,
+      checkOut,
+      discount = 0,
+      paymentMethod = 'CASH',
+    } = req.body || {};
+
+    if (!unitId || !fullName || !phone || !idNumber || !checkIn || !checkOut) {
+      throw new AppError(
+        'unitId, fullName, phone, idNumber, checkIn, and checkOut are required',
+        400,
+      );
+    }
+
+    const unit = await prisma.unit.findFirst({
+      where: {
+        id: unitId,
+        deletedAt: null,
+        building: { deletedAt: null },
+        floor: { deletedAt: null },
+      },
+    });
+    if (!unit) throw new AppError('Unit not found', 404);
+    if (unit.usage !== 'GUEST') {
+      throw new AppError('Bookings are only allowed on guest units', 400);
+    }
+    if (unit.status !== 'AVAILABLE') {
+      throw new AppError(`Unit is ${unit.status.toLowerCase()} and cannot be booked`, 400);
+    }
+
+    const totals = bookingTotal(unit.monthlyRent, checkIn, checkOut, discount);
+    if (totals.nights < 1) {
+      throw new AppError('checkOut must be after checkIn', 400);
+    }
+
+    const today = startOfDay(new Date());
+    const checkInDay = startOfDay(checkIn);
+    const unitStatus = checkInDay <= today ? 'OCCUPIED' : 'RESERVED';
+    const bookingStatus = checkInDay <= today ? 'CHECKED_IN' : 'CONFIRMED';
+
+    const method = String(paymentMethod).toUpperCase().replace(/-/g, '_');
+    const paymentMethodValue = method === 'E_BESA' || method === 'EBESA' ? 'E_BESA' : 'CASH';
+
+    const booking = await prisma.$transaction(async (tx) => {
+      const overlap = await hasOverlappingBooking(tx, unitId, checkIn, checkOut);
+      if (overlap) {
+        throw new AppError(
+          `Unit already has an active booking (${overlap.code}) for these dates`,
+          409,
+        );
+      }
+
+      const code = await nextBookingCode(tx);
+
+      const created = await tx.booking.create({
+        data: {
+          code,
+          unitId,
+          fullName: String(fullName).trim(),
+          phone: String(phone).trim(),
+          idNumber: String(idNumber).trim(),
+          nationality: nationality || null,
+          gender: gender ? String(gender).toUpperCase() : null,
+          emergencyContact: emergencyContact || null,
+          checkIn: new Date(checkIn),
+          checkOut: new Date(checkOut),
+          nights: totals.nights,
+          monthlyRent: unit.monthlyRent,
+          dailyRent: totals.dailyRent,
+          discount: totals.discount,
+          totalAmount: totals.totalAmount,
+          paymentMethod: paymentMethodValue,
+          status: bookingStatus,
+        },
+        include: bookingInclude,
+      });
+
+      await tx.unit.update({
+        where: { id: unitId },
+        data: { status: unitStatus },
+      });
+
+      return created;
+    });
+
+    return success(res, serializeBooking(booking), 201);
+  }),
+);
+
+router.post(
+  '/:id/check-in',
+  authorize('bookings:update'),
+  asyncHandler(async (req, res) => {
+    const booking = await prisma.booking.findFirst({
+      where: { id: req.params.id, deletedAt: null },
+    });
+    if (!booking) throw new AppError('Booking not found', 404);
+    if (booking.status !== 'CONFIRMED') {
+      throw new AppError(`Only CONFIRMED bookings can check in (current: ${booking.status})`, 400);
+    }
+
+    const updated = await prisma.$transaction(async (tx) => {
+      const b = await tx.booking.update({
+        where: { id: booking.id },
+        data: { status: 'CHECKED_IN' },
+        include: bookingInclude,
+      });
+      await tx.unit.update({
+        where: { id: booking.unitId },
+        data: { status: 'OCCUPIED' },
+      });
+      return b;
+    });
+
+    return success(res, serializeBooking(updated));
+  }),
+);
+
+router.post(
+  '/:id/check-out',
+  authorize('bookings:update'),
+  asyncHandler(async (req, res) => {
+    const booking = await prisma.booking.findFirst({
+      where: { id: req.params.id, deletedAt: null },
+    });
+    if (!booking) throw new AppError('Booking not found', 404);
+    if (booking.status !== 'CHECKED_IN') {
+      throw new AppError(`Only CHECKED_IN bookings can check out (current: ${booking.status})`, 400);
+    }
+
+    const updated = await prisma.$transaction(async (tx) => {
+      const b = await tx.booking.update({
+        where: { id: booking.id },
+        data: { status: 'CHECKED_OUT' },
+        include: bookingInclude,
+      });
+      await tx.unit.update({
+        where: { id: booking.unitId },
+        data: { status: 'AVAILABLE' },
+      });
+      return b;
+    });
+
+    return success(res, serializeBooking(updated));
+  }),
+);
+
+router.post(
+  '/:id/cancel',
+  authorize('bookings:update'),
+  asyncHandler(async (req, res) => {
+    const booking = await prisma.booking.findFirst({
+      where: { id: req.params.id, deletedAt: null },
+    });
+    if (!booking) throw new AppError('Booking not found', 404);
+    if (booking.status === 'CHECKED_OUT' || booking.status === 'CANCELLED') {
+      throw new AppError(`Cannot cancel a ${booking.status} booking`, 400);
+    }
+
+    const updated = await prisma.$transaction(async (tx) => {
+      const b = await tx.booking.update({
+        where: { id: booking.id },
+        data: { status: 'CANCELLED' },
+        include: bookingInclude,
+      });
+
+      // Only free the unit if no other active booking remains on it
+      const otherActive = await tx.booking.findFirst({
+        where: {
+          unitId: booking.unitId,
+          deletedAt: null,
+          id: { not: booking.id },
+          status: { in: ['CONFIRMED', 'CHECKED_IN'] },
+        },
+      });
+      if (!otherActive) {
+        await tx.unit.update({
+          where: { id: booking.unitId },
+          data: { status: 'AVAILABLE' },
+        });
+      }
+
+      return b;
+    });
+
+    return success(res, serializeBooking(updated));
+  }),
+);
+
+export default router;

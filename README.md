@@ -1,6 +1,6 @@
 # Real Estate Management System
 
-Enterprise real estate SaaS with **Next.js** frontend, **Express** API, and **Supabase** (Postgres + Auth).
+Enterprise real estate SaaS with a **React + Vite** frontend and a **Node/Express + Prisma** backend.
 
 ## Repository
 
@@ -8,54 +8,46 @@ Remote: [https://github.com/asho-abdi/Real-satate](https://github.com/asho-abdi/
 
 ## Stack
 
-- Frontend: Next.js App Router (`apps/web`)
-- Backend API: Express + TypeScript (`apps/api`)
-- Database / Auth: Supabase Postgres (`supabase/`, schema `real_estate`)
+- Frontend: React + Vite + JavaScript (`apps/frontend`) — EstateOps UI
+- Backend: Express + Prisma + PostgreSQL + JavaScript (`apps/backend`)
+- Legacy Next.js UI: `apps/web`
+- Legacy Supabase API: `apps/api`
 - Shared package: `packages/shared`
-- Architecture docs: `docs/`
+- Docs: `docs/`
 
 ## Quick start
 
-1. Follow [docs/supabase-setup.md](docs/supabase-setup.md)
-2. Configure frontend env:
+### 1) Backend (Prisma)
 
 ```bash
-cp apps/web/.env.example apps/web/.env.local
-```
+cp apps/backend/.env.example apps/backend/.env
+# Set DATABASE_URL to your PostgreSQL database
 
-3. Configure API env:
-
-```bash
-cp apps/api/.env.example apps/api/.env
-```
-
-4. Install and run (two terminals):
-
-```bash
 npm install --legacy-peer-deps
-npm run dev:web
-npm run dev:api
+npm run prisma:generate
+npm run prisma:push
+npm run prisma:seed
+npm run dev:backend
 ```
 
-- Web: `http://localhost:3000`
-- API: `http://localhost:4000/api/v1`
+- API: `http://localhost:5000/api/v1`
+- Health: `http://localhost:5000/health`
+- Docs: [apps/backend/README.md](apps/backend/README.md) · [docs/backend-api.md](docs/backend-api.md)
+- Seed admin: `admin@estateops.com` / `Admin@12345`
 
-API details: [docs/api.md](docs/api.md)
+### 2) Frontend
 
-## Current modules (UI)
+```bash
+npm run dev:frontend
+```
 
-- `/` Dashboard
-- `/properties` Property Management
-- `/apartments` Residential Apartments
-- `/commercial-properties` Commercial Properties
-- `/airbnb-management` Airbnb / short-term reservations
+- App: `http://localhost:5173`
+- Frontend demo login (mock): `admin@estateops.com` / `password123`
 
-## Database
+## Backend capabilities
 
-Initial migration:
+JWT auth (access + refresh), RBAC roles/permissions, full CRUD modules, pagination/search/filter/sort, Multer uploads, Excel/PDF report exports, audit logs, Helmet/CORS/rate limiting.
 
-- `supabase/migrations/20260728120000_init_real_estate.sql`
+## Roles
 
-Demo seed:
-
-- `supabase/seed.sql`
+`SUPER_ADMIN`, `ADMIN`, `MANAGER`, `AGENT`, `ACCOUNTANT`, `CUSTOMER`
