@@ -45,7 +45,7 @@ export const NAV_SECTIONS = [
     title: 'Setup',
     items: [
       { label: 'Buildings', to: '/buildings', icon: 'MdBusiness' },
-      { label: 'Rooms', to: '/rooms', icon: 'MdDoorFront' },
+      { label: 'Availability', to: '/rooms', icon: 'MdDoorFront' },
     ],
   },
   {

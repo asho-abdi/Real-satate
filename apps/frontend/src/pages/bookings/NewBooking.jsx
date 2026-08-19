@@ -7,7 +7,6 @@ import Select from '../../components/ui/Select.jsx';
 import { PAYMENT_METHODS } from '../../utils/constants.js';
 import { calcBookingTotal, calcDailyRent } from '../../utils/rentCalc.js';
 import { formatCurrency } from '../../utils/format.js';
-import { usageToApi } from '../../utils/labels.js';
 import { rentalApi } from '../../services/rentalApi.js';
 
 const emptyCustomer = {
@@ -19,12 +18,11 @@ const emptyCustomer = {
   emergencyContact: '',
 };
 
-/** Guest booking form — used inside Guest Bookings page. */
+/** Guest booking form — only rooms with usage Guest / Airbnb appear in the dropdown. */
 export default function NewBooking({ onSuccess } = {}) {
   const [buildings, setBuildings] = useState([]);
   const [floors, setFloors] = useState([]);
-  const [rooms, setRooms] = useState([]);
-  const [allRooms, setAllRooms] = useState([]);
+  const [guestRooms, setGuestRooms] = useState([]);
   const [loading, setLoading] = useState(true);
   const [buildingId, setBuildingId] = useState('');
   const [floorId, setFloorId] = useState('');
@@ -34,32 +32,21 @@ export default function NewBooking({ onSuccess } = {}) {
   const [checkOut, setCheckOut] = useState('');
   const [discount, setDiscount] = useState(0);
   const [paymentMethod, setPaymentMethod] = useState('Cash');
+  const [amountPaid, setAmountPaid] = useState('');
   const [saving, setSaving] = useState(false);
-  const [convertingId, setConvertingId] = useState('');
-
-  const reloadRooms = async () => {
-    const [guestUnits, allUnits] = await Promise.all([
-      rentalApi.listUnits({ usage: 'GUEST' }),
-      rentalApi.listUnits(),
-    ]);
-    setRooms(guestUnits);
-    setAllRooms(allUnits);
-  };
 
   useEffect(() => {
     (async () => {
       setLoading(true);
       try {
-        const [b, f, guestUnits, allUnits] = await Promise.all([
+        const [b, f, units] = await Promise.all([
           rentalApi.listBuildings(),
           rentalApi.listFloors(),
           rentalApi.listUnits({ usage: 'GUEST' }),
-          rentalApi.listUnits(),
         ]);
         setBuildings(b);
         setFloors(f);
-        setRooms(guestUnits);
-        setAllRooms(allUnits);
+        setGuestRooms(units.filter((r) => r.usage === 'guest'));
       } catch (err) {
         toast.error(err.message || 'Failed to load rooms');
       } finally {
@@ -68,38 +55,31 @@ export default function NewBooking({ onSuccess } = {}) {
     })();
   }, []);
 
-  const nonGuestRoomsInBuilding = useMemo(() => {
-    if (!buildingId) return [];
-    return allRooms.filter((r) => r.buildingId === buildingId && r.usage !== 'guest');
-  }, [allRooms, buildingId]);
-
-  const roomsOnFloor = useMemo(() => {
-    if (!buildingId || !floorId) return [];
-    return allRooms.filter((r) => r.buildingId === buildingId && r.floorId === floorId);
-  }, [allRooms, buildingId, floorId]);
-
-  const bookableRooms = useMemo(
-    () => roomsOnFloor.filter((r) => r.usage === 'guest' && r.status === 'Available'),
-    [roomsOnFloor],
-  );
-
-  const nonGuestRoomsOnFloor = useMemo(
-    () => roomsOnFloor.filter((r) => r.usage !== 'guest'),
-    [roomsOnFloor],
-  );
+  const buildingsWithGuests = useMemo(() => {
+    const ids = new Set(guestRooms.map((r) => r.buildingId));
+    return buildings.filter((b) => ids.has(b.id));
+  }, [buildings, guestRooms]);
 
   const guestRoomsInBuilding = useMemo(() => {
     if (!buildingId) return [];
-    return rooms.filter((r) => r.buildingId === buildingId);
-  }, [rooms, buildingId]);
+    return guestRooms.filter((r) => r.buildingId === buildingId);
+  }, [guestRooms, buildingId]);
 
   const buildingFloors = useMemo(() => {
+    const floorIdsWithGuests = new Set(guestRoomsInBuilding.map((r) => r.floorId));
     return floors
-      .filter((f) => f.buildingId === buildingId)
+      .filter((f) => f.buildingId === buildingId && floorIdsWithGuests.has(f.id))
       .sort((a, b) => a.level - b.level);
-  }, [floors, buildingId]);
+  }, [floors, buildingId, guestRoomsInBuilding]);
 
-  const room = allRooms.find((r) => r.id === roomId);
+  const availableGuestRooms = useMemo(() => {
+    if (!buildingId || !floorId) return [];
+    return guestRoomsInBuilding.filter(
+      (r) => r.floorId === floorId && r.status === 'Available',
+    );
+  }, [guestRoomsInBuilding, buildingId, floorId]);
+
+  const room = guestRooms.find((r) => r.id === roomId);
 
   const totals = useMemo(
     () =>
@@ -123,27 +103,23 @@ export default function NewBooking({ onSuccess } = {}) {
     setRoomId('');
   };
 
-  const useRoomForGuestBooking = async (id) => {
-    setConvertingId(id);
-    try {
-      await rentalApi.updateUnit(id, { usage: usageToApi('guest') });
-      toast.success('Room set to Guest — select it below');
-      await reloadRooms();
-      setRoomId(id);
-    } catch (err) {
-      toast.error(err.message || 'Could not update room');
-    } finally {
-      setConvertingId('');
+  useEffect(() => {
+    if (room && totals.total > 0) {
+      setAmountPaid(String(totals.total));
     }
-  };
+  }, [room?.id, totals.total]);
 
   const save = async () => {
     if (!room) {
       toast.error('Select an available guest room');
       return;
     }
-    if (room.usage !== 'guest' || room.status !== 'Available') {
-      toast.error('This room is not available for guest booking');
+    if (room.usage !== 'guest') {
+      toast.error('Only Guest / Airbnb rooms can be booked here');
+      return;
+    }
+    if (room.status !== 'Available') {
+      toast.error('Selected room is not available');
       return;
     }
     if (!customer.fullName.trim() || !customer.phone.trim() || !customer.idNumber.trim()) {
@@ -173,6 +149,7 @@ export default function NewBooking({ onSuccess } = {}) {
         checkOut,
         discount: Number(discount) || 0,
         paymentMethod,
+        amountPaid: Number(amountPaid) || 0,
       });
       toast.success('Booking saved');
       onSuccess?.();
@@ -192,12 +169,13 @@ export default function NewBooking({ onSuccess } = {}) {
             add floors and rooms.
           </p>
         </Card>
-      ) : rooms.length === 0 ? (
+      ) : buildingsWithGuests.length === 0 ? (
         <Card className="mb-6">
           <p className="text-sm text-[var(--text-muted)]">
-            Your building is registered, but there are no <strong>Guest / Airbnb</strong> rooms yet.
-            Open the building under <strong>Buildings</strong>, add a floor and room, and set{' '}
-            <strong>Room usage</strong> to <strong>Guest / Airbnb</strong>.
+            No building has a <strong>Guest / Airbnb</strong> room yet. When adding a room under{' '}
+            <strong>Buildings</strong>, set <strong>Room usage</strong> to{' '}
+            <strong>Guest / Airbnb</strong>. Buildings with only shop or apartment rooms will not
+            appear here.
           </p>
         </Card>
       ) : null}
@@ -211,12 +189,11 @@ export default function NewBooking({ onSuccess } = {}) {
               onChange={(e) => onBuilding(e.target.value)}
             >
               <option value="">Select building</option>
-              {buildings.map((b) => {
-                const guestCount = rooms.filter((r) => r.buildingId === b.id).length;
+              {buildingsWithGuests.map((b) => {
+                const count = guestRooms.filter((r) => r.buildingId === b.id).length;
                 return (
                   <option key={b.id} value={b.id}>
-                    {b.name}
-                    {guestCount ? ` · ${guestCount} guest room${guestCount === 1 ? '' : 's'}` : ''}
+                    {b.name} · {count} guest room{count === 1 ? '' : 's'}
                   </option>
                 );
               })}
@@ -227,7 +204,9 @@ export default function NewBooking({ onSuccess } = {}) {
               onChange={(e) => onFloor(e.target.value)}
               disabled={!buildingId}
             >
-              <option value="">Select floor</option>
+              <option value="">
+                {!buildingId ? 'Select building first' : 'Select floor'}
+              </option>
               {buildingFloors.map((f) => (
                 <option key={f.id} value={f.id}>
                   {f.name}
@@ -235,94 +214,38 @@ export default function NewBooking({ onSuccess } = {}) {
               ))}
             </Select>
             <Select
-              label="Room"
+              label="Guest room (available)"
               value={roomId}
               onChange={(e) => setRoomId(e.target.value)}
               disabled={!buildingId || !floorId}
             >
               <option value="">
-                {!floorId ? 'Select floor first' : 'Select room'}
+                {!floorId ? 'Select floor first' : 'Select guest room'}
               </option>
-              {roomsOnFloor.map((r) => {
-                const bookable = r.usage === 'guest' && r.status === 'Available';
-                if (bookable) {
-                  return (
-                    <option key={r.id} value={r.id}>
-                      {r.roomNumber} · {r.unitType} · {formatCurrency(r.monthlyRent)}/mo
-                    </option>
-                  );
-                }
-                return (
-                  <option key={`blocked-${r.id}`} disabled value="">
-                    {r.roomNumber} · {r.usage} · {r.status} (not guest — use button below)
-                  </option>
-                );
-              })}
+              {availableGuestRooms.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.roomNumber} · {r.unitType} · {formatCurrency(r.monthlyRent)}/mo
+                </option>
+              ))}
             </Select>
 
-            {floorId && roomsOnFloor.length === 0 ? (
+            {floorId && availableGuestRooms.length === 0 && guestRoomsInBuilding.some((r) => r.floorId === floorId) ? (
               <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-100">
-                No rooms on this floor yet. Add rooms under <strong>Buildings → Manage floors</strong>.
+                Guest rooms exist on this floor but none are available. Mark a room as Available
+                in Setup, or pick another floor.
               </p>
             ) : null}
 
-            {floorId && nonGuestRoomsOnFloor.length > 0 ? (
-              <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-100">
-                <p className="mb-2">
-                  Rooms on this floor are <strong>shop/apartment</strong>, not guest. Click to use
-                  one for nightly booking:
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  {nonGuestRoomsOnFloor.map((r) => (
-                    <Button
-                      key={r.id}
-                      variant="secondary"
-                      className="h-10 px-3 text-sm"
-                      disabled={convertingId === r.id}
-                      onClick={() => useRoomForGuestBooking(r.id)}
-                    >
-                      {convertingId === r.id
-                        ? 'Updating…'
-                        : `Use room ${r.roomNumber} for guest booking`}
-                    </Button>
-                  ))}
-                </div>
-              </div>
-            ) : null}
-
-            {buildingId && guestRoomsInBuilding.length === 0 && !floorId ? (
+            {floorId && !guestRoomsInBuilding.some((r) => r.floorId === floorId) ? (
               <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-100">
-                This building has no guest rooms for booking.
-                {nonGuestRoomsInBuilding.length > 0 ? (
-                  <>
-                    {' '}
-                    Existing rooms:{' '}
-                    {nonGuestRoomsInBuilding
-                      .map((r) => `${r.roomNumber} (${r.usage})`)
-                      .join(', ')}
-                    . Open <strong>Buildings → Manage floors</strong> and change usage to{' '}
-                    <strong>Guest / Airbnb</strong>, or add a new guest room.
-                  </>
-                ) : (
-                  <>
-                    {' '}
-                    In <strong>Buildings → Manage floors</strong>, add a room and set usage to{' '}
-                    <strong>Guest / Airbnb</strong>.
-                  </>
-                )}
-              </p>
-            ) : null}
-
-            {floorId && bookableRooms.length === 0 && nonGuestRoomsOnFloor.length === 0 ? (
-              <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-100">
-                No available guest rooms on this floor. Pick another floor, or mark a guest room as
-                Available in Setup.
+                No guest rooms on this floor. Shop and apartment rooms are not listed here — add or
+                assign a <strong>Guest / Airbnb</strong> room on this floor in Setup.
               </p>
             ) : null}
 
             {room ? (
               <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-2)] p-4">
-                <p className="text-sm text-[var(--text-muted)]">Selected room</p>
+                <p className="text-sm text-[var(--text-muted)]">Selected guest room</p>
                 <p className="mt-1 text-lg font-semibold text-[var(--text)]">{room.roomNumber}</p>
                 <div className="mt-3 grid grid-cols-3 gap-2 text-sm">
                   <div>
@@ -420,6 +343,24 @@ export default function NewBooking({ onSuccess } = {}) {
                 </option>
               ))}
             </Select>
+            <Input
+              label="Amount paid now"
+              type="number"
+              min={0}
+              value={amountPaid}
+              onChange={(e) => setAmountPaid(e.target.value)}
+            />
+            <div className="sm:col-span-2 rounded-xl border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2 text-sm text-[var(--text-muted)]">
+              Balance at check-in:{' '}
+              <strong className="text-[var(--text)]">
+                {formatCurrency(Math.max(0, totals.total - (Number(amountPaid) || 0)))}
+              </strong>
+              {Number(amountPaid) >= totals.total
+                ? ' · fully paid'
+                : Number(amountPaid) > 0
+                  ? ' · partial — collect rest at check-in'
+                  : ' · collect at check-in'}
+            </div>
             <div className="sm:col-span-2 flex items-end">
               <div className="w-full rounded-2xl bg-brand-700 px-4 py-3 text-white dark:bg-brand-400 dark:text-ink-950">
                 <p className="text-sm opacity-90">Final total</p>

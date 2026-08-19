@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import PageHeader from '../../components/ui/PageHeader.jsx';
 import Card from '../../components/ui/Card.jsx';
@@ -17,13 +17,19 @@ import { rentalApi } from '../../services/rentalApi.js';
 
 export default function BuildingDetail() {
   const { id } = useParams();
+  const [searchParams] = useSearchParams();
+  const floorFromUrl = searchParams.get('floor') || '';
   const [building, setBuilding] = useState(null);
   const [floors, setFloors] = useState([]);
   const [rooms, setRooms] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [selectedFloorId, setSelectedFloorId] = useState('');
+  const [selectedFloorId, setSelectedFloorId] = useState(floorFromUrl);
   const [floorOpen, setFloorOpen] = useState(false);
   const [roomOpen, setRoomOpen] = useState(false);
+  const [buildingOpen, setBuildingOpen] = useState(false);
+  const [editingFloorId, setEditingFloorId] = useState(null);
+  const [editingRoomId, setEditingRoomId] = useState(null);
+  const [buildingForm, setBuildingForm] = useState({ name: '', code: '', address: '', floorsCount: 0, notes: '' });
   const [floorForm, setFloorForm] = useState({ name: '', level: 0 });
   const [roomForm, setRoomForm] = useState({
     roomNumber: '',
@@ -52,18 +58,28 @@ export default function BuildingDetail() {
         dailyRent: Math.round((Number(u.monthlyRent) / 30) * 100) / 100,
         status: u.status === 'AVAILABLE' ? 'Available' : u.status === 'OCCUPIED' ? 'Occupied' : 'Reserved',
       })));
-      setSelectedFloorId((prev) => prev || nextFloors[0]?.id || '');
+      const preferred =
+        (floorFromUrl && nextFloors.some((f) => f.id === floorFromUrl) && floorFromUrl) ||
+        nextFloors[0]?.id ||
+        '';
+      setSelectedFloorId(preferred);
     } catch (err) {
       toast.error(err.message || 'Building not found');
       setBuilding(null);
     } finally {
       setLoading(false);
     }
-  }, [id]);
+  }, [id, floorFromUrl]);
 
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    if (floorFromUrl && floors.some((f) => f.id === floorFromUrl)) {
+      setSelectedFloorId(floorFromUrl);
+    }
+  }, [floorFromUrl, floors]);
 
   const selectedFloor = floors.find((f) => f.id === selectedFloorId);
   const floorRooms = useMemo(
@@ -78,19 +94,87 @@ export default function BuildingDetail() {
       return;
     }
     try {
-      const floor = await rentalApi.createFloor({
-        buildingId: id,
-        name: floorForm.name.trim(),
-        level: Number(floorForm.level) || 0,
-      });
+      if (editingFloorId) {
+        await rentalApi.updateFloor(editingFloorId, {
+          name: floorForm.name.trim(),
+          level: Number(floorForm.level) || 0,
+        });
+        toast.success('Floor updated');
+      } else {
+        const floor = await rentalApi.createFloor({
+          buildingId: id,
+          name: floorForm.name.trim(),
+          level: Number(floorForm.level) || 0,
+        });
+        setSelectedFloorId(floor.id);
+        toast.success('Floor added');
+      }
       setFloorOpen(false);
+      setEditingFloorId(null);
       setFloorForm({ name: '', level: 0 });
-      toast.success('Floor added');
       await load();
-      setSelectedFloorId(floor.id);
     } catch (err) {
-      toast.error(err.message || 'Could not add floor');
+      toast.error(err.message || 'Could not save floor');
     }
+  };
+
+  const openEditFloor = (f) => {
+    setEditingFloorId(f.id);
+    setFloorForm({ name: f.name, level: f.level ?? 0 });
+    setFloorOpen(true);
+  };
+
+  const openCreateFloor = () => {
+    setEditingFloorId(null);
+    setFloorForm({ name: '', level: 0 });
+    setFloorOpen(true);
+  };
+
+  const saveBuilding = async () => {
+    if (!buildingForm.name.trim() || !buildingForm.code.trim()) {
+      toast.error('Name and code required');
+      return;
+    }
+    try {
+      await rentalApi.updateBuilding(id, {
+        name: buildingForm.name.trim(),
+        code: buildingForm.code.trim(),
+        address: buildingForm.address.trim() || null,
+        floorsCount: Number(buildingForm.floorsCount) || 0,
+        notes: buildingForm.notes.trim() || null,
+      });
+      setBuildingOpen(false);
+      toast.success('Building updated');
+      await load();
+    } catch (err) {
+      toast.error(err.message || 'Could not update building');
+    }
+  };
+
+  const openEditRoom = (r) => {
+    setEditingRoomId(r.id);
+    setRoomForm({
+      roomNumber: r.roomNumber,
+      unitType: r.unitType,
+      usage: r.usage || defaultUsageForUnitType(r.unitType),
+      monthlyRent: String(r.monthlyRent),
+      discount: String(r.discount || ''),
+      status: r.status,
+    });
+    setRoomOpen(true);
+  };
+
+  const openCreateRoom = () => {
+    setEditingRoomId(null);
+    setRoomForm({
+      roomNumber: '',
+      unitType: '1 Bedroom',
+      usage: defaultUsageForUnitType('1 Bedroom'),
+      monthlyRent: '',
+      discount: '',
+      status: 'Available',
+    });
+    setRoomOpen(true);
   };
 
   const setUsageFor = async (roomId, nextUsage) => {
@@ -104,7 +188,7 @@ export default function BuildingDetail() {
   };
 
   const addRoom = async () => {
-    if (!selectedFloorId) {
+    if (!selectedFloorId && !editingRoomId) {
       toast.error('Select a floor first');
       return;
     }
@@ -113,17 +197,27 @@ export default function BuildingDetail() {
       return;
     }
     try {
-      await rentalApi.createUnit({
-        buildingId: id,
-        floorId: selectedFloorId,
+      const payload = {
         roomNumber: roomForm.roomNumber.trim(),
         unitType: roomForm.unitType,
         usage: usageToApi(roomForm.usage),
         monthlyRent: Number(roomForm.monthlyRent),
         discount: Number(roomForm.discount) || 0,
         status: roomForm.status,
-      });
+      };
+      if (editingRoomId) {
+        await rentalApi.updateUnit(editingRoomId, payload);
+        toast.success('Room updated');
+      } else {
+        await rentalApi.createUnit({
+          buildingId: id,
+          floorId: selectedFloorId,
+          ...payload,
+        });
+        toast.success('Room added');
+      }
       setRoomOpen(false);
+      setEditingRoomId(null);
       setRoomForm({
         roomNumber: '',
         unitType: '1 Bedroom',
@@ -132,10 +226,9 @@ export default function BuildingDetail() {
         discount: '',
         status: 'Available',
       });
-      toast.success('Room added');
       await load();
     } catch (err) {
-      toast.error(err.message || 'Could not add room');
+      toast.error(err.message || 'Could not save room');
     }
   };
 
@@ -170,10 +263,22 @@ export default function BuildingDetail() {
                 All buildings
               </Button>
             </Link>
-            <Button variant="secondary" className="h-12 px-5" onClick={() => setFloorOpen(true)}>
+            <Button variant="secondary" className="h-12 px-5" onClick={() => {
+              setBuildingForm({
+                name: building.name || '',
+                code: building.code || '',
+                address: building.address || '',
+                floorsCount: building.floorsCount ?? 0,
+                notes: building.notes || '',
+              });
+              setBuildingOpen(true);
+            }}>
+              Edit Building
+            </Button>
+            <Button variant="secondary" className="h-12 px-5" onClick={openCreateFloor}>
               Add Floor
             </Button>
-            <Button className="h-12 px-5 text-base" onClick={() => setRoomOpen(true)}>
+            <Button className="h-12 px-5 text-base" onClick={openCreateRoom}>
               Add Room
             </Button>
           </div>
@@ -182,18 +287,26 @@ export default function BuildingDetail() {
 
       <div className="mb-4 flex flex-wrap gap-2">
         {floors.map((f) => (
-          <button
-            key={f.id}
-            type="button"
-            onClick={() => setSelectedFloorId(f.id)}
-            className={`h-12 rounded-xl px-5 text-base font-medium transition ${
-              selectedFloorId === f.id
-                ? 'bg-brand-700 text-white dark:bg-brand-400 dark:text-ink-950'
-                : 'bg-[var(--surface)] text-[var(--text-muted)] ring-1 ring-[var(--border)]'
-            }`}
-          >
-            {f.name}
-          </button>
+          <div key={f.id} className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setSelectedFloorId(f.id)}
+              className={`h-12 rounded-xl px-5 text-base font-medium transition ${
+                selectedFloorId === f.id
+                  ? 'bg-brand-700 text-white dark:bg-brand-400 dark:text-ink-950'
+                  : 'bg-[var(--surface)] text-[var(--text-muted)] ring-1 ring-[var(--border)]'
+              }`}
+            >
+              {f.name}
+            </button>
+            <button
+              type="button"
+              onClick={() => openEditFloor(f)}
+              className="h-10 rounded-lg border border-[var(--border)] px-2.5 text-xs text-[var(--text-muted)] hover:bg-[var(--surface-2)]"
+            >
+              Edit
+            </button>
+          </div>
         ))}
         {floors.length === 0 ? (
           <p className="text-sm text-[var(--text-muted)]">No floors yet — add the first floor.</p>
@@ -211,6 +324,7 @@ export default function BuildingDetail() {
                 <th className="pb-2 font-medium">Daily</th>
                 <th className="pb-2 font-medium">Status</th>
                 <th className="pb-2 font-medium">Usage</th>
+                <th className="pb-2 font-medium">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -236,6 +350,11 @@ export default function BuildingDetail() {
                       ))}
                     </Select>
                   </td>
+                  <td className="py-3">
+                    <Button variant="secondary" className="h-8 px-3 text-xs" onClick={() => openEditRoom(r)}>
+                      Edit
+                    </Button>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -247,16 +366,46 @@ export default function BuildingDetail() {
       </Card>
 
       <Modal
-        open={floorOpen}
-        onClose={() => setFloorOpen(false)}
-        title="Add Floor"
+        open={buildingOpen}
+        onClose={() => setBuildingOpen(false)}
+        title="Edit Building"
         footer={
           <div className="flex justify-end gap-2">
-            <Button variant="secondary" className="h-12 px-5" onClick={() => setFloorOpen(false)}>
+            <Button variant="secondary" className="h-12 px-5" onClick={() => setBuildingOpen(false)}>
+              Cancel
+            </Button>
+            <Button className="h-12 px-5" onClick={saveBuilding}>
+              Save Changes
+            </Button>
+          </div>
+        }
+      >
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Input label="Name" value={buildingForm.name} onChange={(e) => setBuildingForm({ ...buildingForm, name: e.target.value })} />
+          <Input label="Code" value={buildingForm.code} onChange={(e) => setBuildingForm({ ...buildingForm, code: e.target.value })} />
+          <Input label="Address" className="sm:col-span-2" value={buildingForm.address} onChange={(e) => setBuildingForm({ ...buildingForm, address: e.target.value })} />
+          <Input label="Floors count" type="number" value={buildingForm.floorsCount} onChange={(e) => setBuildingForm({ ...buildingForm, floorsCount: e.target.value })} />
+          <Input label="Notes" value={buildingForm.notes} onChange={(e) => setBuildingForm({ ...buildingForm, notes: e.target.value })} />
+        </div>
+      </Modal>
+
+      <Modal
+        open={floorOpen}
+        onClose={() => {
+          setFloorOpen(false);
+          setEditingFloorId(null);
+        }}
+        title={editingFloorId ? 'Edit Floor' : 'Add Floor'}
+        footer={
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" className="h-12 px-5" onClick={() => {
+              setFloorOpen(false);
+              setEditingFloorId(null);
+            }}>
               Cancel
             </Button>
             <Button className="h-12 px-5" onClick={addFloor}>
-              Save Floor
+              {editingFloorId ? 'Save Changes' : 'Save Floor'}
             </Button>
           </div>
         }
@@ -279,15 +428,25 @@ export default function BuildingDetail() {
 
       <Modal
         open={roomOpen}
-        onClose={() => setRoomOpen(false)}
-        title={`Add Room${selectedFloor ? ` · ${selectedFloor.name}` : ''}`}
+        onClose={() => {
+          setRoomOpen(false);
+          setEditingRoomId(null);
+        }}
+        title={
+          editingRoomId
+            ? 'Edit Room'
+            : `Add Room${selectedFloor ? ` · ${selectedFloor.name}` : ''}`
+        }
         footer={
           <div className="flex justify-end gap-2">
-            <Button variant="secondary" className="h-12 px-5" onClick={() => setRoomOpen(false)}>
+            <Button variant="secondary" className="h-12 px-5" onClick={() => {
+              setRoomOpen(false);
+              setEditingRoomId(null);
+            }}>
               Cancel
             </Button>
             <Button className="h-12 px-5" onClick={addRoom}>
-              Save Room
+              {editingRoomId ? 'Save Changes' : 'Save Room'}
             </Button>
           </div>
         }

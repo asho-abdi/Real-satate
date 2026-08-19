@@ -19,6 +19,7 @@ const paymentInclude = {
         select: {
           roomNumber: true,
           building: { select: { name: true, code: true } },
+          floor: { select: { name: true, level: true } },
         },
       },
     },
@@ -33,6 +34,7 @@ const paymentInclude = {
         select: {
           roomNumber: true,
           building: { select: { name: true, code: true } },
+          floor: { select: { name: true, level: true } },
         },
       },
     },

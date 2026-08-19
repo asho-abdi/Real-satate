@@ -79,6 +79,8 @@ function mapBooking(b) {
     nights: b.nights,
     discount: Number(b.discount) || 0,
     total: Number(b.totalAmount ?? b.total),
+    amountPaid: Number(b.amountPaid ?? 0),
+    paymentStatus: labelStatus(b.paymentStatus),
     paymentMethod: labelMethod(b.paymentMethod),
     status: labelStatus(b.status),
   };
@@ -96,7 +98,10 @@ function mapTenant(t) {
     emergencyContact: t.emergencyContact || '',
     roomId: t.unitId,
     roomNumber: t.unit?.roomNumber,
+    buildingId: t.unit?.building?.id,
+    floorId: t.unit?.floor?.id,
     building: t.unit?.building?.name,
+    floor: t.unit?.floor?.name,
     monthlyRent: Number(t.monthlyRent),
     discount: Number(t.discount) || 0,
     leaseStart: isoDate(t.leaseStart),
@@ -115,7 +120,10 @@ function mapBusiness(b) {
     idNumber: b.licenseNumber || '',
     roomId: b.unitId,
     roomNumber: b.unit?.roomNumber,
+    buildingId: b.unit?.building?.id,
+    floorId: b.unit?.floor?.id,
     building: b.unit?.building?.name,
+    floor: b.unit?.floor?.name,
     monthlyRent: Number(b.monthlyRent),
     discount: Number(b.discount) || 0,
     leaseStart: isoDate(b.leaseStart),
@@ -136,6 +144,11 @@ function mapPayment(p) {
     p.tenant?.unit?.building?.name ||
     p.business?.unit?.building?.name ||
     p.building;
+  const floor =
+    p.tenant?.unit?.floor?.name ||
+    p.business?.unit?.floor?.name ||
+    p.floor ||
+    null;
   return {
     id: p.id,
     tenantType: isShop ? 'shop' : 'apartment',
@@ -144,6 +157,7 @@ function mapPayment(p) {
     name,
     roomNumber,
     building,
+    floor,
     month: p.month,
     amountDue: Number(p.amountDue),
     amountPaid: Number(p.amountPaid),
@@ -168,6 +182,11 @@ export const rentalApi = {
       responseType: 'blob',
     });
     return response;
+  },
+
+  search: async (q) => {
+    const data = await get('/search', { q });
+    return data?.results || [];
   },
 
   listBuildings: () => get('/buildings'),
@@ -218,9 +237,38 @@ export const rentalApi = {
       checkOut: payload.checkOut,
       discount: Number(payload.discount) || 0,
       paymentMethod: METHOD_VALUES[payload.paymentMethod] || payload.paymentMethod,
+      amountPaid:
+        payload.amountPaid !== undefined && payload.amountPaid !== null
+          ? Number(payload.amountPaid)
+          : undefined,
     }).then(mapBooking),
-  checkInBooking: (id) => post(`/bookings/${id}/check-in`).then(mapBooking),
-  checkOutBooking: (id) => post(`/bookings/${id}/check-out`).then(mapBooking),
+  checkInBooking: (id, data) =>
+    post(`/bookings/${id}/check-in`, {
+      ...data,
+      paymentMethod: METHOD_VALUES[data?.paymentMethod] || data?.paymentMethod,
+    }).then(mapBooking),
+  checkOutBooking: (id, data) =>
+    post(`/bookings/${id}/check-out`, {
+      ...data,
+      paymentMethod: METHOD_VALUES[data?.paymentMethod] || data?.paymentMethod,
+    }).then(mapBooking),
+  recordBookingPayment: (id, data) =>
+    patch(`/bookings/${id}/payment`, {
+      ...data,
+      paymentMethod: METHOD_VALUES[data?.paymentMethod] || data?.paymentMethod,
+    }).then(mapBooking),
+  updateBooking: (id, payload) =>
+    patch(`/bookings/${id}`, {
+      fullName: payload.fullName,
+      phone: payload.phone,
+      idNumber: payload.idNumber,
+      nationality: payload.nationality || null,
+      gender: GENDER_VALUES[payload.gender] || payload.gender,
+      emergencyContact: payload.emergencyContact || null,
+      checkIn: payload.checkIn,
+      checkOut: payload.checkOut,
+      discount: payload.discount !== undefined ? Number(payload.discount) : undefined,
+    }).then(mapBooking),
   cancelBooking: (id) => post(`/bookings/${id}/cancel`).then(mapBooking),
 
   listTenants: () => get('/tenants').then((rows) => (rows || []).map(mapTenant)),
@@ -237,6 +285,27 @@ export const rentalApi = {
       discount: Number(payload.discount) || 0,
       leaseStart: payload.leaseStart,
     }).then(mapTenant),
+  terminateTenant: (id, { leaseEnd, notes } = {}) =>
+    patch(`/tenants/${id}`, {
+      status: 'ENDED',
+      ...(leaseEnd ? { leaseEnd } : {}),
+      ...(notes ? { notes } : {}),
+    }).then(mapTenant),
+  updateTenant: (id, payload) =>
+    patch(`/tenants/${id}`, {
+      ...(payload.fullName !== undefined && { fullName: payload.fullName }),
+      ...(payload.phone !== undefined && { phone: payload.phone }),
+      ...(payload.idNumber !== undefined && { idNumber: payload.idNumber }),
+      ...(payload.nationality !== undefined && { nationality: payload.nationality }),
+      ...(payload.gender !== undefined && {
+        gender: GENDER_VALUES[payload.gender] || payload.gender,
+      }),
+      ...(payload.emergencyContact !== undefined && { emergencyContact: payload.emergencyContact }),
+      ...(payload.monthlyRent !== undefined && { monthlyRent: Number(payload.monthlyRent) }),
+      ...(payload.discount !== undefined && { discount: Number(payload.discount) || 0 }),
+      ...(payload.leaseStart !== undefined && { leaseStart: payload.leaseStart }),
+      ...(payload.leaseEnd !== undefined && { leaseEnd: payload.leaseEnd || null }),
+    }).then(mapTenant),
 
   listBusinesses: () => get('/businesses').then((rows) => (rows || []).map(mapBusiness)),
   createBusiness: (payload) =>
@@ -249,6 +318,23 @@ export const rentalApi = {
       monthlyRent: Number(payload.monthlyRent),
       discount: Number(payload.discount) || 0,
       leaseStart: payload.leaseStart,
+    }).then(mapBusiness),
+  terminateBusiness: (id, { leaseEnd, notes } = {}) =>
+    patch(`/businesses/${id}`, {
+      status: 'ENDED',
+      ...(leaseEnd ? { leaseEnd } : {}),
+      ...(notes ? { notes } : {}),
+    }).then(mapBusiness),
+  updateBusiness: (id, payload) =>
+    patch(`/businesses/${id}`, {
+      ...(payload.businessName !== undefined && { businessName: payload.businessName }),
+      ...(payload.contactName !== undefined && { contactName: payload.contactName }),
+      ...(payload.phone !== undefined && { phone: payload.phone }),
+      ...(payload.idNumber !== undefined && { licenseNumber: payload.idNumber }),
+      ...(payload.monthlyRent !== undefined && { monthlyRent: Number(payload.monthlyRent) }),
+      ...(payload.discount !== undefined && { discount: Number(payload.discount) || 0 }),
+      ...(payload.leaseStart !== undefined && { leaseStart: payload.leaseStart }),
+      ...(payload.leaseEnd !== undefined && { leaseEnd: payload.leaseEnd || null }),
     }).then(mapBusiness),
 
   listPayments: (params) =>

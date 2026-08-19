@@ -27,7 +27,16 @@ function serializeBooking(b) {
     dailyRent: Number(b.dailyRent),
     discount: Number(b.discount),
     totalAmount: Number(b.totalAmount),
+    amountPaid: Number(b.amountPaid ?? 0),
   };
+}
+
+function derivePaymentStatus(amountPaid, totalAmount) {
+  const paid = Math.round(Number(amountPaid || 0) * 100) / 100;
+  const due = Math.round(Number(totalAmount || 0) * 100) / 100;
+  if (paid <= 0) return 'UNPAID';
+  if (paid >= due) return 'PAID';
+  return 'PARTIAL';
 }
 
 function startOfDay(d) {
@@ -108,6 +117,7 @@ router.post(
       checkOut,
       discount = 0,
       paymentMethod = 'CASH',
+      amountPaid,
     } = req.body || {};
 
     if (!unitId || !fullName || !phone || !idNumber || !checkIn || !checkOut) {
@@ -145,6 +155,11 @@ router.post(
 
     const method = String(paymentMethod).toUpperCase().replace(/-/g, '_');
     const paymentMethodValue = method === 'E_BESA' || method === 'EBESA' ? 'E_BESA' : 'CASH';
+    const paid =
+      amountPaid !== undefined && amountPaid !== null
+        ? Math.min(Number(amountPaid), totals.totalAmount)
+        : totals.totalAmount;
+    const paymentStatus = derivePaymentStatus(paid, totals.totalAmount);
 
     const booking = await prisma.$transaction(async (tx) => {
       const overlap = await hasOverlappingBooking(tx, unitId, checkIn, checkOut);
@@ -174,6 +189,8 @@ router.post(
           dailyRent: totals.dailyRent,
           discount: totals.discount,
           totalAmount: totals.totalAmount,
+          amountPaid: paid,
+          paymentStatus,
           paymentMethod: paymentMethodValue,
           status: bookingStatus,
         },
@@ -204,10 +221,30 @@ router.post(
       throw new AppError(`Only CONFIRMED bookings can check in (current: ${booking.status})`, 400);
     }
 
+    const { amountPaid, paymentMethod } = req.body || {};
+    const total = Number(booking.totalAmount);
+    const paid =
+      amountPaid !== undefined && amountPaid !== null
+        ? Math.min(Number(amountPaid), total)
+        : Number(booking.amountPaid);
+    const paymentStatus = derivePaymentStatus(paid, total);
+
+    const methodRaw =
+      paymentMethod !== undefined
+        ? String(paymentMethod).toUpperCase().replace(/-/g, '_')
+        : booking.paymentMethod;
+    const paymentMethodValue =
+      methodRaw === 'E_BESA' || methodRaw === 'EBESA' ? 'E_BESA' : 'CASH';
+
     const updated = await prisma.$transaction(async (tx) => {
       const b = await tx.booking.update({
         where: { id: booking.id },
-        data: { status: 'CHECKED_IN' },
+        data: {
+          status: 'CHECKED_IN',
+          amountPaid: paid,
+          paymentStatus,
+          paymentMethod: paymentMethodValue,
+        },
         include: bookingInclude,
       });
       await tx.unit.update({
@@ -215,6 +252,156 @@ router.post(
         data: { status: 'OCCUPIED' },
       });
       return b;
+    });
+
+    return success(res, serializeBooking(updated));
+  }),
+);
+
+router.patch(
+  '/:id',
+  authorize('bookings:update'),
+  asyncHandler(async (req, res) => {
+    const booking = await prisma.booking.findFirst({
+      where: { id: req.params.id, deletedAt: null },
+    });
+    if (!booking) throw new AppError('Booking not found', 404);
+
+    const editableStatuses = ['CONFIRMED', 'CHECKED_IN'];
+    if (!editableStatuses.includes(booking.status)) {
+      throw new AppError(`Cannot edit booking with status ${booking.status}`, 400);
+    }
+
+    const {
+      fullName,
+      phone,
+      idNumber,
+      nationality,
+      gender,
+      emergencyContact,
+      checkIn,
+      checkOut,
+      discount,
+    } = req.body || {};
+
+    const isConfirmed = booking.status === 'CONFIRMED';
+    const isCheckedIn = booking.status === 'CHECKED_IN';
+
+    let nextCheckIn = booking.checkIn;
+    let nextCheckOut = booking.checkOut;
+    let nextDiscount = Number(booking.discount);
+    let datesChanged = false;
+
+    if (isConfirmed) {
+      if (checkIn !== undefined) {
+        nextCheckIn = checkIn;
+        datesChanged = true;
+      }
+      if (checkOut !== undefined) {
+        nextCheckOut = checkOut;
+        datesChanged = true;
+      }
+      if (discount !== undefined) nextDiscount = Number(discount);
+    } else if (isCheckedIn && checkOut !== undefined) {
+      const proposed = startOfDay(checkOut);
+      const currentOut = startOfDay(booking.checkOut);
+      if (proposed < currentOut) {
+        throw new AppError(
+          'Cannot shorten a checked-in stay. Choose a checkout date on or after the current checkout.',
+          400,
+        );
+      }
+      nextCheckOut = checkOut;
+      datesChanged = true;
+    }
+
+    const totals = datesChanged
+      ? bookingTotal(booking.monthlyRent, nextCheckIn, nextCheckOut, nextDiscount)
+      : null;
+    if (totals && totals.nights < 1) throw new AppError('checkOut must be after checkIn', 400);
+
+    if (datesChanged) {
+      const overlap = await hasOverlappingBooking(
+        prisma,
+        booking.unitId,
+        nextCheckIn,
+        nextCheckOut,
+        booking.id,
+      );
+      if (overlap) {
+        throw new AppError(
+          `Unit already has an active booking (${overlap.code}) for these dates`,
+          409,
+        );
+      }
+    }
+
+    const total = datesChanged ? totals.totalAmount : Number(booking.totalAmount);
+    const paid = datesChanged
+      ? Math.min(Number(booking.amountPaid), total)
+      : Number(booking.amountPaid);
+    const paymentStatus = datesChanged ? derivePaymentStatus(paid, total) : booking.paymentStatus;
+
+    const updated = await prisma.booking.update({
+      where: { id: booking.id },
+      data: {
+        ...(fullName !== undefined && { fullName: String(fullName).trim() }),
+        ...(phone !== undefined && { phone: String(phone).trim() }),
+        ...(idNumber !== undefined && { idNumber: String(idNumber).trim() }),
+        ...(nationality !== undefined && { nationality }),
+        ...(gender !== undefined && { gender: gender ? String(gender).toUpperCase() : null }),
+        ...(emergencyContact !== undefined && { emergencyContact }),
+        ...(datesChanged && isConfirmed && checkIn !== undefined && { checkIn: new Date(checkIn) }),
+        ...(datesChanged && checkOut !== undefined && { checkOut: new Date(checkOut) }),
+        ...(datesChanged && isConfirmed && discount !== undefined && { discount: nextDiscount }),
+        ...(datesChanged && {
+          nights: totals.nights,
+          dailyRent: totals.dailyRent,
+          totalAmount: total,
+          amountPaid: paid,
+          paymentStatus,
+        }),
+      },
+      include: bookingInclude,
+    });
+
+    return success(res, serializeBooking(updated));
+  }),
+);
+
+router.patch(
+  '/:id/payment',
+  authorize('bookings:update'),
+  asyncHandler(async (req, res) => {
+    const booking = await prisma.booking.findFirst({
+      where: { id: req.params.id, deletedAt: null },
+    });
+    if (!booking) throw new AppError('Booking not found', 404);
+
+    const { amountPaid, paymentMethod } = req.body || {};
+    if (amountPaid === undefined || amountPaid === null) {
+      throw new AppError('amountPaid is required', 400);
+    }
+
+    const total = Number(booking.totalAmount);
+    const paid = Math.min(Math.max(0, Number(amountPaid)), total);
+    const paymentStatus = derivePaymentStatus(paid, total);
+
+    const methodRaw =
+      paymentMethod !== undefined
+        ? String(paymentMethod).toUpperCase().replace(/-/g, '_')
+        : booking.paymentMethod;
+    const paymentMethodValue =
+      methodRaw === 'E_BESA' || methodRaw === 'EBESA' ? 'E_BESA' : 'CASH';
+
+    const updated = await prisma.booking.update({
+      where: { id: booking.id },
+      data: {
+        amountPaid: paid,
+        paymentStatus,
+        paymentMethod: paymentMethodValue,
+      },
+      include: bookingInclude,
     });
 
     return success(res, serializeBooking(updated));
@@ -233,10 +420,40 @@ router.post(
       throw new AppError(`Only CHECKED_IN bookings can check out (current: ${booking.status})`, 400);
     }
 
+    const { amountPaid, paymentMethod } = req.body || {};
+    const total = Number(booking.totalAmount);
+    const requestedPaid =
+      amountPaid !== undefined && amountPaid !== null
+        ? Number(amountPaid)
+        : total;
+
+    if (Number.isNaN(requestedPaid) || requestedPaid < total) {
+      throw new AppError(
+        'Guest must pay the full balance before checkout. Collect payment and try again.',
+        400,
+      );
+    }
+
+    // Checkout confirms full stay payment — always record the booking total.
+    const paid = total;
+    const paymentStatus = 'PAID';
+
+    const methodRaw =
+      paymentMethod !== undefined
+        ? String(paymentMethod).toUpperCase().replace(/-/g, '_')
+        : booking.paymentMethod;
+    const paymentMethodValue =
+      methodRaw === 'E_BESA' || methodRaw === 'EBESA' ? 'E_BESA' : 'CASH';
+
     const updated = await prisma.$transaction(async (tx) => {
       const b = await tx.booking.update({
         where: { id: booking.id },
-        data: { status: 'CHECKED_OUT' },
+        data: {
+          status: 'CHECKED_OUT',
+          amountPaid: paid,
+          paymentStatus,
+          paymentMethod: paymentMethodValue,
+        },
         include: bookingInclude,
       });
       await tx.unit.update({

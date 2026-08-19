@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
+import { useOutletContext } from 'react-router-dom';
+import { MdWarning } from 'react-icons/md';
 import PageHeader from '../../components/ui/PageHeader.jsx';
 import Card from '../../components/ui/Card.jsx';
 import Button from '../../components/ui/Button.jsx';
@@ -9,7 +11,6 @@ import Modal from '../../components/ui/Modal.jsx';
 import Badge from '../../components/ui/Badge.jsx';
 import Spinner from '../../components/ui/Spinner.jsx';
 import PaymentCalendar from '../../components/rentals/PaymentCalendar.jsx';
-import { PAYMENT_METHODS, PAYMENT_STATUSES } from '../../utils/constants.js';
 import { formatCurrency, formatDate, cn } from '../../utils/format.js';
 import { rentalApi } from '../../services/rentalApi.js';
 
@@ -25,8 +26,12 @@ const emptyForm = {
   leaseStart: '',
 };
 
+const today = () => new Date().toISOString().slice(0, 10);
+
 export default function Apartments() {
-  const [tab, setTab] = useState('tenants');
+  const { globalSearch = '' } = useOutletContext() || {};
+
+  // data
   const [buildings, setBuildings] = useState([]);
   const [floors, setFloors] = useState([]);
   const [rooms, setRooms] = useState([]);
@@ -34,11 +39,30 @@ export default function Apartments() {
   const [tenants, setTenants] = useState([]);
   const [payments, setPayments] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [modal, setModal] = useState(null);
-  const [buildingId, setBuildingId] = useState('');
-  const [floorId, setFloorId] = useState('');
+
+  // tabs
+  const [tab, setTab] = useState('tenants');
+
+  // registration form state
+  const [regBuildingId, setRegBuildingId] = useState('');
+  const [regFloorId, setRegFloorId] = useState('');
   const [roomId, setRoomId] = useState('');
   const [form, setForm] = useState(emptyForm);
+
+  // filter state (tenant list)
+  const [filterBuildingId, setFilterBuildingId] = useState('');
+  const [filterFloorId, setFilterFloorId] = useState('');
+  const [search, setSearch] = useState('');
+
+  // terminate modal
+  const [termModal, setTermModal] = useState(null); // { tenant }
+  const [termForm, setTermForm] = useState({ leaseEnd: today(), notes: '' });
+  const [terminating, setTerminating] = useState(false);
+
+  // edit modal
+  const [editModal, setEditModal] = useState(null);
+  const [editForm, setEditForm] = useState(emptyForm);
+  const [savingEdit, setSavingEdit] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -68,29 +92,63 @@ export default function Apartments() {
     load();
   }, [load]);
 
-  const buildingFloors = useMemo(
-    () => floors.filter((f) => f.buildingId === buildingId),
-    [floors, buildingId],
+  useEffect(() => {
+    if (String(globalSearch || '').trim()) setTab('tenants');
+  }, [globalSearch]);
+
+  // ── filter helpers ──────────────────────────────────────────────
+  const filterFloors = useMemo(
+    () => (filterBuildingId ? floors.filter((f) => f.buildingId === filterBuildingId) : floors),
+    [floors, filterBuildingId],
+  );
+
+  const activeTenants = useMemo(
+    () => tenants.filter((t) => t.status === 'Active'),
+    [tenants],
+  );
+  const pastTenants = useMemo(
+    () => tenants.filter((t) => t.status !== 'Active'),
+    [tenants],
+  );
+
+  const displayedTenants = useMemo(() => {
+    const base = tab === 'past' ? pastTenants : activeTenants;
+    const globalQ = String(globalSearch || '').trim().toLowerCase();
+    const localQ = search.trim().toLowerCase();
+
+    return base.filter((t) => {
+      if (filterBuildingId && t.buildingId !== filterBuildingId) return false;
+      if (filterFloorId && t.floorId !== filterFloorId) return false;
+      const q = globalQ || localQ;
+      if (!q) return true;
+      return [t.fullName, t.phone, t.roomNumber, t.building, t.floor, t.idNumber]
+        .filter(Boolean)
+        .some((v) => String(v).toLowerCase().includes(q));
+    });
+  }, [activeTenants, pastTenants, tab, globalSearch, search, filterBuildingId, filterFloorId]);
+
+  // ── registration helpers ─────────────────────────────────────────
+  const regFloors = useMemo(
+    () => floors.filter((f) => f.buildingId === regBuildingId),
+    [floors, regBuildingId],
   );
   const apartments = useMemo(
     () =>
       rooms.filter(
         (r) =>
-          r.buildingId === buildingId &&
-          (!floorId || r.floorId === floorId) &&
+          r.buildingId === regBuildingId &&
+          (!regFloorId || r.floorId === regFloorId) &&
           r.status === 'Available',
       ),
-    [rooms, buildingId, floorId],
+    [rooms, regBuildingId, regFloorId],
   );
-
   const floorRoomsSummary = useMemo(() => {
-    if (!buildingId || !floorId) return '';
-    const inFloor = allRooms.filter((r) => r.buildingId === buildingId && r.floorId === floorId);
-    if (inFloor.length === 0) return '';
-    return inFloor
-      .map((r) => `${r.roomNumber} (${r.usage}, ${r.status})`)
-      .join(', ');
-  }, [allRooms, buildingId, floorId]);
+    if (!regBuildingId || !regFloorId) return '';
+    const inFloor = allRooms.filter(
+      (r) => r.buildingId === regBuildingId && r.floorId === regFloorId,
+    );
+    return inFloor.map((r) => `${r.roomNumber} (${r.usage}, ${r.status})`).join(', ');
+  }, [allRooms, regBuildingId, regFloorId]);
   const selectedRoom = rooms.find((r) => r.id === roomId);
 
   const onRoom = (id) => {
@@ -100,7 +158,13 @@ export default function Apartments() {
   };
 
   const register = async () => {
-    if (!selectedRoom || !form.fullName.trim() || !form.phone.trim() || !form.idNumber.trim() || !form.leaseStart) {
+    if (
+      !selectedRoom ||
+      !form.fullName.trim() ||
+      !form.phone.trim() ||
+      !form.idNumber.trim() ||
+      !form.leaseStart
+    ) {
       toast.error('Fill tenant, apartment, ID, and lease start');
       return;
     }
@@ -116,8 +180,8 @@ export default function Apartments() {
       });
       toast.success('Tenant registered');
       setTab('tenants');
-      setBuildingId('');
-      setFloorId('');
+      setRegBuildingId('');
+      setRegFloorId('');
       setRoomId('');
       setForm(emptyForm);
       await load();
@@ -126,51 +190,61 @@ export default function Apartments() {
     }
   };
 
-  const openMonth = (tenant, { month, label, payment }) => {
-    setModal({
-      tenant,
-      month,
-      label,
-      status: payment.status || 'Unpaid',
-      amountDue: payment.amountDue || Math.max(0, tenant.monthlyRent - (tenant.discount || 0)),
-      amountPaid: payment.amountPaid || 0,
-      method: payment.method || 'Cash',
-      paymentDate: payment.paymentDate || new Date().toISOString().slice(0, 10),
-      paymentId: payment.id,
+  // ── termination helpers ──────────────────────────────────────────
+  const openEdit = (tenant) => {
+    setEditModal({ tenant });
+    setEditForm({
+      fullName: tenant.fullName || '',
+      phone: tenant.phone || '',
+      idNumber: tenant.idNumber || '',
+      nationality: tenant.nationality || '',
+      gender: tenant.gender || '',
+      emergencyContact: tenant.emergencyContact || '',
+      monthlyRent: String(tenant.monthlyRent ?? ''),
+      discount: tenant.discount ?? 0,
+      leaseStart: tenant.leaseStart || '',
     });
   };
 
-  const savePayment = async () => {
-    if (!modal) return;
-    const amountPaid = Number(modal.amountPaid) || 0;
-    const amountDue = Number(modal.amountDue) || 0;
-    const status =
-      amountPaid <= 0 ? 'Unpaid' : amountPaid >= amountDue ? 'Paid' : 'Partial';
+  const saveEdit = async () => {
+    if (!editModal) return;
+    setSavingEdit(true);
     try {
-      if (modal.paymentId) {
-        await rentalApi.updatePayment(modal.paymentId, {
-          amountPaid,
-          amountDue,
-          status,
-          method: status === 'Unpaid' ? null : modal.method,
-          paymentDate: status === 'Unpaid' ? null : modal.paymentDate,
-        });
-      } else {
-        await rentalApi.createPayment({
-          tenantId: modal.tenant.id,
-          month: modal.month,
-          amountDue,
-          amountPaid,
-          status,
-          method: status === 'Unpaid' ? null : modal.method,
-          paymentDate: status === 'Unpaid' ? null : modal.paymentDate,
-        });
-      }
-      setModal(null);
-      toast.success('Payment updated');
+      await rentalApi.updateTenant(editModal.tenant.id, {
+        ...editForm,
+        monthlyRent: Number(editForm.monthlyRent),
+        discount: Number(editForm.discount) || 0,
+      });
+      toast.success('Tenant updated');
+      setEditModal(null);
       await load();
     } catch (err) {
-      toast.error(err.message || 'Could not save payment');
+      toast.error(err.message || 'Could not update tenant');
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
+  const openTerminate = (tenant) => {
+    setTermModal({ tenant });
+    setTermForm({ leaseEnd: today(), notes: '' });
+  };
+
+  const confirmTerminate = async () => {
+    if (!termModal) return;
+    setTerminating(true);
+    try {
+      await rentalApi.terminateTenant(termModal.tenant.id, {
+        leaseEnd: termForm.leaseEnd || today(),
+        notes: termForm.notes || undefined,
+      });
+      toast.success(`Lease terminated for ${termModal.tenant.fullName}`);
+      setTermModal(null);
+      await load();
+    } catch (err) {
+      toast.error(err.message || 'Could not terminate lease');
+    } finally {
+      setTerminating(false);
     }
   };
 
@@ -186,9 +260,11 @@ export default function Apartments() {
     <div>
       <PageHeader title="Apartments" subtitle="Residential tenants and monthly rent calendar." />
 
+      {/* tab strip */}
       <div className="mb-6 flex flex-wrap gap-2">
         {[
-          { id: 'tenants', label: 'Current Tenants' },
+          { id: 'tenants', label: `Active Tenants (${activeTenants.length})` },
+          { id: 'past', label: `Past Tenants (${pastTenants.length})` },
           { id: 'register', label: 'Register Tenant' },
         ].map((t) => (
           <button
@@ -207,15 +283,16 @@ export default function Apartments() {
         ))}
       </div>
 
+      {/* ── Register form ─────────────────────────────────────── */}
       {tab === 'register' ? (
         <Card title="Register Tenant">
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <Select
               label="Building"
-              value={buildingId}
+              value={regBuildingId}
               onChange={(e) => {
-                setBuildingId(e.target.value);
-                setFloorId('');
+                setRegBuildingId(e.target.value);
+                setRegFloorId('');
                 setRoomId('');
               }}
             >
@@ -228,15 +305,15 @@ export default function Apartments() {
             </Select>
             <Select
               label="Floor"
-              value={floorId}
-              disabled={!buildingId}
+              value={regFloorId}
+              disabled={!regBuildingId}
               onChange={(e) => {
-                setFloorId(e.target.value);
+                setRegFloorId(e.target.value);
                 setRoomId('');
               }}
             >
               <option value="">Select</option>
-              {buildingFloors.map((f) => (
+              {regFloors.map((f) => (
                 <option key={f.id} value={f.id}>
                   {f.name}
                 </option>
@@ -245,7 +322,7 @@ export default function Apartments() {
             <Select
               label="Apartment (Available)"
               value={roomId}
-              disabled={!buildingId}
+              disabled={!regBuildingId}
               onChange={(e) => onRoom(e.target.value)}
             >
               <option value="">Select</option>
@@ -255,12 +332,10 @@ export default function Apartments() {
                 </option>
               ))}
             </Select>
-
-            {buildingId && floorId && apartments.length === 0 ? (
-              <p className="col-span-1 mt-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-100">
-                No <strong>Available Apartment</strong> rooms found on this floor. Current rooms:
-                {floorRoomsSummary ? ` ${floorRoomsSummary}` : ' none'}. Change room <strong>usage</strong> to
-                Apartment and make sure <strong>status</strong> is Available in Setup.
+            {regBuildingId && regFloorId && apartments.length === 0 ? (
+              <p className="col-span-full mt-1 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-100">
+                No available apartment rooms on this floor.
+                {floorRoomsSummary ? ` Current rooms: ${floorRoomsSummary}` : ''}
               </p>
             ) : null}
             <Input
@@ -321,94 +396,220 @@ export default function Apartments() {
           </Button>
         </Card>
       ) : (
-        <div className="space-y-4">
-          {tenants.length === 0 ? (
-            <Card>
-              <p className="text-sm text-[var(--text-muted)]">No apartment tenants yet.</p>
-            </Card>
-          ) : (
-            tenants.map((t) => (
-              <Card
-                key={t.id}
-                title={`${t.fullName} · ${t.roomNumber}`}
-                action={<Badge status={t.status}>{t.status}</Badge>}
+        <>
+          {/* ── Filter bar ──────────────────────────────────────── */}
+          <Card className="mb-4">
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <Input
+                label="Search"
+                placeholder="Name, phone, room…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+              <Select
+                label="Building"
+                value={filterBuildingId}
+                onChange={(e) => {
+                  setFilterBuildingId(e.target.value);
+                  setFilterFloorId('');
+                }}
               >
-                <p className="mb-4 text-sm text-[var(--text-muted)]">
-                  {t.building} · {t.phone} · Rent {formatCurrency(t.monthlyRent)} · Since{' '}
-                  {formatDate(t.leaseStart)}
+                <option value="">All Buildings</option>
+                {buildings.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.name}
+                  </option>
+                ))}
+              </Select>
+              <Select
+                label="Floor"
+                value={filterFloorId}
+                onChange={(e) => setFilterFloorId(e.target.value)}
+                disabled={filterFloors.length === 0}
+              >
+                <option value="">All Floors</option>
+                {filterFloors.map((f) => (
+                  <option key={f.id} value={f.id}>
+                    {f.name}
+                  </option>
+                ))}
+              </Select>
+              <div className="flex items-end">
+                {(search || filterBuildingId || filterFloorId) ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSearch('');
+                      setFilterBuildingId('');
+                      setFilterFloorId('');
+                    }}
+                    className="h-11 rounded-xl border border-[var(--border)] px-4 text-sm text-[var(--text-muted)] hover:bg-[var(--surface-2)]"
+                  >
+                    Clear filters
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          </Card>
+
+          {/* ── Tenant cards ─────────────────────────────────────── */}
+          <div className="space-y-4">
+            {displayedTenants.length === 0 ? (
+              <Card>
+                <p className="text-sm text-[var(--text-muted)]">
+                  {tab === 'past' ? 'No past tenants.' : 'No active tenants match your filters.'}
                 </p>
-                <p className="mb-2 text-sm font-medium text-[var(--text)]">
-                  Payment calendar (12 months)
-                </p>
-                <PaymentCalendar
-                  payments={payments}
-                  tenantId={t.id}
-                  amountDue={Math.max(0, t.monthlyRent - (t.discount || 0))}
-                  onMonthClick={(payload) => openMonth(t, payload)}
-                />
               </Card>
-            ))
-          )}
-        </div>
+            ) : (
+              displayedTenants.map((t) => (
+                <Card
+                  key={t.id}
+                  title={`${t.fullName} · ${t.roomNumber}`}
+                  action={
+                    <div className="flex items-center gap-2">
+                      <Badge status={t.status}>{t.status}</Badge>
+                      <button
+                        type="button"
+                        onClick={() => openEdit(t)}
+                        className="rounded-xl border border-[var(--border)] px-3 py-1.5 text-xs font-medium text-[var(--text-muted)] transition hover:bg-[var(--surface-2)]"
+                      >
+                        Edit
+                      </button>
+                      {t.status === 'Active' ? (
+                        <button
+                          type="button"
+                          onClick={() => openTerminate(t)}
+                          className="flex items-center gap-1.5 rounded-xl border border-rose-200 px-3 py-1.5 text-xs font-medium text-rose-600 transition hover:bg-rose-50 dark:border-rose-800 dark:text-rose-400 dark:hover:bg-rose-950/30"
+                        >
+                          Terminate Lease
+                        </button>
+                      ) : null}
+                    </div>
+                  }
+                >
+                  <p className="mb-1 text-sm text-[var(--text-muted)]">
+                    {t.building}
+                    {t.floor ? ` · ${t.floor}` : ''} · {t.phone} · Rent{' '}
+                    {formatCurrency(t.monthlyRent)}
+                    {t.discount ? ` (−${formatCurrency(t.discount)})` : ''} · Since{' '}
+                    {formatDate(t.leaseStart)}
+                    {t.leaseEnd ? ` · Ended ${formatDate(t.leaseEnd)}` : ''}
+                  </p>
+                  {t.status === 'Active' ? (
+                    <div className="mt-4">
+                      <PaymentCalendar
+                        payments={payments}
+                        tenantId={t.id}
+                        amountDue={Math.max(0, t.monthlyRent - (t.discount || 0))}
+                        leaseStart={t.leaseStart}
+                        leaseEnd={t.leaseEnd}
+                        tenantName={t.fullName}
+                        unitNumber={t.roomNumber}
+                        building={t.building}
+                        floor={t.floor}
+                        onPaymentSaved={load}
+                      />
+                    </div>
+                  ) : null}
+                </Card>
+              ))
+            )}
+          </div>
+        </>
       )}
 
+      {/* ── Edit Tenant modal ─────────────────────────────────── */}
       <Modal
-        open={Boolean(modal)}
-        onClose={() => setModal(null)}
-        title={modal ? `Rent · ${modal.label}` : 'Payment'}
+        open={Boolean(editModal)}
+        onClose={() => !savingEdit && setEditModal(null)}
+        title="Edit Tenant"
         footer={
           <div className="flex justify-end gap-2">
-            <Button variant="secondary" className="h-12 px-5" onClick={() => setModal(null)}>
+            <Button variant="secondary" className="h-12 px-5" onClick={() => setEditModal(null)} disabled={savingEdit}>
               Cancel
             </Button>
-            <Button className="h-12 px-5 text-base" onClick={savePayment}>
-              Save Payment
+            <Button className="h-12 px-5" onClick={saveEdit} disabled={savingEdit}>
+              {savingEdit ? 'Saving…' : 'Save Changes'}
             </Button>
           </div>
         }
       >
-        {modal ? (
+        {editModal ? (
           <div className="grid gap-4 sm:grid-cols-2">
-            <Select
-              label="Status"
-              value={modal.status}
-              onChange={(e) => setModal({ ...modal, status: e.target.value })}
-            >
-              {PAYMENT_STATUSES.map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
+            <Input label="Full name" value={editForm.fullName} onChange={(e) => setEditForm({ ...editForm, fullName: e.target.value })} />
+            <Input label="Phone" value={editForm.phone} onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })} />
+            <Input label="ID number" value={editForm.idNumber} onChange={(e) => setEditForm({ ...editForm, idNumber: e.target.value })} />
+            <Input label="Nationality" value={editForm.nationality} onChange={(e) => setEditForm({ ...editForm, nationality: e.target.value })} />
+            <Select label="Gender" value={editForm.gender} onChange={(e) => setEditForm({ ...editForm, gender: e.target.value })}>
+              <option value="">Select</option>
+              <option value="Male">Male</option>
+              <option value="Female">Female</option>
             </Select>
-            <Input
-              label="Amount due"
-              type="number"
-              value={modal.amountDue}
-              onChange={(e) => setModal({ ...modal, amountDue: e.target.value })}
-            />
-            <Input
-              label="Amount paid"
-              type="number"
-              value={modal.amountPaid}
-              onChange={(e) => setModal({ ...modal, amountPaid: e.target.value })}
-            />
-            <Select
-              label="Method"
-              value={modal.method || 'Cash'}
-              onChange={(e) => setModal({ ...modal, method: e.target.value })}
+            <Input label="Emergency contact" value={editForm.emergencyContact} onChange={(e) => setEditForm({ ...editForm, emergencyContact: e.target.value })} />
+            <Input label="Monthly rent" type="number" value={editForm.monthlyRent} onChange={(e) => setEditForm({ ...editForm, monthlyRent: e.target.value })} />
+            <Input label="Discount" type="number" value={editForm.discount} onChange={(e) => setEditForm({ ...editForm, discount: e.target.value })} />
+            <Input label="Lease start" type="date" value={editForm.leaseStart} onChange={(e) => setEditForm({ ...editForm, leaseStart: e.target.value })} />
+          </div>
+        ) : null}
+      </Modal>
+
+      {/* ── Terminate Lease modal ─────────────────────────────── */}
+      <Modal
+        open={Boolean(termModal)}
+        onClose={() => !terminating && setTermModal(null)}
+        title="Terminate Lease"
+        footer={
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="secondary"
+              className="h-12 px-5"
+              onClick={() => setTermModal(null)}
+              disabled={terminating}
             >
-              {PAYMENT_METHODS.map((m) => (
-                <option key={m} value={m}>
-                  {m}
-                </option>
-              ))}
-            </Select>
-            <Input
-              label="Payment date"
-              type="date"
-              value={modal.paymentDate || ''}
-              onChange={(e) => setModal({ ...modal, paymentDate: e.target.value })}
-            />
+              Cancel
+            </Button>
+            <button
+              type="button"
+              disabled={terminating}
+              onClick={confirmTerminate}
+              className="h-12 rounded-xl bg-rose-600 px-6 text-base font-medium text-white transition hover:bg-rose-700 disabled:opacity-60"
+            >
+              {terminating ? 'Terminating…' : 'Confirm Termination'}
+            </button>
+          </div>
+        }
+      >
+        {termModal ? (
+          <div className="space-y-4">
+            <div className="flex items-start gap-3 rounded-xl border border-rose-200 bg-rose-50 p-3 dark:border-rose-800 dark:bg-rose-950/30">
+              <MdWarning className="mt-0.5 h-5 w-5 shrink-0 text-rose-500" />
+              <p className="text-sm text-rose-800 dark:text-rose-200">
+                This will mark <strong>{termModal.tenant.fullName}</strong>'s lease as{' '}
+                <strong>Ended</strong> and set room{' '}
+                <strong>{termModal.tenant.roomNumber}</strong> back to{' '}
+                <strong>Available</strong>. This cannot be undone.
+              </p>
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Input
+                label="Termination date"
+                type="date"
+                value={termForm.leaseEnd}
+                onChange={(e) => setTermForm({ ...termForm, leaseEnd: e.target.value })}
+              />
+              <div className="sm:col-span-2">
+                <label className="mb-1.5 block text-sm font-medium text-[var(--text)]">
+                  Reason / Notes (optional)
+                </label>
+                <textarea
+                  value={termForm.notes}
+                  onChange={(e) => setTermForm({ ...termForm, notes: e.target.value })}
+                  rows={3}
+                  placeholder="e.g. Tenant relocated, lease expired…"
+                  className="w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2.5 text-sm text-[var(--text)] outline-none placeholder:text-[var(--text-muted)] focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20"
+                />
+              </div>
+            </div>
           </div>
         ) : null}
       </Modal>

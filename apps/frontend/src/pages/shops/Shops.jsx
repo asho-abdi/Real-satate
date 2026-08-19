@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
+import { useOutletContext } from 'react-router-dom';
+import { MdWarning } from 'react-icons/md';
 import PageHeader from '../../components/ui/PageHeader.jsx';
 import Card from '../../components/ui/Card.jsx';
 import Button from '../../components/ui/Button.jsx';
@@ -9,7 +11,6 @@ import Modal from '../../components/ui/Modal.jsx';
 import Badge from '../../components/ui/Badge.jsx';
 import Spinner from '../../components/ui/Spinner.jsx';
 import PaymentCalendar from '../../components/rentals/PaymentCalendar.jsx';
-import { PAYMENT_METHODS, PAYMENT_STATUSES } from '../../utils/constants.js';
 import { formatCurrency, formatDate, cn } from '../../utils/format.js';
 import { rentalApi } from '../../services/rentalApi.js';
 
@@ -23,19 +24,42 @@ const emptyForm = {
   leaseStart: '',
 };
 
+const today = () => new Date().toISOString().slice(0, 10);
+
 export default function Shops() {
-  const [tab, setTab] = useState('tenants');
+  const { globalSearch = '' } = useOutletContext() || {};
+
+  // data
   const [buildings, setBuildings] = useState([]);
   const [floors, setFloors] = useState([]);
   const [rooms, setRooms] = useState([]);
   const [businesses, setBusinesses] = useState([]);
   const [payments, setPayments] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [modal, setModal] = useState(null);
-  const [buildingId, setBuildingId] = useState('');
-  const [floorId, setFloorId] = useState('');
+
+  // tabs
+  const [tab, setTab] = useState('tenants');
+
+  // registration form state
+  const [regBuildingId, setRegBuildingId] = useState('');
+  const [regFloorId, setRegFloorId] = useState('');
   const [roomId, setRoomId] = useState('');
   const [form, setForm] = useState(emptyForm);
+
+  // filter state (business list)
+  const [filterBuildingId, setFilterBuildingId] = useState('');
+  const [filterFloorId, setFilterFloorId] = useState('');
+  const [search, setSearch] = useState('');
+
+  // terminate modal
+  const [termModal, setTermModal] = useState(null); // { biz }
+  const [termForm, setTermForm] = useState({ leaseEnd: today(), notes: '' });
+  const [terminating, setTerminating] = useState(false);
+
+  // edit modal
+  const [editModal, setEditModal] = useState(null);
+  const [editForm, setEditForm] = useState(emptyForm);
+  const [savingEdit, setSavingEdit] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -63,19 +87,55 @@ export default function Shops() {
     load();
   }, [load]);
 
-  const buildingFloors = useMemo(
-    () => floors.filter((f) => f.buildingId === buildingId),
-    [floors, buildingId],
+  useEffect(() => {
+    if (String(globalSearch || '').trim()) setTab('tenants');
+  }, [globalSearch]);
+
+  // ── filter helpers ──────────────────────────────────────────────
+  const filterFloors = useMemo(
+    () => (filterBuildingId ? floors.filter((f) => f.buildingId === filterBuildingId) : floors),
+    [floors, filterBuildingId],
+  );
+
+  const activeBusinesses = useMemo(
+    () => businesses.filter((b) => b.status === 'Active'),
+    [businesses],
+  );
+  const pastBusinesses = useMemo(
+    () => businesses.filter((b) => b.status !== 'Active'),
+    [businesses],
+  );
+
+  const displayedBusinesses = useMemo(() => {
+    const base = tab === 'past' ? pastBusinesses : activeBusinesses;
+    const globalQ = String(globalSearch || '').trim().toLowerCase();
+    const localQ = search.trim().toLowerCase();
+
+    return base.filter((b) => {
+      if (filterBuildingId && b.buildingId !== filterBuildingId) return false;
+      if (filterFloorId && b.floorId !== filterFloorId) return false;
+      const q = globalQ || localQ;
+      if (!q) return true;
+      return [b.businessName, b.contactName, b.phone, b.roomNumber, b.building, b.floor, b.idNumber]
+        .filter(Boolean)
+        .some((v) => String(v).toLowerCase().includes(q));
+    });
+  }, [activeBusinesses, pastBusinesses, tab, globalSearch, search, filterBuildingId, filterFloorId]);
+
+  // ── registration helpers ─────────────────────────────────────────
+  const regFloors = useMemo(
+    () => floors.filter((f) => f.buildingId === regBuildingId),
+    [floors, regBuildingId],
   );
   const shops = useMemo(
     () =>
       rooms.filter(
         (r) =>
-          r.buildingId === buildingId &&
-          (!floorId || r.floorId === floorId) &&
+          r.buildingId === regBuildingId &&
+          (!regFloorId || r.floorId === regFloorId) &&
           r.status === 'Available',
       ),
-    [rooms, buildingId, floorId],
+    [rooms, regBuildingId, regFloorId],
   );
   const selectedRoom = rooms.find((r) => r.id === roomId);
 
@@ -86,7 +146,13 @@ export default function Shops() {
   };
 
   const register = async () => {
-    if (!selectedRoom || !form.businessName.trim() || !form.contactName.trim() || !form.phone.trim() || !form.leaseStart) {
+    if (
+      !selectedRoom ||
+      !form.businessName.trim() ||
+      !form.contactName.trim() ||
+      !form.phone.trim() ||
+      !form.leaseStart
+    ) {
       toast.error('Fill business, shop, phone, and lease start');
       return;
     }
@@ -103,8 +169,8 @@ export default function Shops() {
       });
       toast.success('Business registered');
       setTab('tenants');
-      setBuildingId('');
-      setFloorId('');
+      setRegBuildingId('');
+      setRegFloorId('');
       setRoomId('');
       setForm(emptyForm);
       await load();
@@ -113,51 +179,59 @@ export default function Shops() {
     }
   };
 
-  const openMonth = (biz, { month, label, payment }) => {
-    setModal({
-      biz,
-      month,
-      label,
-      status: payment.status || 'Unpaid',
-      amountDue: payment.amountDue || Math.max(0, biz.monthlyRent - (biz.discount || 0)),
-      amountPaid: payment.amountPaid || 0,
-      method: payment.method || 'Cash',
-      paymentDate: payment.paymentDate || new Date().toISOString().slice(0, 10),
-      paymentId: payment.id,
+  // ── termination helpers ──────────────────────────────────────────
+  const openEdit = (biz) => {
+    setEditModal({ biz });
+    setEditForm({
+      businessName: biz.businessName || '',
+      contactName: biz.contactName || '',
+      phone: biz.phone || '',
+      idNumber: biz.idNumber || '',
+      monthlyRent: String(biz.monthlyRent ?? ''),
+      discount: biz.discount ?? 0,
+      leaseStart: biz.leaseStart || '',
     });
   };
 
-  const savePayment = async () => {
-    if (!modal) return;
-    const amountPaid = Number(modal.amountPaid) || 0;
-    const amountDue = Number(modal.amountDue) || 0;
-    const status =
-      amountPaid <= 0 ? 'Unpaid' : amountPaid >= amountDue ? 'Paid' : 'Partial';
+  const saveEdit = async () => {
+    if (!editModal) return;
+    setSavingEdit(true);
     try {
-      if (modal.paymentId) {
-        await rentalApi.updatePayment(modal.paymentId, {
-          amountPaid,
-          amountDue,
-          status,
-          method: status === 'Unpaid' ? null : modal.method,
-          paymentDate: status === 'Unpaid' ? null : modal.paymentDate,
-        });
-      } else {
-        await rentalApi.createPayment({
-          businessId: modal.biz.id,
-          month: modal.month,
-          amountDue,
-          amountPaid,
-          status,
-          method: status === 'Unpaid' ? null : modal.method,
-          paymentDate: status === 'Unpaid' ? null : modal.paymentDate,
-        });
-      }
-      setModal(null);
-      toast.success('Payment updated');
+      await rentalApi.updateBusiness(editModal.biz.id, {
+        ...editForm,
+        monthlyRent: Number(editForm.monthlyRent),
+        discount: Number(editForm.discount) || 0,
+      });
+      toast.success('Business updated');
+      setEditModal(null);
       await load();
     } catch (err) {
-      toast.error(err.message || 'Could not save payment');
+      toast.error(err.message || 'Could not update business');
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
+  const openTerminate = (biz) => {
+    setTermModal({ biz });
+    setTermForm({ leaseEnd: today(), notes: '' });
+  };
+
+  const confirmTerminate = async () => {
+    if (!termModal) return;
+    setTerminating(true);
+    try {
+      await rentalApi.terminateBusiness(termModal.biz.id, {
+        leaseEnd: termForm.leaseEnd || today(),
+        notes: termForm.notes || undefined,
+      });
+      toast.success(`Lease terminated for ${termModal.biz.businessName}`);
+      setTermModal(null);
+      await load();
+    } catch (err) {
+      toast.error(err.message || 'Could not terminate lease');
+    } finally {
+      setTerminating(false);
     }
   };
 
@@ -173,9 +247,11 @@ export default function Shops() {
     <div>
       <PageHeader title="Shops" subtitle="Commercial shops and monthly rent calendar." />
 
+      {/* tab strip */}
       <div className="mb-6 flex flex-wrap gap-2">
         {[
-          { id: 'tenants', label: 'Current Businesses' },
+          { id: 'tenants', label: `Active Businesses (${activeBusinesses.length})` },
+          { id: 'past', label: `Past Businesses (${pastBusinesses.length})` },
           { id: 'register', label: 'Register Business' },
         ].map((t) => (
           <button
@@ -194,15 +270,16 @@ export default function Shops() {
         ))}
       </div>
 
+      {/* ── Register form ─────────────────────────────────────── */}
       {tab === 'register' ? (
         <Card title="Register Business">
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <Select
               label="Building"
-              value={buildingId}
+              value={regBuildingId}
               onChange={(e) => {
-                setBuildingId(e.target.value);
-                setFloorId('');
+                setRegBuildingId(e.target.value);
+                setRegFloorId('');
                 setRoomId('');
               }}
             >
@@ -215,15 +292,15 @@ export default function Shops() {
             </Select>
             <Select
               label="Floor"
-              value={floorId}
-              disabled={!buildingId}
+              value={regFloorId}
+              disabled={!regBuildingId}
               onChange={(e) => {
-                setFloorId(e.target.value);
+                setRegFloorId(e.target.value);
                 setRoomId('');
               }}
             >
               <option value="">Select</option>
-              {buildingFloors.map((f) => (
+              {regFloors.map((f) => (
                 <option key={f.id} value={f.id}>
                   {f.name}
                 </option>
@@ -232,7 +309,7 @@ export default function Shops() {
             <Select
               label="Shop (Available)"
               value={roomId}
-              disabled={!buildingId}
+              disabled={!regBuildingId}
               onChange={(e) => onRoom(e.target.value)}
             >
               <option value="">Select</option>
@@ -286,96 +363,216 @@ export default function Shops() {
           </Button>
         </Card>
       ) : (
-        <div className="space-y-4">
-          {businesses.length === 0 ? (
-            <Card>
-              <p className="text-sm text-[var(--text-muted)]">No shops registered yet.</p>
-            </Card>
-          ) : (
-            businesses.map((b) => (
-              <Card
-                key={b.id}
-                title={`${b.businessName} · ${b.roomNumber}`}
-                action={<Badge status={b.status}>{b.status}</Badge>}
+        <>
+          {/* ── Filter bar ──────────────────────────────────────── */}
+          <Card className="mb-4">
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <Input
+                label="Search"
+                placeholder="Business, contact, phone, room…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+              <Select
+                label="Building"
+                value={filterBuildingId}
+                onChange={(e) => {
+                  setFilterBuildingId(e.target.value);
+                  setFilterFloorId('');
+                }}
               >
-                <p className="mb-4 text-sm text-[var(--text-muted)]">
-                  {b.building} · {b.contactName} · {b.phone} · Rent{' '}
-                  {formatCurrency(b.monthlyRent)}
-                  {b.discount ? ` (−${formatCurrency(b.discount)})` : ''} · Since{' '}
-                  {formatDate(b.leaseStart)}
+                <option value="">All Buildings</option>
+                {buildings.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.name}
+                  </option>
+                ))}
+              </Select>
+              <Select
+                label="Floor"
+                value={filterFloorId}
+                onChange={(e) => setFilterFloorId(e.target.value)}
+                disabled={filterFloors.length === 0}
+              >
+                <option value="">All Floors</option>
+                {filterFloors.map((f) => (
+                  <option key={f.id} value={f.id}>
+                    {f.name}
+                  </option>
+                ))}
+              </Select>
+              <div className="flex items-end">
+                {(search || filterBuildingId || filterFloorId) ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSearch('');
+                      setFilterBuildingId('');
+                      setFilterFloorId('');
+                    }}
+                    className="h-11 rounded-xl border border-[var(--border)] px-4 text-sm text-[var(--text-muted)] hover:bg-[var(--surface-2)]"
+                  >
+                    Clear filters
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          </Card>
+
+          {/* ── Business cards ───────────────────────────────────── */}
+          <div className="space-y-4">
+            {displayedBusinesses.length === 0 ? (
+              <Card>
+                <p className="text-sm text-[var(--text-muted)]">
+                  {tab === 'past'
+                    ? 'No past businesses.'
+                    : 'No active businesses match your filters.'}
                 </p>
-                <p className="mb-2 text-sm font-medium text-[var(--text)]">
-                  Payment calendar (12 months)
-                </p>
-                <PaymentCalendar
-                  payments={payments}
-                  businessId={b.id}
-                  amountDue={Math.max(0, b.monthlyRent - (b.discount || 0))}
-                  onMonthClick={(payload) => openMonth(b, payload)}
-                />
               </Card>
-            ))
-          )}
-        </div>
+            ) : (
+              displayedBusinesses.map((b) => (
+                <Card
+                  key={b.id}
+                  title={`${b.businessName} · ${b.roomNumber}`}
+                  action={
+                    <div className="flex items-center gap-2">
+                      <Badge status={b.status}>{b.status}</Badge>
+                      <button
+                        type="button"
+                        onClick={() => openEdit(b)}
+                        className="rounded-xl border border-[var(--border)] px-3 py-1.5 text-xs font-medium text-[var(--text-muted)] transition hover:bg-[var(--surface-2)]"
+                      >
+                        Edit
+                      </button>
+                      {b.status === 'Active' ? (
+                        <button
+                          type="button"
+                          onClick={() => openTerminate(b)}
+                          className="flex items-center gap-1.5 rounded-xl border border-rose-200 px-3 py-1.5 text-xs font-medium text-rose-600 transition hover:bg-rose-50 dark:border-rose-800 dark:text-rose-400 dark:hover:bg-rose-950/30"
+                        >
+                          Terminate Lease
+                        </button>
+                      ) : null}
+                    </div>
+                  }
+                >
+                  <p className="mb-1 text-sm text-[var(--text-muted)]">
+                    {b.building}
+                    {b.floor ? ` · ${b.floor}` : ''} · {b.contactName} · {b.phone} · Rent{' '}
+                    {formatCurrency(b.monthlyRent)}
+                    {b.discount ? ` (−${formatCurrency(b.discount)})` : ''} · Since{' '}
+                    {formatDate(b.leaseStart)}
+                    {b.leaseEnd ? ` · Ended ${formatDate(b.leaseEnd)}` : ''}
+                  </p>
+                  {b.status === 'Active' ? (
+                    <div className="mt-4">
+                      <PaymentCalendar
+                        payments={payments}
+                        businessId={b.id}
+                        amountDue={Math.max(0, b.monthlyRent - (b.discount || 0))}
+                        leaseStart={b.leaseStart}
+                        leaseEnd={b.leaseEnd}
+                        tenantName={b.businessName || b.contactName}
+                        unitNumber={b.roomNumber}
+                        building={b.building}
+                        floor={b.floor}
+                        onPaymentSaved={load}
+                      />
+                    </div>
+                  ) : null}
+                </Card>
+              ))
+            )}
+          </div>
+        </>
       )}
 
+      {/* ── Edit Business modal ─────────────────────────────────── */}
       <Modal
-        open={Boolean(modal)}
-        onClose={() => setModal(null)}
-        title={modal ? `Rent · ${modal.label}` : 'Payment'}
+        open={Boolean(editModal)}
+        onClose={() => !savingEdit && setEditModal(null)}
+        title="Edit Business"
         footer={
           <div className="flex justify-end gap-2">
-            <Button variant="secondary" className="h-12 px-5" onClick={() => setModal(null)}>
+            <Button variant="secondary" className="h-12 px-5" onClick={() => setEditModal(null)} disabled={savingEdit}>
               Cancel
             </Button>
-            <Button className="h-12 px-5 text-base" onClick={savePayment}>
-              Save Payment
+            <Button className="h-12 px-5" onClick={saveEdit} disabled={savingEdit}>
+              {savingEdit ? 'Saving…' : 'Save Changes'}
             </Button>
           </div>
         }
       >
-        {modal ? (
+        {editModal ? (
           <div className="grid gap-4 sm:grid-cols-2">
-            <Select
-              label="Status"
-              value={modal.status}
-              onChange={(e) => setModal({ ...modal, status: e.target.value })}
+            <Input label="Business name" value={editForm.businessName} onChange={(e) => setEditForm({ ...editForm, businessName: e.target.value })} />
+            <Input label="Contact name" value={editForm.contactName} onChange={(e) => setEditForm({ ...editForm, contactName: e.target.value })} />
+            <Input label="Phone" value={editForm.phone} onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })} />
+            <Input label="License / ID" value={editForm.idNumber} onChange={(e) => setEditForm({ ...editForm, idNumber: e.target.value })} />
+            <Input label="Monthly rent" type="number" value={editForm.monthlyRent} onChange={(e) => setEditForm({ ...editForm, monthlyRent: e.target.value })} />
+            <Input label="Discount" type="number" value={editForm.discount} onChange={(e) => setEditForm({ ...editForm, discount: e.target.value })} />
+            <Input label="Lease start" type="date" value={editForm.leaseStart} onChange={(e) => setEditForm({ ...editForm, leaseStart: e.target.value })} />
+          </div>
+        ) : null}
+      </Modal>
+
+      {/* ── Terminate Lease modal ─────────────────────────────── */}
+      <Modal
+        open={Boolean(termModal)}
+        onClose={() => !terminating && setTermModal(null)}
+        title="Terminate Lease"
+        footer={
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="secondary"
+              className="h-12 px-5"
+              onClick={() => setTermModal(null)}
+              disabled={terminating}
             >
-              {PAYMENT_STATUSES.map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
-            </Select>
-            <Input
-              label="Amount due"
-              type="number"
-              value={modal.amountDue}
-              onChange={(e) => setModal({ ...modal, amountDue: e.target.value })}
-            />
-            <Input
-              label="Amount paid"
-              type="number"
-              value={modal.amountPaid}
-              onChange={(e) => setModal({ ...modal, amountPaid: e.target.value })}
-            />
-            <Select
-              label="Method"
-              value={modal.method || 'Cash'}
-              onChange={(e) => setModal({ ...modal, method: e.target.value })}
+              Cancel
+            </Button>
+            <button
+              type="button"
+              disabled={terminating}
+              onClick={confirmTerminate}
+              className="h-12 rounded-xl bg-rose-600 px-6 text-base font-medium text-white transition hover:bg-rose-700 disabled:opacity-60"
             >
-              {PAYMENT_METHODS.map((m) => (
-                <option key={m} value={m}>
-                  {m}
-                </option>
-              ))}
-            </Select>
-            <Input
-              label="Payment date"
-              type="date"
-              value={modal.paymentDate || ''}
-              onChange={(e) => setModal({ ...modal, paymentDate: e.target.value })}
-            />
+              {terminating ? 'Terminating…' : 'Confirm Termination'}
+            </button>
+          </div>
+        }
+      >
+        {termModal ? (
+          <div className="space-y-4">
+            <div className="flex items-start gap-3 rounded-xl border border-rose-200 bg-rose-50 p-3 dark:border-rose-800 dark:bg-rose-950/30">
+              <MdWarning className="mt-0.5 h-5 w-5 shrink-0 text-rose-500" />
+              <p className="text-sm text-rose-800 dark:text-rose-200">
+                This will mark <strong>{termModal.biz.businessName}</strong>'s lease as{' '}
+                <strong>Ended</strong> and set room{' '}
+                <strong>{termModal.biz.roomNumber}</strong> back to{' '}
+                <strong>Available</strong>. This cannot be undone.
+              </p>
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Input
+                label="Termination date"
+                type="date"
+                value={termForm.leaseEnd}
+                onChange={(e) => setTermForm({ ...termForm, leaseEnd: e.target.value })}
+              />
+              <div className="sm:col-span-2">
+                <label className="mb-1.5 block text-sm font-medium text-[var(--text)]">
+                  Reason / Notes (optional)
+                </label>
+                <textarea
+                  value={termForm.notes}
+                  onChange={(e) => setTermForm({ ...termForm, notes: e.target.value })}
+                  rows={3}
+                  placeholder="e.g. Business relocated, lease expired…"
+                  className="w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2.5 text-sm text-[var(--text)] outline-none placeholder:text-[var(--text-muted)] focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20"
+                />
+              </div>
+            </div>
           </div>
         ) : null}
       </Modal>

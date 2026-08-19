@@ -10,6 +10,7 @@ import businessesRoutes from '../modules/businesses/routes.js';
 import paymentsRoutes from '../modules/payments/routes.js';
 import reportsRoutes from '../modules/reports/routes.js';
 import settingsRoutes from '../modules/settings/routes.js';
+import searchRoutes from '../modules/search/routes.js';
 
 const router = Router();
 
@@ -23,5 +24,6 @@ router.use('/businesses', businessesRoutes);
 router.use('/payments', paymentsRoutes);
 router.use('/reports', reportsRoutes);
 router.use('/settings', settingsRoutes);
+router.use('/search', searchRoutes);
 
 export default router;

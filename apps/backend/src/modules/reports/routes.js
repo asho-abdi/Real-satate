@@ -434,13 +434,12 @@ router.get(
   asyncHandler(async (req, res) => {
     const format = String(req.query.format || 'xlsx').toLowerCase();
     const report = await buildSummaryReport(req.query);
-    const title = `Property Report · ${report.scope.label} · ${report.period.label}`;
     const filename = `report-${report.period.from}-to-${report.period.to}`;
 
     const rows = [
       ...report.revenueLines.map((r) => ({
         section: 'Revenue',
-        type: r.type,
+        type: String(r.type || '').toUpperCase(),
         name: r.name,
         building: r.building,
         floor: r.floor,
@@ -451,18 +450,18 @@ router.get(
       })),
       ...report.rooms.map((r) => ({
         section: 'Occupancy',
-        type: r.usage,
+        type: String(r.usage || '').toUpperCase(),
         name: r.roomNumber,
         building: r.building,
         floor: r.floor,
         room: r.roomNumber,
-        period: r.status,
+        period: '—',
         amount: r.monthlyRent,
         status: r.status,
       })),
       ...report.outstanding.map((r) => ({
         section: 'Outstanding',
-        type: 'balance',
+        type: 'BALANCE',
         name: r.name,
         building: r.building,
         floor: '—',
@@ -486,7 +485,27 @@ router.get(
     ];
 
     if (format === 'pdf') {
-      return exportPdf(res, filename, title, columns, rows);
+      const pdfColumns = [
+        { header: 'Section', key: 'section', width: 14 },
+        { header: 'Type', key: 'type', width: 12 },
+        { header: 'Name / Room', key: 'name', width: 20 },
+        { header: 'Building', key: 'building', width: 18 },
+        { header: 'Floor', key: 'floor', width: 12 },
+        { header: 'Room', key: 'room', width: 10 },
+        { header: 'Period', key: 'period', width: 16 },
+        { header: 'Amount', key: 'amount', width: 12 },
+        { header: 'Status', key: 'status', width: 14 },
+      ];
+      const subtitle = [
+        report.scope?.label,
+        report.period?.label,
+        report.period?.from && report.period?.to
+          ? `${report.period.from} → ${report.period.to}`
+          : null,
+      ]
+        .filter(Boolean)
+        .join(' · ');
+      return exportPdf(res, filename, 'Property Report', pdfColumns, rows, { subtitle });
     }
     return exportExcel(res, filename, columns, rows);
   }),
@@ -704,6 +723,7 @@ router.get(
               select: {
                 roomNumber: true,
                 building: { select: { name: true, code: true } },
+                floor: { select: { name: true, level: true } },
               },
             },
           },
@@ -717,6 +737,7 @@ router.get(
               select: {
                 roomNumber: true,
                 building: { select: { name: true, code: true } },
+                floor: { select: { name: true, level: true } },
               },
             },
           },

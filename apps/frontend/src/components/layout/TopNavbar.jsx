@@ -1,38 +1,129 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import {
+  MdApartment,
+  MdBusiness,
   MdDarkMode,
+  MdLayers,
   MdLightMode,
   MdLock,
   MdLogout,
+  MdMeetingRoom,
   MdMenu,
   MdNotifications,
   MdPerson,
   MdSearch,
   MdSettings,
+  MdStorefront,
 } from 'react-icons/md';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { useTheme } from '../../context/ThemeContext.jsx';
 import { useNotifications } from '../../context/NotificationContext.jsx';
 import { formatDate } from '../../utils/format.js';
+import { rentalApi } from '../../services/rentalApi.js';
+
+const TYPE_META = {
+  building: { label: 'Building', icon: MdApartment },
+  floor: { label: 'Floor', icon: MdLayers },
+  room: { label: 'Room', icon: MdMeetingRoom },
+  guest: { label: 'Guest', icon: MdPerson },
+  tenant: { label: 'Tenant', icon: MdPerson },
+  business: { label: 'Shop', icon: MdStorefront },
+};
 
 export default function TopNavbar({ onMenuClick, search, onSearchChange }) {
   const { user, logout } = useAuth();
   const { isDark, toggleTheme } = useTheme();
   const { notifications, unreadCount, markRead, markAllRead } = useNotifications();
+  const navigate = useNavigate();
   const [notifOpen, setNotifOpen] = useState(false);
   const [userOpen, setUserOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [results, setResults] = useState([]);
+  const [searching, setSearching] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(-1);
   const notifRef = useRef(null);
   const userRef = useRef(null);
+  const searchRef = useRef(null);
+  const debounceRef = useRef(null);
+  const requestIdRef = useRef(0);
 
   useEffect(() => {
     const onDocClick = (e) => {
       if (notifRef.current && !notifRef.current.contains(e.target)) setNotifOpen(false);
       if (userRef.current && !userRef.current.contains(e.target)) setUserOpen(false);
+      if (searchRef.current && !searchRef.current.contains(e.target)) setSearchOpen(false);
     };
     document.addEventListener('mousedown', onDocClick);
     return () => document.removeEventListener('mousedown', onDocClick);
   }, []);
+
+  useEffect(() => {
+    const q = String(search || '').trim();
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+
+    if (q.length < 1) {
+      setResults([]);
+      setSearching(false);
+      setActiveIndex(-1);
+      return undefined;
+    }
+
+    setSearching(true);
+    setSearchOpen(true);
+    const requestId = ++requestIdRef.current;
+
+    debounceRef.current = setTimeout(async () => {
+      try {
+        const rows = await rentalApi.search(q);
+        if (requestId !== requestIdRef.current) return;
+        setResults(rows);
+        setActiveIndex(rows.length ? 0 : -1);
+      } catch {
+        if (requestId !== requestIdRef.current) return;
+        setResults([]);
+        setActiveIndex(-1);
+      } finally {
+        if (requestId === requestIdRef.current) setSearching(false);
+      }
+    }, 250);
+
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, [search]);
+
+  const selectResult = (item) => {
+    if (!item) return;
+    onSearchChange(item.searchText || search);
+    setSearchOpen(false);
+    navigate(item.path);
+  };
+
+  const onSearchKeyDown = (e) => {
+    if (!searchOpen && (e.key === 'ArrowDown' || e.key === 'Enter') && results.length) {
+      setSearchOpen(true);
+    }
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      if (!results.length) return;
+      setActiveIndex((i) => (i + 1) % results.length);
+      setSearchOpen(true);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (!results.length) return;
+      setActiveIndex((i) => (i <= 0 ? results.length - 1 : i - 1));
+      setSearchOpen(true);
+    } else if (e.key === 'Enter') {
+      if (searchOpen && activeIndex >= 0 && results[activeIndex]) {
+        e.preventDefault();
+        selectResult(results[activeIndex]);
+      }
+    } else if (e.key === 'Escape') {
+      setSearchOpen(false);
+    }
+  };
 
   return (
     <header className="sticky top-0 z-20 border-b border-[var(--border)] bg-[color-mix(in_oklab,var(--surface)_88%,transparent)] backdrop-blur-md">
@@ -46,15 +137,82 @@ export default function TopNavbar({ onMenuClick, search, onSearchChange }) {
           <MdMenu className="h-6 w-6" />
         </button>
 
-        <div className="relative min-w-0 flex-1 max-w-xl">
+        <div className="relative min-w-0 flex-1 max-w-xl" ref={searchRef}>
           <MdSearch className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-[var(--text-muted)]" />
           <input
             type="search"
             value={search}
             onChange={(e) => onSearchChange(e.target.value)}
+            onFocus={() => {
+              if (String(search || '').trim()) setSearchOpen(true);
+            }}
+            onKeyDown={onSearchKeyDown}
             placeholder="Search customer, phone, building, room…"
             className="h-10 w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] pl-10 pr-3 text-sm text-[var(--text)] outline-none transition placeholder:text-[var(--text-muted)] focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20"
+            aria-autocomplete="list"
+            aria-expanded={searchOpen}
+            aria-controls="global-search-results"
           />
+
+          {searchOpen && String(search || '').trim() ? (
+            <div
+              id="global-search-results"
+              className="absolute left-0 right-0 top-[calc(100%+0.5rem)] z-30 overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface)] shadow-[var(--shadow)]"
+            >
+              <div className="border-b border-[var(--border)] px-4 py-2.5">
+                <p className="text-xs font-medium text-[var(--text-muted)]">
+                  {searching
+                    ? 'Searching…'
+                    : results.length
+                      ? `${results.length} result${results.length === 1 ? '' : 's'}`
+                      : 'No matches'}
+                </p>
+              </div>
+              <ul className="max-h-80 overflow-y-auto py-1">
+                {results.map((item, index) => {
+                  const meta = TYPE_META[item.type] || { label: item.type, icon: MdBusiness };
+                  const Icon = meta.icon;
+                  const active = index === activeIndex;
+                  return (
+                    <li key={`${item.type}-${item.id}`}>
+                      <button
+                        type="button"
+                        onMouseEnter={() => setActiveIndex(index)}
+                        onClick={() => selectResult(item)}
+                        className={`flex w-full items-start gap-3 px-4 py-2.5 text-left transition ${
+                          active ? 'bg-[var(--surface-2)]' : 'hover:bg-[var(--surface-2)]'
+                        }`}
+                      >
+                        <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-brand-700 dark:bg-brand-900/40 dark:text-brand-200">
+                          <Icon className="h-4 w-4" />
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="flex items-center gap-2">
+                            <span className="truncate text-sm font-medium text-[var(--text)]">
+                              {item.title}
+                            </span>
+                            <span className="shrink-0 rounded-md bg-[var(--surface-2)] px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+                              {meta.label}
+                            </span>
+                          </span>
+                          {item.subtitle ? (
+                            <span className="mt-0.5 block truncate text-xs text-[var(--text-muted)]">
+                              {item.subtitle}
+                            </span>
+                          ) : null}
+                        </span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+              {!searching && !results.length ? (
+                <p className="px-4 py-6 text-center text-sm text-[var(--text-muted)]">
+                  Try a name, phone, building, floor, or room number.
+                </p>
+              ) : null}
+            </div>
+          ) : null}
         </div>
 
         <div className="ml-auto flex items-center gap-1 sm:gap-2">

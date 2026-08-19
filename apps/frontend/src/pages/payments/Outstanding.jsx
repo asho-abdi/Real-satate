@@ -9,7 +9,7 @@ import Modal from '../../components/ui/Modal.jsx';
 import Badge from '../../components/ui/Badge.jsx';
 import Spinner from '../../components/ui/Spinner.jsx';
 import { PAYMENT_METHODS, PAYMENT_STATUSES } from '../../utils/constants.js';
-import { formatCurrency, formatDate } from '../../utils/format.js';
+import { formatCurrency, formatDate, formatRoomLocation } from '../../utils/format.js';
 import { rentalApi } from '../../services/rentalApi.js';
 import { labelStatus } from '../../utils/labels.js';
 
@@ -30,6 +30,8 @@ export default function Outstanding() {
             p.tenant?.unit?.roomNumber || p.business?.unit?.roomNumber || '—',
           building:
             p.tenant?.unit?.building?.name || p.business?.unit?.building?.name || '',
+          floor:
+            p.tenant?.unit?.floor?.name || p.business?.unit?.floor?.name || '',
           month: p.month,
           amountDue: Number(p.amountDue),
           amountPaid: Number(p.amountPaid),
@@ -114,8 +116,10 @@ export default function Outstanding() {
                   <tr key={r.id} className="border-b border-[var(--border)]/60">
                     <td className="py-3 font-medium">{r.name}</td>
                     <td className="py-3">
-                      {r.roomNumber}
-                      <span className="block text-xs text-[var(--text-muted)]">{r.building}</span>
+                      <span className="font-medium text-[var(--text)]">{r.roomNumber}</span>
+                      <span className="block text-xs text-[var(--text-muted)]">
+                        {formatRoomLocation({ building: r.building, floor: r.floor })}
+                      </span>
                     </td>
                     <td className="py-3">{r.month}</td>
                     <td className="py-3">{formatCurrency(r.amountDue)}</td>

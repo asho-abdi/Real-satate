@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useEffect, useMemo, useState } from 'react';
+import { Link, useOutletContext } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { MdChevronRight } from 'react-icons/md';
 import PageHeader from '../../components/ui/PageHeader.jsx';
@@ -19,9 +19,11 @@ const emptyForm = {
 };
 
 export default function Buildings() {
+  const { globalSearch = '' } = useOutletContext() || {};
   const [buildings, setBuildings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(emptyForm);
 
   const load = async () => {
@@ -39,22 +41,57 @@ export default function Buildings() {
     load();
   }, []);
 
+  const filteredBuildings = useMemo(() => {
+    const q = String(globalSearch || '').trim().toLowerCase();
+    if (!q) return buildings;
+    return buildings.filter((b) =>
+      [b.name, b.code, b.address, b.notes]
+        .filter(Boolean)
+        .some((v) => String(v).toLowerCase().includes(q)),
+    );
+  }, [buildings, globalSearch]);
+
+  const openCreate = () => {
+    setEditing(null);
+    setForm(emptyForm);
+    setOpen(true);
+  };
+
+  const openEdit = (b) => {
+    setEditing(b);
+    setForm({
+      name: b.name || '',
+      code: b.code || '',
+      address: b.address || '',
+      floorsCount: b.floorsCount ?? 4,
+      notes: b.notes || '',
+    });
+    setOpen(true);
+  };
+
   const save = async () => {
     if (!form.name.trim() || !form.code.trim()) {
       toast.error('Name and code are required');
       return;
     }
     try {
-      await rentalApi.createBuilding({
+      const payload = {
         name: form.name.trim(),
         code: form.code.trim().toUpperCase(),
         address: form.address.trim() || null,
         floorsCount: Number(form.floorsCount) || 0,
         notes: form.notes.trim() || null,
-      });
+      };
+      if (editing) {
+        await rentalApi.updateBuilding(editing.id, payload);
+        toast.success('Building updated');
+      } else {
+        await rentalApi.createBuilding(payload);
+        toast.success('Building added');
+      }
       setOpen(false);
+      setEditing(null);
       setForm(emptyForm);
-      toast.success('Building added');
       await load();
     } catch (err) {
       toast.error(err.message || 'Could not save building');
@@ -67,7 +104,7 @@ export default function Buildings() {
         title="Buildings"
         subtitle="Register buildings, then floors and rooms. You choose shop, apartment, or guest per room."
         actions={
-          <Button className="h-12 px-5 text-base" onClick={() => setOpen(true)}>
+          <Button className="h-12 px-5 text-base" onClick={openCreate}>
             Add Building
           </Button>
         }
@@ -79,7 +116,14 @@ export default function Buildings() {
         </div>
       ) : (
         <div className="grid gap-4 md:grid-cols-2">
-          {buildings.map((b) => (
+          {filteredBuildings.length === 0 ? (
+            <Card>
+              <p className="text-sm text-[var(--text-muted)]">
+                {globalSearch ? 'No buildings match your search.' : 'No buildings yet.'}
+              </p>
+            </Card>
+          ) : null}
+          {filteredBuildings.map((b) => (
             <Card key={b.id}>
               <div className="flex items-start justify-between gap-3">
                 <div>
@@ -101,12 +145,17 @@ export default function Buildings() {
                     ) : null}
                   </p>
                 </div>
-                <Link to={`/buildings/${b.id}`}>
-                  <Button variant="secondary" className="h-12 px-4">
-                    Manage floors
-                    <MdChevronRight className="h-5 w-5" />
+                <div className="flex shrink-0 flex-wrap gap-2">
+                  <Button variant="secondary" className="h-10 px-3 text-sm" onClick={() => openEdit(b)}>
+                    Edit
                   </Button>
-                </Link>
+                  <Link to={`/buildings/${b.id}`}>
+                    <Button variant="secondary" className="h-12 px-4">
+                      Manage floors
+                      <MdChevronRight className="h-5 w-5" />
+                    </Button>
+                  </Link>
+                </div>
               </div>
             </Card>
           ))}
@@ -115,15 +164,25 @@ export default function Buildings() {
 
       <Modal
         open={open}
-        onClose={() => setOpen(false)}
-        title="Add Building"
+        onClose={() => {
+          setOpen(false);
+          setEditing(null);
+        }}
+        title={editing ? 'Edit Building' : 'Add Building'}
         footer={
           <div className="flex justify-end gap-2">
-            <Button variant="secondary" className="h-12 px-5" onClick={() => setOpen(false)}>
+            <Button
+              variant="secondary"
+              className="h-12 px-5"
+              onClick={() => {
+                setOpen(false);
+                setEditing(null);
+              }}
+            >
               Cancel
             </Button>
             <Button className="h-12 px-5 text-base" onClick={save}>
-              Save Building
+              {editing ? 'Save Changes' : 'Save Building'}
             </Button>
           </div>
         }

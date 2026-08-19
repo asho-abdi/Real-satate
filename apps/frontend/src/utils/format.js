@@ -16,6 +16,12 @@ export function formatDate(value) {
   }).format(new Date(value));
 }
 
+/** Building + floor subtext for room/shop table cells. */
+export function formatRoomLocation({ building, floor } = {}) {
+  const parts = [building, floor].filter(Boolean);
+  return parts.length ? parts.join(' • ') : '—';
+}
+
 export function formatPercent(value) {
   return `${Number(value || 0).toFixed(1)}%`;
 }
