@@ -8,19 +8,24 @@ Remote: [https://github.com/asho-abdi/Real-satate](https://github.com/asho-abdi/
 
 ## Stack
 
-- Frontend: React + Vite + JavaScript (`apps/frontend`) — EstateOps UI
-- Backend: Express + Prisma + PostgreSQL + JavaScript (`apps/backend`)
-- Legacy Next.js UI: `apps/web`
-- Legacy Supabase API: `apps/api`
-- Shared package: `packages/shared`
-- Docs: `docs/`
+- **Frontend:** React + Vite + JavaScript (`frontend/`) — EstateOps UI
+- **Backend:** Express + Prisma + PostgreSQL + JavaScript (`backend/`)
+- **Docs:** `docs/`
+
+## Project structure
+
+```
+├── frontend/   # React + Vite app
+├── backend/    # Express + Prisma API
+└── docs/       # Documentation
+```
 
 ## Quick start
 
 ### 1) Backend (Prisma)
 
 ```bash
-cp apps/backend/.env.example apps/backend/.env
+cp backend/.env.example backend/.env
 # Set DATABASE_URL to your PostgreSQL database
 
 npm install --legacy-peer-deps
@@ -32,7 +37,7 @@ npm run dev:backend
 
 - API: `http://localhost:5000/api/v1`
 - Health: `http://localhost:5000/health`
-- Docs: [apps/backend/README.md](apps/backend/README.md) · [docs/backend-api.md](docs/backend-api.md)
+- Docs: [backend/README.md](backend/README.md) · [docs/backend-api.md](docs/backend-api.md)
 - Seed admin: `admin@estateops.com` / `Admin@12345`
 
 ### 2) Frontend
@@ -42,7 +47,7 @@ npm run dev:frontend
 ```
 
 - App: `http://localhost:5173`
-- Frontend demo login (mock): `admin@estateops.com` / `password123`
+- Login (after seed): `admin@estateops.com` / `Admin@12345`
 
 ## Backend capabilities
 
