@@ -525,6 +525,6 @@ Use this checklist before coding any module:
 
 Now that the architecture documentation exists, the next engineering execution phase should start with:
 
-1. bootstrap the `apps/web`, `apps/api`, and `packages/shared` runtime setup
+1. bootstrap the `frontend` and `backend` runtime setup
 2. choose the exact framework libraries inside the approved stack
 3. implement Foundation, then Authentication, then Users/Roles/Permissions

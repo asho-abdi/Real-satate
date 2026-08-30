@@ -2,34 +2,20 @@
   "name": "real-state",
   "private": true,
   "workspaces": [
-    "apps/*",
-    "packages/*"
+    "frontend",
+    "backend"
   ],
   "scripts": {
     "dev": "npm run dev --workspace=@real-state/frontend",
     "dev:frontend": "npm run dev --workspace=@real-state/frontend",
     "dev:backend": "npm run dev --workspace=@real-state/backend",
-    "dev:web": "npm run dev --workspace=@real-state/web",
-    "dev:api": "npm run dev --workspace=@real-state/api",
-    "build": "npm run build --workspace=@real-state/frontend && npm run build --workspace=@real-state/api",
+    "build": "npm run build --workspace=@real-state/frontend",
     "build:frontend": "npm run build --workspace=@real-state/frontend",
-    "build:web": "npm run build --workspace=@real-state/web",
-    "build:api": "npm run build --workspace=@real-state/api",
-    "start:api": "npm run start --workspace=@real-state/api",
-    "start:backend": "npm run start --workspace=@real-state/backend",
     "preview:frontend": "npm run preview --workspace=@real-state/frontend",
+    "start:backend": "npm run start --workspace=@real-state/backend",
     "prisma:generate": "npm run prisma:generate --workspace=@real-state/backend",
     "prisma:push": "npm run prisma:push --workspace=@real-state/backend",
     "prisma:seed": "npm run seed --workspace=@real-state/backend",
-    "db:backend": "npm run db:setup --workspace=@real-state/backend",
-    "lint": "npm run lint --workspace=@real-state/web",
-    "db:start": "npx supabase start",
-    "db:stop": "npx supabase stop",
-    "db:reset": "npx supabase db reset",
-    "db:push": "npx supabase db push",
-    "db:link": "npx supabase link"
-  },
-  "devDependencies": {
-    "supabase": "^2.26.9"
+    "db:backend": "npm run db:setup --workspace=@real-state/backend"
   }
 }

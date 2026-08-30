@@ -12,15 +12,13 @@ The architecture is designed to satisfy five priorities:
 
 ## 2. Backend Platform Decision
 
-**Supabase is the system of record** for this project:
+**Express + Prisma + PostgreSQL** is the system of record:
 
-- PostgreSQL database + migrations in `supabase/migrations`
-- Supabase Auth for users (`auth.users` + `public.profiles`)
-- Row Level Security on domain tables
-- Next.js app talks to Supabase via `@supabase/ssr` / `@supabase/supabase-js`
-- Optional Node API (`apps/api`) remains available for future complex workflows/jobs
+- PostgreSQL database managed via Prisma (`backend/prisma`)
+- JWT auth (access + refresh tokens) with RBAC
+- React + Vite frontend (`frontend/`) talks to the Express API
 
-See [supabase-setup.md](./supabase-setup.md) for connection steps.
+See [backend-api.md](./backend-api.md) for API reference.
 
 ## 3. Recommended Delivery Model
 
@@ -62,16 +60,15 @@ flowchart TD
 
 ## 4. Monorepo Structure
 
-The initial folder layout created for the project:
+The project folder layout:
 
-- [`apps/web`](../apps/web)
-- [`apps/api`](../apps/api)
-- [`packages/shared`](../packages/shared)
+- [`frontend`](../frontend)
+- [`backend`](../backend)
 - [`docs`](.)
 
 ### 4.1 Frontend App
 
-Path: [`apps/web`](../apps/web)
+Path: [`frontend`](../frontend)
 
 Recommended internal structure:
 
@@ -92,7 +89,7 @@ Recommended internal structure:
 
 ### 4.2 Backend App
 
-Path: [`apps/api`](../apps/api)
+Path: [`backend`](../backend)
 
 Recommended internal structure:
 
@@ -104,32 +101,14 @@ Recommended internal structure:
   - Environment config and service registration
 - `src/jobs`
   - Background jobs and scheduled tasks
-- `src/database`
-  - Schema, migrations, seed strategy, repositories, query helpers
+- `prisma`
+  - Schema, migrations, seed strategy
 - `src/storage`
   - File upload and object storage adapters
 
-### 4.3 Shared Package
-
-Path: [`packages/shared`](../packages/shared)
-
-Recommended internal structure:
-
-- `src/types`
-- `src/constants`
-- `src/permissions`
-- `src/utils`
-
-Shared package responsibilities:
-
-- API-safe DTO types
-- shared enums and status values
-- permission keys
-- common date, money, and formatting helpers
-
 ## 5. Frontend Architecture
 
-## 5.1 UI Principles
+### 5.1 UI Principles
 
 - Enterprise dashboard shell
 - Responsive layouts from mobile through desktop
