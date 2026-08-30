@@ -12,13 +12,13 @@ export default function DashboardLayout() {
       <Sidebar open={false} onClose={() => {}} isMobile={false} />
       <Sidebar open={mobileOpen} onClose={() => setMobileOpen(false)} isMobile />
 
-      <div className="lg:pl-72">
+      <div className="lg:pl-[260px]">
         <TopNavbar
           onMenuClick={() => setMobileOpen(true)}
           search={search}
           onSearchChange={setSearch}
         />
-        <main className="px-4 py-6 md:px-6 md:py-8">
+        <main className="px-4 py-5 md:px-5 md:py-6">
           <Outlet context={{ globalSearch: search }} />
         </main>
       </div>

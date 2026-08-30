@@ -15,6 +15,7 @@ import Input from '../../components/ui/Input.jsx';
 import Select from '../../components/ui/Select.jsx';
 import Badge from '../../components/ui/Badge.jsx';
 import Modal from '../../components/ui/Modal.jsx';
+import Spinner from '../../components/ui/Spinner.jsx';
 import { UNIT_STATUSES, UNIT_USAGES, UNIT_TYPES } from '../../utils/constants.js';
 import { formatCurrency, cn } from '../../utils/format.js';
 import { usageToApi, defaultUsageForUnitType } from '../../utils/labels.js';

@@ -12,7 +12,7 @@ export default function Breadcrumb({ items = [] }) {
             {isLast || !item.to ? (
               <span className={isLast ? 'font-medium text-[var(--text)]' : ''}>{item.label}</span>
             ) : (
-              <Link to={item.to} className="hover:text-brand-700 dark:hover:text-brand-300">
+              <Link to={item.to} className="hover:text-brand-500">
                 {item.label}
               </Link>
             )}
