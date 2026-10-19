@@ -1,4 +1,5 @@
 import { AppError } from '../utils/AppError.js';
+import { isAdminUser } from '../services/access.service.js';
 
 /**
  * Check whether the user holds a required permission string.
@@ -6,13 +7,14 @@ import { AppError } from '../utils/AppError.js';
  * @param {string} required
  */
 function hasPermission(userPermissions, required) {
+  if (!Array.isArray(userPermissions)) return false;
   if (userPermissions.includes('*')) return true;
   return userPermissions.includes(required);
 }
 
 /**
  * Require one or more `resource:action` permissions on the route.
- * ADMIN / SUPER_ADMIN and wildcard permissions bypass checks.
+ * Admin users and wildcard permissions bypass checks.
  */
 export function authorize(...permissionStrings) {
   return (req, _res, next) => {
@@ -20,11 +22,9 @@ export function authorize(...permissionStrings) {
       return next(new AppError('Authentication required', 401, { code: 'UNAUTHORIZED' }));
     }
 
-    const role = String(req.user.role || req.user.roleName || '').toUpperCase();
-    const isAdmin = role === 'ADMIN' || role === 'SUPER_ADMIN';
     const permissions = req.user.permissions || [];
 
-    if (isAdmin || permissions.includes('*')) {
+    if (isAdminUser(req.user) || permissions.includes('*')) {
       return next();
     }
 

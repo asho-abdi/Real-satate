@@ -20,7 +20,7 @@ Remote: [https://github.com/asho-abdi/Real-satate](https://github.com/asho-abdi/
 └── docs/       # Documentation
 ```
 
-## Quick start
+## Quick start (local)
 
 ### 1) Backend (Prisma)
 
@@ -30,15 +30,15 @@ cp backend/.env.example backend/.env
 
 npm install --legacy-peer-deps
 npm run prisma:generate
-npm run prisma:push
+npm run prisma:deploy
 npm run prisma:seed
-npm run dev:backend
+npm run start:backend
 ```
 
 - API: `http://localhost:5000/api/v1`
 - Health: `http://localhost:5000/health`
 - Docs: [backend/README.md](backend/README.md) · [docs/backend-api.md](docs/backend-api.md)
-- Seed admin: `admin@estateops.com` / `Admin@12345`
+- Local seed admin comes from `SEED_ADMIN_*` in `backend/.env` (see `.env.example`)
 
 ### 2) Frontend
 
@@ -47,7 +47,16 @@ npm run dev:frontend
 ```
 
 - App: `http://localhost:5173`
-- Login (after seed): `admin@estateops.com` / `Admin@12345`
+
+## Production
+
+Follow **[DEPLOY.md](DEPLOY.md)**:
+
+1. `cp backend/.env.production.example backend/.env` and fill secrets  
+2. `npm run prepare:secrets` → paste into `.env`  
+3. `npm run prisma:deploy` then production seed  
+4. `cp frontend/.env.production.example frontend/.env.production` and build  
+5. `npm run start:backend`
 
 ## Backend capabilities
 

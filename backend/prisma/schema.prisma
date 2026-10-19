@@ -8,7 +8,7 @@ datasource db {
 }
 
 // =============================================================================
-// Simple 2-Building Property Rental System
+// RJk Realty — Real Estate Management System
 // =============================================================================
 
 enum UnitType {
@@ -26,10 +26,19 @@ enum UnitUsage {
   GUEST
 }
 
+/// How a building/unit is offered on the market
+enum TransactionType {
+  FOR_SALE
+  FOR_RENT
+  BOTH
+}
+
 enum UnitStatus {
   AVAILABLE
   OCCUPIED
   RESERVED
+  SOLD
+  MAINTENANCE
 }
 
 enum BookingStatus {
@@ -37,6 +46,12 @@ enum BookingStatus {
   CHECKED_IN
   CHECKED_OUT
   CANCELLED
+}
+
+enum BookingPeriod {
+  DAILY
+  WEEKLY
+  MONTHLY
 }
 
 enum LeaseStatus {
@@ -61,6 +76,122 @@ enum Gender {
   OTHER
 }
 
+enum WorkProgressStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETED
+  ON_HOLD
+}
+
+enum ShopDealType {
+  SALE
+  RENTAL
+}
+
+enum OwnershipStatus {
+  ACTIVE_OWNER
+  TRANSFERRED
+  CANCELLED
+}
+
+enum DiscountType {
+  FIXED
+  PERCENT
+}
+
+enum MoneyTxnType {
+  BANK_DEPOSIT
+  BANK_TRANSFER
+  CASH_WITHDRAWAL
+  CURRENCY_EXCHANGE
+  SUPPLIER_PAYMENT
+  ACCOUNT_TRANSFER
+  CASH
+  REVENUE_RECEIVED
+  /// Property maintenance / repair spend (linked from MaintenanceRecord)
+  MAINTENANCE
+  OTHER
+}
+
+enum MaintenanceStatus {
+  PLANNED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum ProjectStatus {
+  PLANNING
+  IN_PROGRESS
+  ON_HOLD
+  COMPLETED
+}
+
+enum PaymentFrequency {
+  MONTHLY
+  QUARTERLY
+  YEARLY
+}
+
+enum DocumentCategory {
+  LEASE_AGREEMENT
+  RENEWAL_AGREEMENT
+  TERMINATION_AGREEMENT
+  PAYMENT_RECEIPT
+  IDENTITY
+  OTHER
+}
+
+model Role {
+  id          String   @id @default(uuid()) @db.Uuid
+  code        String   @unique
+  name        String
+  description String?
+  isSystem    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  permissions RolePermission[]
+  users       User[]
+}
+
+model Permission {
+  id          String   @id @default(uuid()) @db.Uuid
+  code        String   @unique
+  name        String
+  description String?
+  resource    String
+  action      String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  roles RolePermission[]
+
+  @@index([resource])
+}
+
+model RolePermission {
+  roleId       String @db.Uuid
+  permissionId String @db.Uuid
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+}
+
+model UserBuilding {
+  userId     String   @db.Uuid
+  buildingId String   @db.Uuid
+  createdAt  DateTime @default(now())
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  building Building @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+
+  @@id([userId, buildingId])
+  @@index([buildingId])
+}
+
 model User {
   id                   String    @id @default(uuid()) @db.Uuid
   email                String    @unique
@@ -68,15 +199,34 @@ model User {
   firstName            String
   lastName             String
   phone                String?
+  avatar               String?
   isActive             Boolean   @default(true)
-  role                 String    @default("ADMIN")
+  /// Denormalized role code for JWT (ADMIN | BUILDING_MANAGER). Kept in sync with Role.code via roleId.
+  role                 String    @default("BUILDING_MANAGER")
+  roleId               String?   @db.Uuid
   resetPasswordToken   String?
   resetPasswordExpires DateTime?
   lastLoginAt          DateTime?
   createdAt            DateTime  @default(now())
   updatedAt            DateTime  @updatedAt
 
-  refreshTokens RefreshToken[]
+  roleRef          Role?            @relation(fields: [roleId], references: [id])
+  refreshTokens    RefreshToken[]
+  buildings        UserBuilding[]
+  expenses         Expense[]        @relation("ExpenseCreatedBy")
+  workProgress     WorkProgress[]   @relation("WorkCreatedBy")
+  bookingPayments  BookingPayment[] @relation("BookingPaymentRecordedBy")
+  shopSalePayments ShopSalePayment[] @relation("ShopSalePaymentBy")
+  shopMaintPayments ShopMaintenancePayment[] @relation("ShopMaintPaymentBy")
+  workProjects     WorkProject[]    @relation("WorkProjectCreatedBy")
+  workRecords      WorkRecord[]     @relation("WorkRecordCreatedBy")
+  activities           Activity[]            @relation("ActivityActor")
+  documents            EntityDocument[]      @relation("DocumentUploadedBy")
+  leaseCharges         LeaseCharge[]         @relation("LeaseChargeCreatedBy")
+  maintenanceRecords   MaintenanceRecord[]   @relation("MaintenanceCreatedBy")
+  maintenanceFieldDefs MaintenanceFieldDef[] @relation("MaintenanceFieldCreatedBy")
+
+  @@index([roleId])
 }
 
 model RefreshToken {
@@ -94,28 +244,34 @@ model RefreshToken {
 }
 
 model Building {
-  id          String    @id @default(uuid()) @db.Uuid
-  code        String    @unique
-  name        String
-  address     String?
-  floorsCount Int       @default(0)
-  notes       String?
-  deletedAt   DateTime?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id              String          @id @default(uuid()) @db.Uuid
+  code            String          @unique
+  name            String
+  address         String?
+  floorsCount     Int             @default(0)
+  notes           String?
+  transactionType TransactionType @default(FOR_RENT)
+  deletedAt       DateTime?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
 
-  floors Floor[]
-  units  Unit[]
+  floors             Floor[]
+  units              Unit[]
+  managers           UserBuilding[]
+  expenses           Expense[]
+  workProgress       WorkProgress[]
+  workProjects       WorkProject[]
+  maintenanceRecords MaintenanceRecord[]
 }
 
 model Floor {
-  id          String    @id @default(uuid()) @db.Uuid
-  buildingId  String    @db.Uuid
-  name        String
-  level       Int
-  deletedAt   DateTime?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id         String    @id @default(uuid()) @db.Uuid
+  buildingId String    @db.Uuid
+  name       String
+  level      Int
+  deletedAt  DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
 
   building Building @relation(fields: [buildingId], references: [id])
   units    Unit[]
@@ -125,85 +281,177 @@ model Floor {
 }
 
 model Unit {
-  id          String     @id @default(uuid()) @db.Uuid
-  buildingId  String     @db.Uuid
-  floorId     String     @db.Uuid
-  roomNumber  String
-  unitType    UnitType
-  usage       UnitUsage
-  monthlyRent Decimal    @db.Decimal(12, 2)
-  discount    Decimal    @default(0) @db.Decimal(12, 2)
-  status      UnitStatus @default(AVAILABLE)
-  deletedAt   DateTime?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id                 String          @id @default(uuid()) @db.Uuid
+  buildingId         String          @db.Uuid
+  floorId            String          @db.Uuid
+  roomNumber         String
+  unitType           UnitType
+  usage              UnitUsage
+  transactionType    TransactionType @default(FOR_RENT)
+  /// Shop floor area in square meters
+  areaSqm            Decimal?        @db.Decimal(12, 2)
+  /// Apartment / flat bedroom or room count
+  roomsCount         Int?
+  /// Apartment / flat bathroom count
+  bathroomsCount     Int?
+  monthlyRent        Decimal         @db.Decimal(12, 2)
+  weeklyRent         Decimal?        @db.Decimal(12, 2)
+  /// Optional override; when null, daily rate is monthlyRent / 30
+  dailyRate          Decimal?        @db.Decimal(12, 2)
+  salePrice          Decimal?        @db.Decimal(12, 2)
+  discount           Decimal         @default(0) @db.Decimal(12, 2)
+  status             UnitStatus      @default(AVAILABLE)
+  description        String?
+  notes              String?
+  deletedAt          DateTime?
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
 
-  building Building @relation(fields: [buildingId], references: [id])
-  floor    Floor    @relation(fields: [floorId], references: [id])
-  bookings Booking[]
-  tenants  Tenant[]
-  businesses Business[]
+  building     Building       @relation(fields: [buildingId], references: [id])
+  floor        Floor          @relation(fields: [floorId], references: [id])
+  images       UnitImage[]
+  bookings     Booking[]
+  tenants      Tenant[]
+  businesses   Business[]
+  shopSales    ShopSale[]
+  expenses           Expense[]
+  workProgress       WorkProgress[]
+  leaseCharges       LeaseCharge[]
+  maintenanceRecords MaintenanceRecord[]
 
   @@unique([buildingId, roomNumber])
   @@index([floorId])
   @@index([status])
   @@index([usage])
+  @@index([transactionType])
+}
+
+model UnitImage {
+  id           String   @id @default(uuid()) @db.Uuid
+  unitId       String   @db.Uuid
+  filename     String
+  originalName String?
+  url          String
+  isPrimary    Boolean  @default(false)
+  sortOrder    Int      @default(0)
+  createdAt    DateTime @default(now())
+
+  unit Unit @relation(fields: [unitId], references: [id], onDelete: Cascade)
+
+  @@index([unitId])
 }
 
 model Booking {
-  id               String        @id @default(uuid()) @db.Uuid
-  code             String        @unique
-  unitId           String        @db.Uuid
-  fullName         String
-  phone            String
-  idNumber         String
-  nationality      String?
-  gender           Gender?
-  emergencyContact String?
-  checkIn          DateTime
-  checkOut         DateTime
-  nights           Int
-  monthlyRent      Decimal       @db.Decimal(12, 2)
-  dailyRent        Decimal       @db.Decimal(12, 2)
-  discount         Decimal       @default(0) @db.Decimal(12, 2)
-  totalAmount      Decimal       @db.Decimal(12, 2)
-  amountPaid       Decimal       @default(0) @db.Decimal(12, 2)
-  paymentStatus    PaymentStatus @default(UNPAID)
-  paymentMethod    PaymentMethod @default(CASH)
-  status           BookingStatus @default(CONFIRMED)
-  deletedAt        DateTime?
-  createdAt        DateTime      @default(now())
-  updatedAt        DateTime      @updatedAt
+  id                   String         @id @default(uuid()) @db.Uuid
+  code                 String         @unique
+  unitId               String         @db.Uuid
+  fullName             String
+  phone                String
+  idNumber             String
+  email                String?
+  address              String?
+  country              String?
+  nationality          String?
+  gender               Gender?
+  emergencyContact     String?
+  identityDocument     String?
+  identityDocumentName String?
+  /// Adults / guests count
+  adultsCount          Int            @default(1)
+  childrenCount        Int            @default(0)
+  /// Preferred check-in hour, e.g. "15:00"
+  checkInTime          String?
+  checkIn              DateTime
+  checkOut             DateTime
+  bookingPeriod        BookingPeriod  @default(DAILY)
+  /// Rate charged per period unit (day / week / month)
+  periodRate           Decimal        @default(0) @db.Decimal(12, 2)
+  /// Number of days, weeks, or months
+  periodQuantity       Int            @default(1)
+  nights               Int
+  monthlyRent          Decimal        @db.Decimal(12, 2)
+  dailyRent            Decimal        @db.Decimal(12, 2)
+  /// Price before discount
+  originalAmount       Decimal        @default(0) @db.Decimal(12, 2)
+  discountType         DiscountType   @default(FIXED)
+  /// User-entered discount value (amount or percent)
+  discountValue        Decimal        @default(0) @db.Decimal(12, 2)
+  /// Computed discount amount subtracted from original
+  discount             Decimal        @default(0) @db.Decimal(12, 2)
+  /// Optional extras (cleaning, etc.)
+  servicesAmount       Decimal        @default(0) @db.Decimal(12, 2)
+  /// Optional taxes added after discount
+  taxesAmount          Decimal        @default(0) @db.Decimal(12, 2)
+  /// Final amount after discount + services + taxes
+  totalAmount          Decimal        @db.Decimal(12, 2)
+  amountPaid           Decimal        @default(0) @db.Decimal(12, 2)
+  paymentStatus        PaymentStatus  @default(UNPAID)
+  paymentMethod        PaymentMethod  @default(CASH)
+  status               BookingStatus  @default(CONFIRMED)
+  notes                String?
+  deletedAt            DateTime?
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
 
-  unit Unit @relation(fields: [unitId], references: [id])
+  unit     Unit             @relation(fields: [unitId], references: [id])
+  payments BookingPayment[]
 
   @@index([unitId])
   @@index([status])
   @@index([checkIn])
   @@index([phone])
   @@index([fullName])
+  @@index([bookingPeriod])
+}
+
+model BookingPayment {
+  id           String        @id @default(uuid()) @db.Uuid
+  bookingId    String        @db.Uuid
+  amount       Decimal       @db.Decimal(12, 2)
+  method       PaymentMethod @default(CASH)
+  paymentDate  DateTime      @default(now())
+  reference    String?
+  comment      String?
+  recordedById String?       @db.Uuid
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  booking    Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  recordedBy User?   @relation("BookingPaymentRecordedBy", fields: [recordedById], references: [id])
+
+  @@index([bookingId])
+  @@index([paymentDate])
 }
 
 model Tenant {
-  id               String     @id @default(uuid()) @db.Uuid
-  fullName         String
-  phone            String
-  idNumber         String
-  nationality      String?
-  gender           Gender?
-  emergencyContact String?
-  unitId           String     @db.Uuid
-  monthlyRent      Decimal    @db.Decimal(12, 2)
-  discount         Decimal    @default(0) @db.Decimal(12, 2)
-  leaseStart       DateTime
-  leaseEnd         DateTime?
-  status           LeaseStatus @default(ACTIVE)
-  deletedAt        DateTime?
-  createdAt        DateTime   @default(now())
-  updatedAt        DateTime   @updatedAt
+  id                   String            @id @default(uuid()) @db.Uuid
+  fullName             String
+  phone                String
+  idNumber             String
+  nationality          String?
+  gender               Gender?
+  emergencyContact     String?
+  identityDocument     String?
+  identityDocumentName String?
+  unitId               String            @db.Uuid
+  monthlyRent          Decimal           @db.Decimal(12, 2)
+  discount             Decimal           @default(0) @db.Decimal(12, 2)
+  securityDeposit      Decimal           @default(0) @db.Decimal(12, 2)
+  paymentFrequency     PaymentFrequency  @default(MONTHLY)
+  gracePeriodDays      Int               @default(0)
+  notes                String?
+  leaseStart           DateTime
+  leaseEnd             DateTime?
+  status               LeaseStatus       @default(ACTIVE)
+  endedAt              DateTime?
+  endReason            String?
+  deletedAt            DateTime?
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
 
   unit     Unit             @relation(fields: [unitId], references: [id])
   payments MonthlyPayment[]
+  charges  LeaseCharge[]
 
   @@index([unitId])
   @@index([phone])
@@ -211,23 +459,32 @@ model Tenant {
 }
 
 model Business {
-  id            String      @id @default(uuid()) @db.Uuid
-  businessName  String
-  contactName   String
-  phone         String
-  licenseNumber String?
-  unitId        String      @db.Uuid
-  monthlyRent   Decimal     @db.Decimal(12, 2)
-  discount      Decimal     @default(0) @db.Decimal(12, 2)
-  leaseStart    DateTime
-  leaseEnd      DateTime?
-  status        LeaseStatus @default(ACTIVE)
-  deletedAt     DateTime?
-  createdAt     DateTime    @default(now())
-  updatedAt     DateTime    @updatedAt
+  id                   String            @id @default(uuid()) @db.Uuid
+  businessName         String
+  contactName          String
+  phone                String
+  licenseNumber        String?
+  identityDocument     String?
+  identityDocumentName String?
+  unitId               String            @db.Uuid
+  monthlyRent          Decimal           @db.Decimal(12, 2)
+  discount             Decimal           @default(0) @db.Decimal(12, 2)
+  securityDeposit      Decimal           @default(0) @db.Decimal(12, 2)
+  paymentFrequency     PaymentFrequency  @default(MONTHLY)
+  gracePeriodDays      Int               @default(0)
+  notes                String?
+  leaseStart           DateTime
+  leaseEnd             DateTime?
+  status               LeaseStatus       @default(ACTIVE)
+  endedAt              DateTime?
+  endReason            String?
+  deletedAt            DateTime?
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
 
   unit     Unit             @relation(fields: [unitId], references: [id])
   payments MonthlyPayment[]
+  charges  LeaseCharge[]
 
   @@index([unitId])
   @@index([phone])
@@ -241,6 +498,9 @@ model MonthlyPayment {
   month       String
   amountDue   Decimal        @db.Decimal(12, 2)
   amountPaid  Decimal        @default(0) @db.Decimal(12, 2)
+  /// Optional breakdown of rent vs other charges for this month
+  rentDue     Decimal?       @db.Decimal(12, 2)
+  otherCharges Decimal       @default(0) @db.Decimal(12, 2)
   status      PaymentStatus  @default(UNPAID)
   paymentDate DateTime?
   method      PaymentMethod?
@@ -257,10 +517,338 @@ model MonthlyPayment {
   @@index([month])
 }
 
+/// Extra billable charges on a lease (utilities, late fees, parking, etc.)
+model LeaseCharge {
+  id          String         @id @default(uuid()) @db.Uuid
+  businessId  String?        @db.Uuid
+  tenantId    String?        @db.Uuid
+  unitId      String         @db.Uuid
+  category    String         @default("OTHER")
+  description String
+  amountDue   Decimal        @db.Decimal(12, 2)
+  amountPaid  Decimal        @default(0) @db.Decimal(12, 2)
+  status      PaymentStatus  @default(UNPAID)
+  chargeDate  DateTime       @default(now())
+  dueDate     DateTime?
+  month       String?
+  notes       String?
+  createdById String?        @db.Uuid
+  deletedAt   DateTime?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  business Business? @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  tenant   Tenant?   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  unit     Unit      @relation(fields: [unitId], references: [id])
+  createdBy User?    @relation("LeaseChargeCreatedBy", fields: [createdById], references: [id])
+
+  @@index([businessId])
+  @@index([tenantId])
+  @@index([unitId])
+  @@index([status])
+  @@index([month])
+}
+
+model Expense {
+  id              String         @id @default(uuid()) @db.Uuid
+  code            String         @unique
+  /// Optional — money movements need not be property-linked
+  buildingId      String?        @db.Uuid
+  unitId          String?        @db.Uuid
+  /// Legacy category label; prefer txnType for money movements
+  category        String
+  txnType         MoneyTxnType   @default(OTHER)
+  amount          Decimal        @db.Decimal(12, 2)
+  expenseDate     DateTime
+  paymentMethod   PaymentMethod  @default(CASH)
+  source          String?
+  destination     String?
+  account         String?
+  vendor          String?
+  description     String?
+  /// Comment / reference explaining the money movement
+  comment         String
+  attachmentName  String?
+  attachmentUrl   String?
+  createdById     String?        @db.Uuid
+  deletedAt       DateTime?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  building    Building?           @relation(fields: [buildingId], references: [id])
+  unit        Unit?               @relation(fields: [unitId], references: [id])
+  createdBy   User?               @relation("ExpenseCreatedBy", fields: [createdById], references: [id])
+  maintenance MaintenanceRecord?
+
+  @@index([buildingId])
+  @@index([unitId])
+  @@index([category])
+  @@index([txnType])
+  @@index([expenseDate])
+}
+
+/// Sold commercial shop — separate from rental Business lease
+model ShopSale {
+  id                   String           @id @default(uuid()) @db.Uuid
+  unitId               String           @db.Uuid
+  buyerName            String
+  contactName          String?
+  phone                String
+  idNumber             String?
+  identityDocument     String?
+  identityDocumentName String?
+  salePrice            Decimal          @db.Decimal(12, 2)
+  saleDate             DateTime
+  amountPaid           Decimal          @default(0) @db.Decimal(12, 2)
+  paymentStatus        PaymentStatus    @default(UNPAID)
+  ownershipStatus      OwnershipStatus  @default(ACTIVE_OWNER)
+  monthlyMaintenance   Decimal          @default(0) @db.Decimal(12, 2)
+  maintenanceDueDay    Int              @default(1)
+  notes                String?
+  deletedAt            DateTime?
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
+
+  unit                 Unit                      @relation(fields: [unitId], references: [id])
+  salePayments         ShopSalePayment[]
+  maintenancePayments  ShopMaintenancePayment[]
+
+  @@index([unitId])
+  @@index([ownershipStatus])
+  @@index([paymentStatus])
+}
+
+model ShopSalePayment {
+  id           String        @id @default(uuid()) @db.Uuid
+  saleId       String        @db.Uuid
+  amount       Decimal       @db.Decimal(12, 2)
+  method       PaymentMethod @default(CASH)
+  paymentDate  DateTime      @default(now())
+  reference    String?
+  comment      String?
+  recordedById String?       @db.Uuid
+  createdAt    DateTime      @default(now())
+
+  sale       ShopSale @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  recordedBy User?    @relation("ShopSalePaymentBy", fields: [recordedById], references: [id])
+
+  @@index([saleId])
+}
+
+model ShopMaintenancePayment {
+  id           String         @id @default(uuid()) @db.Uuid
+  saleId       String         @db.Uuid
+  month        String
+  amountDue    Decimal        @db.Decimal(12, 2)
+  amountPaid   Decimal        @default(0) @db.Decimal(12, 2)
+  status       PaymentStatus  @default(UNPAID)
+  paymentDate  DateTime?
+  method       PaymentMethod?
+  notes        String?
+  recordedById String?        @db.Uuid
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  sale       ShopSale @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  recordedBy User?    @relation("ShopMaintPaymentBy", fields: [recordedById], references: [id])
+
+  @@unique([saleId, month])
+  @@index([status])
+  @@index([month])
+}
+
+/// Flexible Working Progress project (NOT property maintenance)
+model WorkProject {
+  id              String        @id @default(uuid()) @db.Uuid
+  name            String
+  description     String?
+  buildingId      String?       @db.Uuid
+  startDate       DateTime?
+  expectedEndDate DateTime?
+  status          ProjectStatus @default(PLANNING)
+  budget          Decimal?      @db.Decimal(12, 2)
+  notes           String?
+  imageFilename   String?
+  imageUrl        String?
+  createdById     String?       @db.Uuid
+  deletedAt       DateTime?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  building  Building?    @relation(fields: [buildingId], references: [id])
+  createdBy User?        @relation("WorkProjectCreatedBy", fields: [createdById], references: [id])
+  sections  WorkSection[]
+
+  @@index([status])
+  @@index([buildingId])
+}
+
+model WorkSection {
+  id         String   @id @default(uuid()) @db.Uuid
+  projectId  String   @db.Uuid
+  name       String
+  /// Optional key for templates: suppliers, workers, inventory, expenses, custom
+  key        String?
+  /// [{ key, label, type: text|number|date|textarea }]
+  fieldSchema Json
+  sortOrder  Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  project WorkProject  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  records WorkRecord[]
+
+  @@index([projectId])
+}
+
+model WorkRecord {
+  id          String   @id @default(uuid()) @db.Uuid
+  sectionId   String   @db.Uuid
+  /// Values keyed by fieldSchema keys
+  data        Json
+  createdById String?  @db.Uuid
+  deletedAt   DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  section   WorkSection @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  createdBy User?       @relation("WorkRecordCreatedBy", fields: [createdById], references: [id])
+
+  @@index([sectionId])
+}
+
+/// Legacy property-linked work items (kept for existing data)
+model WorkProgress {
+  id               String             @id @default(uuid()) @db.Uuid
+  buildingId       String             @db.Uuid
+  unitId           String?            @db.Uuid
+  title            String
+  description      String?
+  assignedTo       String?
+  startDate        DateTime?
+  expectedEndDate  DateTime?
+  progressPercent  Int                @default(0)
+  status           WorkProgressStatus @default(NOT_STARTED)
+  budget           Decimal?           @db.Decimal(12, 2)
+  actualExpense    Decimal?           @db.Decimal(12, 2)
+  notes            String?
+  imageFilename    String?
+  imageUrl         String?
+  createdById      String?            @db.Uuid
+  deletedAt        DateTime?
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
+  building  Building @relation(fields: [buildingId], references: [id])
+  unit      Unit?    @relation(fields: [unitId], references: [id])
+  createdBy User?    @relation("WorkCreatedBy", fields: [createdById], references: [id])
+
+  @@index([buildingId])
+  @@index([unitId])
+  @@index([status])
+}
+
+/// Admin-defined extra fields for maintenance records (text, number, date, select, textarea)
+model MaintenanceFieldDef {
+  id          String   @id @default(uuid()) @db.Uuid
+  key         String   @unique
+  label       String
+  /// text | number | date | select | textarea
+  fieldType   String   @default("text")
+  options     Json?
+  required    Boolean  @default(false)
+  sortOrder   Int      @default(0)
+  isActive    Boolean  @default(true)
+  createdById String?  @db.Uuid
+  deletedAt   DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  createdBy User? @relation("MaintenanceFieldCreatedBy", fields: [createdById], references: [id])
+
+  @@index([isActive])
+  @@index([sortOrder])
+}
+
+/// Property maintenance / repair work — financially linked via Expense (txnType MAINTENANCE)
+model MaintenanceRecord {
+  id          String            @id @default(uuid()) @db.Uuid
+  code        String            @unique
+  subject     String
+  amount      Decimal           @db.Decimal(12, 2)
+  buildingId  String            @db.Uuid
+  unitId      String?           @db.Uuid
+  workDate    DateTime
+  description String?
+  status      MaintenanceStatus @default(COMPLETED)
+  /// Values for active MaintenanceFieldDef keys
+  customData  Json?
+  /// Linked money-movement expense (source of truth for spend in finance)
+  expenseId   String?           @unique @db.Uuid
+  createdById String?           @db.Uuid
+  deletedAt   DateTime?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  building  Building @relation(fields: [buildingId], references: [id])
+  unit      Unit?    @relation(fields: [unitId], references: [id])
+  expense   Expense? @relation(fields: [expenseId], references: [id])
+  createdBy User?    @relation("MaintenanceCreatedBy", fields: [createdById], references: [id])
+
+  @@index([buildingId])
+  @@index([unitId])
+  @@index([status])
+  @@index([workDate])
+}
+
 model Setting {
   id        String   @id @default(uuid()) @db.Uuid
   key       String   @unique
   value     Json
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+/// Audit / activity timeline for unit profiles (and related entities)
+model Activity {
+  id         String   @id @default(uuid()) @db.Uuid
+  entityType String
+  entityId   String   @db.Uuid
+  unitId     String?  @db.Uuid
+  action     String
+  summary    String
+  meta       Json?
+  actorId    String?  @db.Uuid
+  createdAt  DateTime @default(now())
+
+  actor User? @relation("ActivityActor", fields: [actorId], references: [id])
+
+  @@index([entityType, entityId])
+  @@index([unitId])
+  @@index([createdAt])
+}
+
+/// Documents attached to units, leases (business/tenant), sales, etc.
+model EntityDocument {
+  id           String           @id @default(uuid()) @db.Uuid
+  entityType   String
+  entityId     String           @db.Uuid
+  unitId       String?          @db.Uuid
+  category     DocumentCategory @default(OTHER)
+  filename     String
+  originalName String?
+  url          String
+  mimeType     String?
+  size         Int?
+  notes        String?
+  uploadedById String?          @db.Uuid
+  deletedAt    DateTime?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  uploadedBy User? @relation("DocumentUploadedBy", fields: [uploadedById], references: [id])
+
+  @@index([entityType, entityId])
+  @@index([unitId])
+  @@index([category])
 }

@@ -27,10 +27,15 @@ export function createExpressApp() {
   const allowedOrigins = new Set(
     [
       env.FRONTEND_URL,
-      'http://localhost:5173',
-      'http://localhost:5174',
-      'http://127.0.0.1:5173',
-      'http://127.0.0.1:5174',
+      ...(env.CORS_ORIGINS || []),
+      ...(!env.isProduction
+        ? [
+            'http://localhost:5173',
+            'http://localhost:5174',
+            'http://127.0.0.1:5173',
+            'http://127.0.0.1:5174',
+          ]
+        : []),
     ].filter(Boolean),
   );
 

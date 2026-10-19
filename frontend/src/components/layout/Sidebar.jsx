@@ -4,6 +4,7 @@ import * as MdIcons from 'react-icons/md';
 import { MdClose, MdShield } from 'react-icons/md';
 import { APP_NAME, NAV_SECTIONS } from '../../utils/constants.js';
 import { cn } from '../../utils/format.js';
+import { useAuth } from '../../context/AuthContext.jsx';
 
 function resolveIcon(name) {
   const Icon = MdIcons[name];
@@ -11,6 +12,16 @@ function resolveIcon(name) {
 }
 
 export default function Sidebar({ open, onClose, isMobile }) {
+  const { user } = useAuth();
+  const isAdmin = Boolean(user?.isAdmin || user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN');
+
+  const sections = NAV_SECTIONS.map((section) => ({
+    ...section,
+    items: section.items.filter((item) => {
+      if (item.to === '/users') return isAdmin;
+      return true;
+    }),
+  })).filter((section) => section.items.length > 0);
   const content = (
     <div className="flex h-full flex-col bg-[var(--sidebar)]">
       <div className="flex h-[var(--header-h)] items-center justify-between border-b border-white/[0.06] px-5">
@@ -33,7 +44,7 @@ export default function Sidebar({ open, onClose, isMobile }) {
       </div>
 
       <nav className="flex-1 space-y-5 overflow-y-auto px-3 py-4">
-        {NAV_SECTIONS.map((section) => (
+        {sections.map((section) => (
           <div key={section.title}>
             <p className="mb-2 px-3 text-[10px] font-semibold uppercase tracking-[0.16em] text-white/40">
               {section.title}
@@ -46,7 +57,7 @@ export default function Sidebar({ open, onClose, isMobile }) {
                   <li key={item.to}>
                     <NavLink
                       to={item.to}
-                      end={item.to === '/bookings' || item.to === '/dashboard'}
+                      end={item.to === '/bookings' || item.to === '/dashboard' || item.to === '/'}
                       onClick={isMobile ? onClose : undefined}
                       className={({ isActive }) =>
                         cn(
@@ -62,7 +73,7 @@ export default function Sidebar({ open, onClose, isMobile }) {
                           <Icon
                             className={cn(
                               'h-[18px] w-[18px] shrink-0',
-                              isActive ? 'text-[#FF551A]' : 'text-white/70 group-hover:text-white',
+                              isActive ? 'text-[var(--sidebar-active)]' : 'text-white/70 group-hover:text-white',
                             )}
                           />
                           <span className="flex-1 text-white">{item.label}</span>
@@ -83,8 +94,8 @@ export default function Sidebar({ open, onClose, isMobile }) {
       </nav>
 
       <div className="border-t border-white/[0.06] px-5 py-4">
-        <p className="text-[11px] text-white/50">Property Rentals Admin</p>
-        <p className="mt-0.5 text-xs font-medium text-white/70">v1.0 · Two buildings</p>
+        <p className="text-[11px] text-white/50">{APP_NAME}</p>
+        <p className="mt-0.5 text-xs font-medium text-white/70">Real Estate Management</p>
       </div>
     </div>
   );
@@ -95,7 +106,7 @@ export default function Sidebar({ open, onClose, isMobile }) {
         {open ? (
           <button
             type="button"
-            className="fixed inset-0 z-40 bg-[#0a0612]/60 backdrop-blur-sm lg:hidden"
+            className="fixed inset-0 z-40 bg-[var(--primary-dark)]/60 backdrop-blur-sm lg:hidden"
             aria-label="Close sidebar overlay"
             onClick={onClose}
           />

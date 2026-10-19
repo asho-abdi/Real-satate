@@ -10,7 +10,7 @@ export function SettingsProvider({ children }) {
   const { isAuthenticated } = useAuth();
   const [settings, setSettings] = useState({
     companyName: APP_NAME,
-    currency: 'USD',
+    currency: 'KES',
     nightsNote: 'Guest stays are billed as nights × (monthly rent ÷ 30).',
   });
   const [loading, setLoading] = useState(false);
@@ -18,7 +18,7 @@ export function SettingsProvider({ children }) {
   const applySettings = useCallback((map = {}) => {
     const next = {
       companyName: map['app.name'] || APP_NAME,
-      currency: map.currency || 'USD',
+      currency: map.currency || 'KES',
       nightsNote:
         map['billing.nightsNote'] ||
         'Guest stays are billed as nights × (monthly rent ÷ 30).',

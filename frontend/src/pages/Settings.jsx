@@ -7,9 +7,11 @@ import Select from '../components/ui/Select.jsx';
 import Button from '../components/ui/Button.jsx';
 import Spinner from '../components/ui/Spinner.jsx';
 import { useSettings } from '../context/SettingsContext.jsx';
+import { NAV_LAYOUTS, useLayout } from '../context/LayoutContext.jsx';
 
 export default function Settings() {
   const { settings, loading, saveSettings } = useSettings();
+  const { navLayout, setNavLayout } = useLayout();
   const [companyName, setCompanyName] = useState(settings.companyName);
   const [currency, setCurrency] = useState(settings.currency);
   const [nightsNote, setNightsNote] = useState(settings.nightsNote);
@@ -45,35 +47,55 @@ export default function Settings() {
     <div>
       <PageHeader title="Settings" subtitle="Company preferences synced with the backend." />
 
-      <Card title="Company" className="max-w-xl">
-        <div className="grid gap-4">
-          <Input
-            label="Company name"
-            value={companyName}
-            onChange={(e) => setCompanyName(e.target.value)}
-          />
+      <div className="grid max-w-xl gap-5">
+        <Card title="Navigation layout">
           <Select
-            label="Currency"
-            value={currency}
-            onChange={(e) => setCurrency(e.target.value)}
+            label="Menu style"
+            value={navLayout}
+            onChange={(e) => setNavLayout(e.target.value)}
           >
-            <option value="USD">USD</option>
-            <option value="AED">AED</option>
+            {NAV_LAYOUTS.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
           </Select>
-          <label className="block space-y-1.5">
-            <span className="text-sm font-medium text-[var(--text)]">Default nights note</span>
-            <textarea
-              value={nightsNote}
-              onChange={(e) => setNightsNote(e.target.value)}
-              rows={3}
-              className="w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm text-[var(--text)] outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20"
+          <p className="mt-2 text-xs text-[var(--text-muted)]">
+            Choose Sidebar or Topbar. Saved on this device.
+          </p>
+        </Card>
+
+        <Card title="Company">
+          <div className="grid gap-4">
+            <Input
+              label="Company name"
+              value={companyName}
+              onChange={(e) => setCompanyName(e.target.value)}
             />
-          </label>
-          <Button className="h-12 px-6 text-base" onClick={save} loading={saving}>
-            Save Settings
-          </Button>
-        </div>
-      </Card>
+            <Select
+              label="Currency"
+              value={currency}
+              onChange={(e) => setCurrency(e.target.value)}
+            >
+              <option value="KES">KES — Kenyan Shilling</option>
+              <option value="USD">USD</option>
+              <option value="AED">AED</option>
+            </Select>
+            <label className="block space-y-1.5">
+              <span className="text-sm font-medium text-[var(--text)]">Default nights note</span>
+              <textarea
+                value={nightsNote}
+                onChange={(e) => setNightsNote(e.target.value)}
+                rows={3}
+                className="w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm text-[var(--text)] outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20"
+              />
+            </label>
+            <Button className="h-12 px-6 text-base" onClick={save} loading={saving}>
+              Save Settings
+            </Button>
+          </div>
+        </Card>
+      </div>
     </div>
   );
 }

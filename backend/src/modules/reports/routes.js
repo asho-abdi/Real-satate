@@ -7,6 +7,10 @@ import { success } from '../../utils/apiResponse.js';
 import { AppError } from '../../utils/AppError.js';
 import { currentMonthKey } from '../../utils/rent.js';
 import { exportExcel, exportPdf } from '../../utils/export.js';
+import {
+  assertBuildingAccess,
+  resourceBuildingFilter,
+} from '../../services/access.service.js';
 
 const router = Router();
 router.use(authenticate);
@@ -103,10 +107,14 @@ function money(n) {
   return Math.round(Number(n || 0) * 100) / 100;
 }
 
-async function buildSummaryReport(query) {
+async function buildSummaryReport(query, user) {
   const period = resolvePeriod(query);
   const buildingId = query.buildingId ? String(query.buildingId) : null;
   const floorId = query.floorId ? String(query.floorId) : null;
+
+  if (buildingId) {
+    await assertBuildingAccess(user, buildingId, user.buildingIds);
+  }
 
   let building = null;
   let floor = null;
@@ -123,6 +131,7 @@ async function buildSummaryReport(query) {
         id: floorId,
         deletedAt: null,
         ...(buildingId ? { buildingId } : {}),
+        ...resourceBuildingFilter(user.buildingIds),
       },
       select: {
         id: true,
@@ -133,12 +142,15 @@ async function buildSummaryReport(query) {
       },
     });
     if (!floor) throw new AppError('Floor not found', 404);
+    await assertBuildingAccess(user, floor.buildingId, user.buildingIds);
     if (!building) building = floor.building;
   }
 
   const unitWhere = {
     deletedAt: null,
-    ...(buildingId ? { buildingId } : {}),
+    ...(buildingId
+      ? { buildingId }
+      : resourceBuildingFilter(user.buildingIds)),
     ...(floorId ? { floorId } : {}),
   };
 
@@ -305,12 +317,31 @@ async function buildSummaryReport(query) {
     orderBy: { month: 'asc' },
   });
 
-  const guestCollected = bookings.reduce((s, b) => s + Number(b.totalAmount), 0);
+  // Guest revenue = amount actually paid, not booking total
+  const guestCollected = bookings.reduce((s, b) => s + Number(b.amountPaid || 0), 0);
   const rentCollected = payments.reduce((s, p) => s + Number(p.amountPaid), 0);
   const outstandingTotal = outstandingPayments.reduce(
     (s, p) => s + (Number(p.amountDue) - Number(p.amountPaid)),
     0,
   );
+
+  const maintenanceWhere = {
+    deletedAt: null,
+    status: { not: 'CANCELLED' },
+    workDate: { gte: period.from, lte: period.to },
+    ...(buildingId ? { buildingId } : {}),
+    ...(floorId
+      ? { unit: { floorId, deletedAt: null } }
+      : {}),
+  };
+  const maintenanceAgg = await prisma.maintenanceRecord.aggregate({
+    where: maintenanceWhere,
+    _sum: { amount: true },
+    _count: true,
+  });
+  const maintenanceCost = Number(maintenanceAgg._sum.amount || 0);
+  const grossRevenue = rentCollected + guestCollected;
+  const netRevenue = grossRevenue - maintenanceCost;
 
   const checkIns = bookings.length;
   const checkOuts = await prisma.booking.count({
@@ -344,7 +375,8 @@ async function buildSummaryReport(query) {
       floor: b.unit?.floor?.name || '—',
       period: `${dayKey(b.checkIn)} → ${dayKey(b.checkOut)}`,
       date: dayKey(b.checkIn),
-      amount: money(b.totalAmount),
+      amount: money(b.amountPaid || 0),
+      totalAmount: money(b.totalAmount),
       method: b.paymentMethod || null,
       status: b.status,
     })),
@@ -377,7 +409,10 @@ async function buildSummaryReport(query) {
       occupancyRate,
       rentCollected: money(rentCollected),
       guestCollected: money(guestCollected),
-      revenueTotal: money(rentCollected + guestCollected),
+      revenueTotal: money(grossRevenue),
+      maintenanceCost: money(maintenanceCost),
+      maintenanceCount: maintenanceAgg._count || 0,
+      netRevenue: money(netRevenue),
       outstanding: money(outstandingTotal),
       bookingsCount: bookings.length,
       checkIns,
@@ -423,7 +458,7 @@ router.get(
   '/summary',
   authorize('reports:read'),
   asyncHandler(async (req, res) => {
-    const report = await buildSummaryReport(req.query);
+    const report = await buildSummaryReport(req.query, req.user);
     return success(res, report);
   }),
 );
@@ -433,7 +468,7 @@ router.get(
   authorize('reports:read'),
   asyncHandler(async (req, res) => {
     const format = String(req.query.format || 'xlsx').toLowerCase();
-    const report = await buildSummaryReport(req.query);
+    const report = await buildSummaryReport(req.query, req.user);
     const filename = `report-${report.period.from}-to-${report.period.to}`;
 
     const rows = [
@@ -514,11 +549,26 @@ router.get(
 router.get(
   '/dashboard',
   authorize('reports:read'),
-  asyncHandler(async (_req, res) => {
+  asyncHandler(async (req, res) => {
     const today = dayKey();
     const month = currentMonthKey();
+    const now = new Date();
     const todayStart = startOfDay(today);
     const todayEnd = endOfDay(today);
+    const buildingScope = resourceBuildingFilter(req.user.buildingIds);
+    const nestedScope =
+      req.user.buildingIds === null
+        ? {}
+        : { unit: { buildingId: { in: req.user.buildingIds } } };
+    const paymentScope =
+      req.user.buildingIds === null
+        ? {}
+        : {
+            OR: [
+              { tenant: { unit: { buildingId: { in: req.user.buildingIds } } } },
+              { business: { unit: { buildingId: { in: req.user.buildingIds } } } },
+            ],
+          };
 
     const [
       totalBuildings,
@@ -533,31 +583,44 @@ router.get(
       todayCheckIns,
       todayCheckOuts,
     ] = await Promise.all([
-      prisma.building.count({ where: { deletedAt: null } }),
-      prisma.unit.count({ where: { deletedAt: null } }),
-      prisma.unit.count({ where: { deletedAt: null, status: 'OCCUPIED' } }),
-      prisma.unit.count({ where: { deletedAt: null, status: 'AVAILABLE' } }),
-      prisma.booking.count({ where: { deletedAt: null, status: 'CHECKED_IN' } }),
-      prisma.tenant.count({ where: { deletedAt: null, status: 'ACTIVE' } }),
-      prisma.unit.count({ where: { deletedAt: null, usage: 'SHOP' } }),
+      prisma.building.count({
+        where: {
+          deletedAt: null,
+          ...(req.user.buildingIds === null ? {} : { id: { in: req.user.buildingIds } }),
+        },
+      }),
+      prisma.unit.count({ where: { deletedAt: null, ...buildingScope } }),
+      prisma.unit.count({ where: { deletedAt: null, status: 'OCCUPIED', ...buildingScope } }),
+      prisma.unit.count({ where: { deletedAt: null, status: 'AVAILABLE', ...buildingScope } }),
+      prisma.booking.count({ where: { deletedAt: null, status: 'CHECKED_IN', ...nestedScope } }),
+      prisma.tenant.count({ where: { deletedAt: null, status: 'ACTIVE', ...nestedScope } }),
+      prisma.unit.count({ where: { deletedAt: null, usage: 'SHOP', ...buildingScope } }),
       prisma.monthlyPayment.findMany({
-        where: { month },
+        where: { month, ...paymentScope },
         select: { amountPaid: true, amountDue: true, status: true },
       }),
       prisma.booking.findMany({
-        where: { deletedAt: null, status: { not: 'CANCELLED' } },
-        select: { totalAmount: true, checkIn: true },
+        where: {
+          deletedAt: null,
+          status: { not: 'CANCELLED' },
+          checkIn: { lte: todayEnd },
+          checkOut: { gte: todayStart },
+          ...nestedScope,
+        },
+        select: { totalAmount: true, amountPaid: true },
       }),
       prisma.booking.count({
         where: {
           deletedAt: null,
           checkIn: { gte: todayStart, lte: todayEnd },
+          ...nestedScope,
         },
       }),
       prisma.booking.count({
         where: {
           deletedAt: null,
           checkOut: { gte: todayStart, lte: todayEnd },
+          ...nestedScope,
         },
       }),
     ]);
@@ -568,17 +631,188 @@ router.get(
 
     const guestRevenue = bookingRevenue
       .filter((b) => currentMonthKey(b.checkIn) === month)
-      .reduce((s, b) => s + Number(b.totalAmount), 0);
+      .reduce((s, b) => s + Number(b.amountPaid || 0), 0);
 
-    const outstandingAll = await prisma.monthlyPayment.findMany({
-      where: { status: { in: ['UNPAID', 'PARTIAL'] } },
-      select: { amountDue: true, amountPaid: true },
-    });
+    const [outstandingAll, outstandingCharges, outstandingSales] = await Promise.all([
+      prisma.monthlyPayment.findMany({
+        where: { status: { in: ['UNPAID', 'PARTIAL'] } },
+        select: { amountDue: true, amountPaid: true },
+      }),
+      prisma.leaseCharge.findMany({
+        where: { deletedAt: null, status: { in: ['UNPAID', 'PARTIAL'] } },
+        select: { amountDue: true, amountPaid: true },
+      }),
+      prisma.shopSale.findMany({
+        where: {
+          deletedAt: null,
+          ownershipStatus: 'ACTIVE_OWNER',
+          paymentStatus: { in: ['UNPAID', 'PARTIAL'] },
+        },
+        select: { salePrice: true, amountPaid: true },
+      }),
+    ]);
 
-    const outstandingPayments = outstandingAll.reduce(
-      (s, p) => s + (Number(p.amountDue) - Number(p.amountPaid)),
+    const outstandingPayments =
+      outstandingAll.reduce((s, p) => s + (Number(p.amountDue) - Number(p.amountPaid)), 0) +
+      outstandingCharges.reduce((s, c) => s + (Number(c.amountDue) - Number(c.amountPaid)), 0) +
+      outstandingSales.reduce((s, sale) => s + (Number(sale.salePrice) - Number(sale.amountPaid)), 0);
+
+    const [
+      forSale,
+      forRent,
+      bothOffer,
+      soldUnits,
+      reservedUnits,
+      maintenanceUnits,
+      activeBookings,
+      upcomingCheckIns,
+      upcomingCheckOuts,
+      expenseAgg,
+      expenseMonth,
+      maintenanceAgg,
+      maintenanceMonth,
+      workActive,
+      workCompleted,
+      workPending,
+      bookingOutstanding,
+      salesAgg,
+      guestBookingPaid,
+    ] = await Promise.all([
+      prisma.building.count({
+        where: {
+          deletedAt: null,
+          transactionType: { in: ['FOR_SALE', 'BOTH'] },
+          ...(req.user.buildingIds === null ? {} : { id: { in: req.user.buildingIds } }),
+        },
+      }),
+      prisma.building.count({
+        where: {
+          deletedAt: null,
+          transactionType: { in: ['FOR_RENT', 'BOTH'] },
+          ...(req.user.buildingIds === null ? {} : { id: { in: req.user.buildingIds } }),
+        },
+      }),
+      prisma.building.count({
+        where: {
+          deletedAt: null,
+          transactionType: 'BOTH',
+          ...(req.user.buildingIds === null ? {} : { id: { in: req.user.buildingIds } }),
+        },
+      }),
+      prisma.unit.count({ where: { deletedAt: null, status: 'SOLD', ...buildingScope } }),
+      prisma.unit.count({ where: { deletedAt: null, status: 'RESERVED', ...buildingScope } }),
+      prisma.unit.count({ where: { deletedAt: null, status: 'MAINTENANCE', ...buildingScope } }),
+      prisma.booking.count({
+        where: {
+          deletedAt: null,
+          status: { in: ['CONFIRMED', 'CHECKED_IN'] },
+          ...nestedScope,
+        },
+      }),
+      prisma.booking.count({
+        where: {
+          deletedAt: null,
+          status: { in: ['CONFIRMED', 'CHECKED_IN'] },
+          checkIn: { gt: todayEnd },
+          ...nestedScope,
+        },
+      }),
+      prisma.booking.count({
+        where: {
+          deletedAt: null,
+          status: { in: ['CONFIRMED', 'CHECKED_IN'] },
+          checkOut: { gt: todayEnd },
+          ...nestedScope,
+        },
+      }),
+      prisma.expense.aggregate({
+        where: { deletedAt: null, ...buildingScope },
+        _sum: { amount: true },
+      }),
+      prisma.expense.aggregate({
+        where: {
+          deletedAt: null,
+          expenseDate: { gte: new Date(now.getFullYear(), now.getMonth(), 1) },
+          ...buildingScope,
+        },
+        _sum: { amount: true },
+      }),
+      prisma.maintenanceRecord.aggregate({
+        where: {
+          deletedAt: null,
+          status: { not: 'CANCELLED' },
+          ...buildingScope,
+        },
+        _sum: { amount: true },
+        _count: true,
+      }),
+      prisma.maintenanceRecord.aggregate({
+        where: {
+          deletedAt: null,
+          status: { not: 'CANCELLED' },
+          workDate: { gte: new Date(now.getFullYear(), now.getMonth(), 1) },
+          ...buildingScope,
+        },
+        _sum: { amount: true },
+      }),
+      prisma.workProgress.count({
+        where: {
+          deletedAt: null,
+          status: { in: ['NOT_STARTED', 'IN_PROGRESS', 'ON_HOLD'] },
+          ...buildingScope,
+        },
+      }),
+      prisma.workProgress.count({
+        where: { deletedAt: null, status: 'COMPLETED', ...buildingScope },
+      }),
+      prisma.workProgress.count({
+        where: {
+          deletedAt: null,
+          status: { in: ['NOT_STARTED', 'ON_HOLD'] },
+          ...buildingScope,
+        },
+      }),
+      prisma.booking.findMany({
+        where: {
+          deletedAt: null,
+          paymentStatus: { in: ['UNPAID', 'PARTIAL'] },
+          status: { not: 'CANCELLED' },
+          ...nestedScope,
+        },
+        select: { totalAmount: true, amountPaid: true },
+      }),
+      prisma.unit.aggregate({
+        where: { deletedAt: null, status: 'SOLD', ...buildingScope },
+        _sum: { salePrice: true },
+      }),
+      prisma.booking.aggregate({
+        where: {
+          deletedAt: null,
+          status: { not: 'CANCELLED' },
+          ...nestedScope,
+        },
+        _sum: { amountPaid: true },
+      }),
+    ]);
+
+    const guestOutstanding = bookingOutstanding.reduce(
+      (s, b) => s + (Number(b.totalAmount) - Number(b.amountPaid)),
       0,
     );
+
+    const activeWork = await prisma.workProgress.findMany({
+      where: {
+        deletedAt: null,
+        status: { in: ['IN_PROGRESS', 'NOT_STARTED', 'ON_HOLD'] },
+        ...buildingScope,
+      },
+      include: {
+        building: { select: { name: true, code: true } },
+        unit: { select: { roomNumber: true } },
+      },
+      orderBy: { updatedAt: 'desc' },
+      take: 6,
+    });
 
     return success(res, {
       totalBuildings,
@@ -589,9 +823,45 @@ router.get(
       currentTenants,
       commercialShops,
       monthlyRevenue: Math.round((paymentRevenue + guestRevenue) * 100) / 100,
-      outstandingPayments: Math.round(outstandingPayments * 100) / 100,
+      outstandingPayments: Math.round((outstandingPayments + guestOutstanding) * 100) / 100,
       todayCheckIns,
       todayCheckOuts,
+      forSale,
+      forRent,
+      bothOffer,
+      soldUnits,
+      reservedUnits,
+      maintenanceUnits,
+      activeBookings,
+      upcomingCheckIns,
+      upcomingCheckOuts,
+      totalExpenses: Number(expenseAgg._sum.amount || 0),
+      expensesThisMonth: Number(expenseMonth._sum.amount || 0),
+      maintenanceSpent: Number(maintenanceAgg._sum.amount || 0),
+      maintenanceThisMonth: Number(maintenanceMonth._sum.amount || 0),
+      maintenanceCount: maintenanceAgg._count || 0,
+      totalRentalIncome: Math.round(
+        (paymentRevenue + Number(guestBookingPaid._sum.amountPaid || 0)) * 100,
+      ) / 100,
+      netRevenue: Math.round(
+        (paymentRevenue +
+          Number(guestBookingPaid._sum.amountPaid || 0) -
+          Number(maintenanceAgg._sum.amount || 0)) *
+          100,
+      ) / 100,
+      totalSales: Number(salesAgg._sum.salePrice || 0),
+      workActive,
+      workCompleted,
+      workPending,
+      activeWork: activeWork.map((w) => ({
+        id: w.id,
+        title: w.title,
+        progressPercent: w.progressPercent,
+        status: w.status,
+        building: w.building?.name,
+        unit: w.unit?.roomNumber || null,
+        assignedTo: w.assignedTo,
+      })),
     });
   }),
 );
@@ -599,9 +869,9 @@ router.get(
 router.get(
   '/occupancy',
   authorize('reports:read'),
-  asyncHandler(async (_req, res) => {
+  asyncHandler(async (req, res) => {
     const units = await prisma.unit.findMany({
-      where: { deletedAt: null },
+      where: { deletedAt: null, ...resourceBuildingFilter(req.user.buildingIds) },
       select: {
         id: true,
         roomNumber: true,
@@ -680,6 +950,7 @@ router.get(
         code: true,
         fullName: true,
         totalAmount: true,
+        amountPaid: true,
         checkIn: true,
         checkOut: true,
         status: true,
@@ -687,7 +958,8 @@ router.get(
     });
 
     const rentCollected = payments.reduce((s, p) => s + Number(p.amountPaid), 0);
-    const guestCollected = bookings.reduce((s, b) => s + Number(b.totalAmount), 0);
+    // Guest revenue = amount paid, not booking total
+    const guestCollected = bookings.reduce((s, b) => s + Number(b.amountPaid || 0), 0);
 
     return success(res, {
       month,
@@ -702,6 +974,8 @@ router.get(
       bookings: bookings.map((b) => ({
         ...b,
         totalAmount: Number(b.totalAmount),
+        amountPaid: Number(b.amountPaid || 0),
+        balance: Math.max(0, Math.round((Number(b.totalAmount) - Number(b.amountPaid || 0)) * 100) / 100),
       })),
     });
   }),
@@ -711,54 +985,198 @@ router.get(
   '/outstanding',
   authorize('reports:read'),
   asyncHandler(async (_req, res) => {
-    const payments = await prisma.monthlyPayment.findMany({
-      where: { status: { in: ['UNPAID', 'PARTIAL'] } },
-      include: {
-        tenant: {
-          select: {
-            id: true,
-            fullName: true,
-            phone: true,
-            unit: {
-              select: {
-                roomNumber: true,
-                building: { select: { name: true, code: true } },
-                floor: { select: { name: true, level: true } },
-              },
+    const unitSelect = {
+      id: true,
+      roomNumber: true,
+      building: { select: { name: true, code: true } },
+      floor: { select: { name: true, level: true } },
+    };
+
+    const [rentRows, chargeRows, sales, bookings] = await Promise.all([
+      prisma.monthlyPayment.findMany({
+        where: { status: { in: ['UNPAID', 'PARTIAL'] } },
+        include: {
+          tenant: {
+            select: {
+              id: true,
+              fullName: true,
+              phone: true,
+              unit: { select: unitSelect },
+            },
+          },
+          business: {
+            select: {
+              id: true,
+              businessName: true,
+              phone: true,
+              unit: { select: unitSelect },
             },
           },
         },
-        business: {
-          select: {
-            id: true,
-            businessName: true,
-            phone: true,
-            unit: {
-              select: {
-                roomNumber: true,
-                building: { select: { name: true, code: true } },
-                floor: { select: { name: true, level: true } },
-              },
-            },
-          },
+        orderBy: [{ month: 'asc' }],
+      }),
+      prisma.leaseCharge.findMany({
+        where: {
+          deletedAt: null,
+          status: { in: ['UNPAID', 'PARTIAL'] },
         },
-      },
-      orderBy: [{ month: 'asc' }],
-    });
+        include: {
+          unit: { select: unitSelect },
+          tenant: { select: { id: true, fullName: true, phone: true } },
+          business: { select: { id: true, businessName: true, phone: true } },
+        },
+        orderBy: [{ month: 'asc' }, { chargeDate: 'asc' }],
+      }),
+      prisma.shopSale.findMany({
+        where: {
+          deletedAt: null,
+          ownershipStatus: 'ACTIVE_OWNER',
+          paymentStatus: { in: ['UNPAID', 'PARTIAL'] },
+        },
+        include: {
+          unit: { select: unitSelect },
+        },
+        orderBy: { saleDate: 'asc' },
+      }),
+      prisma.booking.findMany({
+        where: {
+          deletedAt: null,
+          status: { not: 'CANCELLED' },
+          paymentStatus: { in: ['UNPAID', 'PARTIAL'] },
+        },
+        include: {
+          unit: { select: unitSelect },
+        },
+        orderBy: { checkIn: 'asc' },
+      }),
+    ]);
 
-    const rows = payments.map((p) => ({
-      ...p,
-      amountDue: Number(p.amountDue),
-      amountPaid: Number(p.amountPaid),
-      balance: Math.round((Number(p.amountDue) - Number(p.amountPaid)) * 100) / 100,
-    }));
+    const money = (v) => Math.round((Number(v) || 0) * 100) / 100;
+    const remaining = (due, paid) => Math.max(0, money(due - paid));
 
-    const total = rows.reduce((s, r) => s + r.balance, 0);
+    const items = [
+      ...rentRows.map((p) => {
+        const amountDue = money(p.amountDue);
+        const amountPaid = money(p.amountPaid);
+        return {
+          id: p.id,
+          kind: 'RENT',
+          source: 'monthly_payment',
+          name: p.tenant?.fullName || p.business?.businessName || '—',
+          phone: p.tenant?.phone || p.business?.phone || null,
+          unitId: p.tenant?.unit?.id || p.business?.unit?.id || null,
+          roomNumber: p.tenant?.unit?.roomNumber || p.business?.unit?.roomNumber || '—',
+          building: p.tenant?.unit?.building?.name || p.business?.unit?.building?.name || '',
+          floor: p.tenant?.unit?.floor?.name || p.business?.unit?.floor?.name || '',
+          month: p.month,
+          description: `Rent ${p.month}`,
+          amountDue,
+          amountPaid,
+          balance: remaining(amountDue, amountPaid),
+          status: p.status,
+          method: p.method,
+          paymentDate: p.paymentDate,
+          recordAction: 'UPDATE_PAYMENT',
+        };
+      }),
+      ...chargeRows.map((c) => {
+        const amountDue = money(c.amountDue);
+        const amountPaid = money(c.amountPaid);
+        const isOwner = !c.businessId && !c.tenantId;
+        return {
+          id: c.id,
+          kind: isOwner ? 'OWNER_MONTHLY' : 'OTHER_CHARGE',
+          source: 'lease_charge',
+          name:
+            c.business?.businessName ||
+            c.tenant?.fullName ||
+            (isOwner ? 'Shop owner' : '—'),
+          phone: c.business?.phone || c.tenant?.phone || null,
+          unitId: c.unitId,
+          roomNumber: c.unit?.roomNumber || '—',
+          building: c.unit?.building?.name || '',
+          floor: c.unit?.floor?.name || '',
+          month: c.month,
+          description: c.description,
+          category: c.category,
+          amountDue,
+          amountPaid,
+          balance: remaining(amountDue, amountPaid),
+          status: c.status,
+          method: null,
+          paymentDate: null,
+          recordAction: 'UPDATE_CHARGE',
+        };
+      }),
+      ...sales.map((s) => {
+        const amountDue = money(s.salePrice);
+        const amountPaid = money(s.amountPaid);
+        return {
+          id: s.id,
+          kind: 'SALE_BALANCE',
+          source: 'shop_sale',
+          name: s.buyerName,
+          phone: s.phone,
+          unitId: s.unitId,
+          roomNumber: s.unit?.roomNumber || '—',
+          building: s.unit?.building?.name || '',
+          floor: s.unit?.floor?.name || '',
+          month: null,
+          description: 'Shop sale balance',
+          amountDue,
+          amountPaid,
+          balance: remaining(amountDue, amountPaid),
+          status: s.paymentStatus,
+          method: null,
+          paymentDate: s.saleDate,
+          recordAction: 'SALE_PAYMENT',
+        };
+      }),
+      ...bookings.map((b) => {
+        const amountDue = money(b.totalAmount);
+        const amountPaid = money(b.amountPaid);
+        return {
+          id: b.id,
+          kind: 'GUEST',
+          source: 'booking',
+          name: b.fullName,
+          phone: b.phone || null,
+          unitId: b.unitId,
+          roomNumber: b.unit?.roomNumber || '—',
+          building: b.unit?.building?.name || '',
+          floor: b.unit?.floor?.name || '',
+          month: null,
+          description: `Guest stay ${b.code || ''}`.trim(),
+          amountDue,
+          amountPaid,
+          balance: remaining(amountDue, amountPaid),
+          status: b.paymentStatus,
+          method: b.paymentMethod,
+          paymentDate: b.checkIn,
+          recordAction: 'BOOKING_PAYMENT',
+        };
+      }),
+    ].filter((r) => r.balance > 0);
+
+    const total = items.reduce((s, r) => s + r.balance, 0);
 
     return success(res, {
-      total: Math.round(total * 100) / 100,
-      count: rows.length,
-      items: rows,
+      total: money(total),
+      count: items.length,
+      items,
+      byKind: {
+        rent: money(items.filter((i) => i.kind === 'RENT').reduce((s, i) => s + i.balance, 0)),
+        otherCharges: money(
+          items.filter((i) => i.kind === 'OTHER_CHARGE').reduce((s, i) => s + i.balance, 0),
+        ),
+        ownerMonthly: money(
+          items.filter((i) => i.kind === 'OWNER_MONTHLY').reduce((s, i) => s + i.balance, 0),
+        ),
+        saleBalance: money(
+          items.filter((i) => i.kind === 'SALE_BALANCE').reduce((s, i) => s + i.balance, 0),
+        ),
+        guest: money(items.filter((i) => i.kind === 'GUEST').reduce((s, i) => s + i.balance, 0)),
+      },
     });
   }),
 );

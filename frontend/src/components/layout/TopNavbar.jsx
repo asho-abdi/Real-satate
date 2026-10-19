@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import {
   MdApartment,
   MdBusiness,
@@ -16,13 +16,20 @@ import {
   MdPerson,
   MdSearch,
   MdSettings,
+  MdShield,
   MdStorefront,
+  MdViewSidebar,
+  MdWebAsset,
 } from 'react-icons/md';
+import * as MdIcons from 'react-icons/md';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { useTheme } from '../../context/ThemeContext.jsx';
 import { useNotifications } from '../../context/NotificationContext.jsx';
-import { formatDate } from '../../utils/format.js';
+import { useLayout } from '../../context/LayoutContext.jsx';
+import { APP_NAME } from '../../utils/constants.js';
+import { cn, formatDate } from '../../utils/format.js';
 import { rentalApi } from '../../services/rentalApi.js';
+import { filterNavSections } from './navItems.js';
 
 const TYPE_META = {
   building: { label: 'Building', icon: MdApartment },
@@ -33,11 +40,90 @@ const TYPE_META = {
   business: { label: 'Shop', icon: MdStorefront },
 };
 
+function resolveIcon(name) {
+  return MdIcons[name] || MdIcons.MdCircle;
+}
+
+function pathActive(pathname, to) {
+  if (to === '/dashboard' || to === '/') return pathname === '/dashboard' || pathname === '/';
+  if (to === '/bookings') return pathname === '/bookings' || pathname.startsWith('/bookings/');
+  return pathname === to || pathname.startsWith(`${to}/`);
+}
+
+function NavDropdown({ section, open, onToggle, onClose }) {
+  const location = useLocation();
+  const sectionActive = section.items.some((item) => pathActive(location.pathname, item.to));
+  const ref = useRef(null);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const onDoc = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) onClose();
+    };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [open, onClose]);
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        type="button"
+        onClick={onToggle}
+        className={cn(
+          'inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-[13px] font-medium transition-colors',
+          sectionActive || open
+            ? 'bg-brand-500/12 text-brand-600 dark:text-brand-400'
+            : 'text-[var(--text-muted)] hover:bg-[var(--surface-2)] hover:text-[var(--text)]',
+        )}
+        aria-expanded={open}
+        aria-haspopup="menu"
+      >
+        <span>{section.topLabel || section.title}</span>
+        <MdExpandMore className={cn('h-4 w-4 transition-transform', open && 'rotate-180')} />
+      </button>
+
+      {open ? (
+        <div
+          role="menu"
+          className="absolute left-0 top-[calc(100%+0.4rem)] z-40 min-w-[200px] overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--surface)] py-1 shadow-lg"
+        >
+          {section.items.map((item) => {
+            const Icon = resolveIcon(item.icon);
+            const active = pathActive(location.pathname, item.to);
+            return (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                end={item.to === '/bookings' || item.to === '/dashboard' || item.to === '/'}
+                role="menuitem"
+                onClick={onClose}
+                className={cn(
+                  'flex items-center gap-2.5 px-3 py-2 text-sm transition-colors',
+                  active
+                    ? 'bg-brand-500/10 font-medium text-brand-600 dark:text-brand-400'
+                    : 'text-[var(--text)] hover:bg-[var(--surface-2)]',
+                )}
+              >
+                <Icon className="h-4 w-4 shrink-0 text-[var(--text-muted)]" />
+                {item.label}
+              </NavLink>
+            );
+          })}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export default function TopNavbar({ onMenuClick, search, onSearchChange }) {
   const { user, logout } = useAuth();
   const { isDark, toggleTheme } = useTheme();
   const { notifications, unreadCount, markRead, markAllRead } = useNotifications();
+  const { isTopbar, isSidebar, setNavLayout } = useLayout();
   const navigate = useNavigate();
+  const sections = filterNavSections(user);
+
+  const [openMenu, setOpenMenu] = useState(null);
   const [notifOpen, setNotifOpen] = useState(false);
   const [userOpen, setUserOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -142,27 +228,81 @@ export default function TopNavbar({ onMenuClick, search, onSearchChange }) {
   };
 
   return (
-    <header className="sticky top-0 z-20 h-[var(--header-h)] border-b border-[var(--border)] bg-[var(--surface)]">
-      <div className="flex h-full items-center gap-3 px-4 md:px-5">
+    <header className="sticky top-0 z-30 border-b border-[var(--border)] bg-[var(--surface)]">
+      <div className="flex h-[var(--header-h)] items-center gap-3 px-4 md:px-5">
         <button
           type="button"
           onClick={onMenuClick}
-          className="rounded-md p-2 text-[var(--text-muted)] hover:bg-[var(--surface-2)] hover:text-[var(--text)] lg:hidden"
+          className={cn(
+            'rounded-md p-2 text-[var(--text-muted)] hover:bg-[var(--surface-2)] hover:text-[var(--text)]',
+            isSidebar ? 'lg:hidden' : 'lg:hidden',
+          )}
           aria-label="Open menu"
         >
           <MdMenu className="h-5 w-5" />
         </button>
 
-        <button
-          type="button"
-          onClick={onMenuClick}
-          className="hidden rounded-md p-2 text-[var(--text-muted)] hover:bg-[var(--surface-2)] hover:text-[var(--text)] lg:inline-flex"
-          aria-label="Toggle sidebar"
-        >
-          <MdMenu className="h-5 w-5" />
-        </button>
+        <Link to="/today" className="flex shrink-0 items-center gap-2.5">
+          <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand-500/15 text-brand-500">
+            <MdShield className="h-5 w-5" />
+          </span>
+          <span className="hidden text-base font-bold tracking-tight text-[var(--text)] sm:inline">
+            {APP_NAME}
+          </span>
+        </Link>
 
-        <div className="ml-auto flex items-center gap-0.5 sm:gap-1">
+        {isTopbar ? (
+          <nav className="hidden min-w-0 flex-1 items-center gap-0.5 lg:flex" aria-label="Primary">
+            {sections.map((section) => (
+              <NavDropdown
+                key={section.title}
+                section={section}
+                open={openMenu === section.title}
+                onToggle={() =>
+                  setOpenMenu((cur) => (cur === section.title ? null : section.title))
+                }
+                onClose={() => setOpenMenu(null)}
+              />
+            ))}
+          </nav>
+        ) : (
+          <div className="hidden flex-1 lg:block" />
+        )}
+
+        <div className="ml-auto flex shrink-0 items-center gap-0.5 sm:gap-1">
+          <div className="mr-1 hidden items-center rounded-lg border border-[var(--border)] p-0.5 sm:flex">
+            <button
+              type="button"
+              onClick={() => setNavLayout('topbar')}
+              className={cn(
+                'inline-flex items-center gap-1 rounded-md px-2 py-1.5 text-xs font-medium transition-colors',
+                isTopbar
+                  ? 'bg-brand-500/12 text-brand-600 dark:text-brand-400'
+                  : 'text-[var(--text-muted)] hover:text-[var(--text)]',
+              )}
+              aria-pressed={isTopbar}
+              title="Topbar layout (default)"
+            >
+              <MdWebAsset className="h-4 w-4" />
+              <span className="hidden md:inline">Topbar</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setNavLayout('sidebar')}
+              className={cn(
+                'inline-flex items-center gap-1 rounded-md px-2 py-1.5 text-xs font-medium transition-colors',
+                isSidebar
+                  ? 'bg-brand-500/12 text-brand-600 dark:text-brand-400'
+                  : 'text-[var(--text-muted)] hover:text-[var(--text)]',
+              )}
+              aria-pressed={isSidebar}
+              title="Sidebar layout"
+            >
+              <MdViewSidebar className="h-4 w-4" />
+              <span className="hidden md:inline">Sidebar</span>
+            </button>
+          </div>
+
           <button
             type="button"
             onClick={toggleFullscreen}
@@ -183,7 +323,7 @@ export default function TopNavbar({ onMenuClick, search, onSearchChange }) {
             </button>
 
             {searchPanel ? (
-              <div className="absolute right-0 top-[calc(100%+0.5rem)] z-30 w-80 sm:w-96">
+              <div className="absolute right-0 top-[calc(100%+0.5rem)] z-40 w-80 sm:w-96">
                 <div className="overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--surface)] shadow-lg">
                   <div className="border-b border-[var(--border)] p-3">
                     <input
@@ -311,6 +451,25 @@ export default function TopNavbar({ onMenuClick, search, onSearchChange }) {
                 <div className="border-b border-[var(--border)] px-4 py-3">
                   <p className="truncate text-sm font-semibold">{user?.name}</p>
                   <p className="truncate text-xs text-[var(--text-muted)]">{user?.email}</p>
+                </div>
+                <div className="border-b border-[var(--border)] p-1.5 sm:hidden">
+                  <p className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+                    Layout
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => { setNavLayout('topbar'); setUserOpen(false); }}
+                    className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm hover:bg-[var(--surface-2)]"
+                  >
+                    <MdWebAsset className="h-4 w-4 text-[var(--text-muted)]" /> Topbar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setNavLayout('sidebar'); setUserOpen(false); }}
+                    className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm hover:bg-[var(--surface-2)]"
+                  >
+                    <MdViewSidebar className="h-4 w-4 text-[var(--text-muted)]" /> Sidebar
+                  </button>
                 </div>
                 <div className="p-1.5">
                   <Link to="/profile" onClick={() => setUserOpen(false)} className="flex items-center gap-2 rounded-md px-3 py-2 text-sm hover:bg-[var(--surface-2)]">

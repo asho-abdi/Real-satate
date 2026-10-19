@@ -4,7 +4,7 @@ import { APP_NAME } from '../utils/constants.js';
 export default function AuthLayout() {
   return (
     <div className="flex min-h-screen flex-col lg:flex-row">
-      <aside className="relative flex min-h-[38vh] flex-col justify-between overflow-hidden bg-gradient-to-br from-ink-900 via-brand-900 to-slate-800 px-8 py-10 text-white lg:min-h-screen lg:w-[44%] lg:px-12 lg:py-14">
+      <aside className="relative flex min-h-[38vh] flex-col justify-between overflow-hidden bg-gradient-to-br from-[var(--primary-dark)] via-[var(--primary)] to-[#6d63c4] px-8 py-10 text-white lg:min-h-screen lg:w-[44%] lg:px-12 lg:py-14">
         <div
           className="pointer-events-none absolute inset-0 opacity-40"
           style={{
@@ -23,18 +23,18 @@ export default function AuthLayout() {
 
         <div className="relative">
           <div className="flex items-center gap-3">
-            <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/10 text-sm font-semibold tracking-wide text-brand-200 backdrop-blur">
-              EO
+            <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/15 text-sm font-semibold tracking-wide text-white backdrop-blur">
+              RJ
             </span>
             <span className="font-display text-3xl tracking-tight md:text-4xl">{APP_NAME}</span>
           </div>
-          <p className="mt-6 max-w-sm text-base leading-relaxed text-teal-50/80 md:text-lg">
-            Operate listings, people, and deals from one calm command center.
+          <p className="mt-6 max-w-sm text-base leading-relaxed text-white/80 md:text-lg">
+            {APP_NAME} — manage properties, units, guests, and finances in one place.
           </p>
         </div>
 
         <p className="relative mt-10 text-xs text-white/40 lg:mt-0">
-          Built for brokers, property managers, and asset teams.
+          Built for real estate teams and property managers.
         </p>
       </aside>
 

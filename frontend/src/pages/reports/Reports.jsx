@@ -231,7 +231,7 @@ export default function Reports() {
     <div className="reports-page">
       <PageHeader
         title="Reports"
-        subtitle="Filter by period, building, or floor — then print or download."
+        subtitle="RJK REALTY reports — filter by period, building, or floor, then print or download."
         actions={
           <div className="flex flex-wrap gap-2 print:hidden">
             <Button
@@ -353,7 +353,7 @@ export default function Reports() {
       ) : (
         <div className="space-y-4">
           <div className="print-only mb-4 hidden print:block">
-            <h1 className="text-xl font-semibold">Property Rentals Report</h1>
+            <h1 className="text-xl font-semibold">RJK REALTY Report</h1>
             <p className="text-sm">
               {report.scope.label} · {report.period.label}
             </p>
@@ -365,9 +365,9 @@ export default function Reports() {
             {report.period.label}
           </p>
 
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
             <Card>
-              <p className="text-sm text-[var(--text-muted)]">Revenue (period)</p>
+              <p className="text-sm text-[var(--text-muted)]">Gross revenue</p>
               <p className="mt-1 text-2xl font-semibold">
                 {formatCurrency(s?.revenueTotal || 0)}
               </p>
@@ -375,6 +375,22 @@ export default function Reports() {
                 Rent {formatCurrency(s?.rentCollected || 0)} · Guests{' '}
                 {formatCurrency(s?.guestCollected || 0)}
               </p>
+            </Card>
+            <Card>
+              <p className="text-sm text-[var(--text-muted)]">Maintenance cost</p>
+              <p className="mt-1 text-2xl font-semibold text-rose-600">
+                −{formatCurrency(s?.maintenanceCost || 0)}
+              </p>
+              <p className="mt-1 text-xs text-[var(--text-muted)]">
+                {s?.maintenanceCount || 0} record{(s?.maintenanceCount || 0) === 1 ? '' : 's'}
+              </p>
+            </Card>
+            <Card>
+              <p className="text-sm text-[var(--text-muted)]">Net revenue</p>
+              <p className="mt-1 text-2xl font-semibold text-emerald-700 dark:text-emerald-400">
+                {formatCurrency(s?.netRevenue ?? (s?.revenueTotal || 0) - (s?.maintenanceCost || 0))}
+              </p>
+              <p className="mt-1 text-xs text-[var(--text-muted)]">Gross − maintenance</p>
             </Card>
             <Card>
               <p className="text-sm text-[var(--text-muted)]">Rooms occupied</p>

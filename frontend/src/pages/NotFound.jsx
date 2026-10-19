@@ -32,7 +32,7 @@ export default function NotFound() {
             to="/dashboard"
             className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-brand-700 px-4 text-sm font-medium text-white transition hover:bg-brand-800 dark:bg-brand-400 dark:text-ink-950 dark:hover:bg-brand-300"
           >
-            <MdHome className="h-4 w-4" /> Back to dashboard
+            <MdHome className="h-4 w-4" /> Back to home
           </Link>
         </div>
       </motion.div>

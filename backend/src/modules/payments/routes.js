@@ -5,6 +5,11 @@ import { authorize } from '../../middlewares/authorize.js';
 import { asyncHandler } from '../../utils/asyncHandler.js';
 import { success } from '../../utils/apiResponse.js';
 import { AppError } from '../../utils/AppError.js';
+import {
+  assertBuildingAccess,
+  assertUnitBuildingAccess,
+  paymentBuildingFilter,
+} from '../../services/access.service.js';
 
 const router = Router();
 router.use(authenticate);
@@ -43,10 +48,18 @@ const paymentInclude = {
 
 function serialize(p) {
   if (!p) return p;
+  const amountDue = Number(p.amountDue);
+  const amountPaid = Number(p.amountPaid);
+  const otherCharges = Number(p.otherCharges || 0);
+  const rentDue =
+    p.rentDue != null ? Number(p.rentDue) : Math.max(0, Math.round((amountDue - otherCharges) * 100) / 100);
   return {
     ...p,
-    amountDue: Number(p.amountDue),
-    amountPaid: Number(p.amountPaid),
+    amountDue,
+    amountPaid,
+    rentDue,
+    otherCharges,
+    balance: Math.max(0, Math.round((amountDue - amountPaid) * 100) / 100),
   };
 }
 
@@ -76,6 +89,7 @@ router.get(
       ...(month ? { month: String(month) } : {}),
       ...(tenantId ? { tenantId: String(tenantId) } : {}),
       ...(businessId ? { businessId: String(businessId) } : {}),
+      ...paymentBuildingFilter(req.user.buildingIds),
     };
 
     const data = await prisma.monthlyPayment.findMany({
@@ -97,6 +111,8 @@ router.post(
       month,
       amountDue,
       amountPaid = 0,
+      rentDue,
+      otherCharges = 0,
       status,
       paymentDate,
       method,
@@ -113,8 +129,31 @@ router.post(
       throw new AppError('Provide either tenantId or businessId, not both', 400);
     }
 
-    const paid = Number(amountPaid) || 0;
-    const due = Number(amountDue);
+    if (tenantId) {
+      const tenant = await prisma.tenant.findFirst({
+        where: { id: String(tenantId), deletedAt: null },
+        select: { unitId: true },
+      });
+      if (!tenant) throw new AppError('Tenant not found', 404);
+      await assertUnitBuildingAccess(req.user, tenant.unitId, req.user.buildingIds);
+    }
+    if (businessId) {
+      const business = await prisma.business.findFirst({
+        where: { id: String(businessId), deletedAt: null },
+        select: { unitId: true },
+      });
+      if (!business) throw new AppError('Business not found', 404);
+      await assertUnitBuildingAccess(req.user, business.unitId, req.user.buildingIds);
+    }
+
+    const other = Math.max(0, Number(otherCharges) || 0);
+    const rent =
+      rentDue !== undefined && rentDue !== null && rentDue !== ''
+        ? Math.max(0, Number(rentDue))
+        : Math.max(0, Number(amountDue) - other);
+    // Total due must equal rent + other charges (correct math)
+    const due = Math.round((rent + other) * 100) / 100;
+    const paid = Math.min(due, Math.max(0, Number(amountPaid) || 0));
     if (!/^\d{4}-\d{2}$/.test(String(month))) {
       throw new AppError('month must be YYYY-MM', 400);
     }
@@ -131,6 +170,8 @@ router.post(
         month: String(month),
         amountDue: due,
         amountPaid: paid,
+        rentDue: rent,
+        otherCharges: other,
         status: resolved,
         paymentDate: paymentDate ? new Date(paymentDate) : paid > 0 ? new Date() : null,
         method: methodValue,
@@ -149,20 +190,48 @@ router.patch(
   asyncHandler(async (req, res) => {
     const existing = await prisma.monthlyPayment.findUnique({
       where: { id: req.params.id },
+      include: {
+        tenant: { select: { unitId: true } },
+        business: { select: { unitId: true } },
+      },
     });
     if (!existing) throw new AppError('Payment not found', 404);
+    const unitId = existing.tenant?.unitId || existing.business?.unitId;
+    if (unitId) {
+      await assertUnitBuildingAccess(req.user, unitId, req.user.buildingIds);
+    }
 
-    const { amountPaid, status, method, paymentDate, notes, amountDue } = req.body || {};
+    const { amountPaid, status, method, paymentDate, notes, amountDue, rentDue, otherCharges } =
+      req.body || {};
 
+    const existingOther = Number(existing.otherCharges || 0);
+    const existingRent =
+      existing.rentDue != null
+        ? Number(existing.rentDue)
+        : Math.max(0, Number(existing.amountDue) - existingOther);
+
+    const nextOther =
+      otherCharges !== undefined ? Math.max(0, Number(otherCharges) || 0) : existingOther;
+    const nextRent =
+      rentDue !== undefined
+        ? Math.max(0, Number(rentDue) || 0)
+        : amountDue !== undefined && otherCharges === undefined
+          ? Math.max(0, Number(amountDue) - nextOther)
+          : existingRent;
+    const nextDue =
+      amountDue !== undefined && rentDue === undefined && otherCharges === undefined
+        ? Number(amountDue)
+        : Math.round((nextRent + nextOther) * 100) / 100;
     const nextPaid = amountPaid !== undefined ? Number(amountPaid) : Number(existing.amountPaid);
-    const nextDue = amountDue !== undefined ? Number(amountDue) : Number(existing.amountDue);
     const nextStatus = resolveStatus(nextDue, nextPaid);
 
     const payment = await prisma.monthlyPayment.update({
       where: { id: existing.id },
       data: {
-        ...(amountPaid !== undefined && { amountPaid: nextPaid }),
-        ...(amountDue !== undefined && { amountDue: nextDue }),
+        amountDue: nextDue,
+        amountPaid: nextPaid,
+        rentDue: nextRent,
+        otherCharges: nextOther,
         status: nextStatus,
         ...(method !== undefined && { method: normalizeMethod(method) }),
         ...(paymentDate !== undefined && {

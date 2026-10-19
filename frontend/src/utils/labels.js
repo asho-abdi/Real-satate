@@ -26,8 +26,10 @@ export const USAGE_LABELS = {
 
 export const STATUS_LABELS = {
   AVAILABLE: 'Available',
-  OCCUPIED: 'Occupied',
+  OCCUPIED: 'Rented',
   RESERVED: 'Reserved',
+  SOLD: 'Sold',
+  MAINTENANCE: 'Maintenance',
   PAID: 'Paid',
   UNPAID: 'Unpaid',
   PARTIAL: 'Partial',
@@ -37,12 +39,26 @@ export const STATUS_LABELS = {
   CHECKED_IN: 'CheckedIn',
   CHECKED_OUT: 'CheckedOut',
   CANCELLED: 'Cancelled',
+  FOR_SALE: 'For Sale',
+  FOR_RENT: 'For Rent',
+  BOTH: 'Sale & Rent',
+  DAILY: 'Daily',
+  WEEKLY: 'Weekly',
+  MONTHLY: 'Monthly',
+  NOT_STARTED: 'Not Started',
+  IN_PROGRESS: 'In Progress',
+  COMPLETED: 'Completed',
+  ON_HOLD: 'On Hold',
+  PLANNED: 'Planned',
 };
 
 export const STATUS_VALUES = {
   Available: 'AVAILABLE',
   Occupied: 'OCCUPIED',
+  Rented: 'OCCUPIED',
   Reserved: 'RESERVED',
+  Sold: 'SOLD',
+  Maintenance: 'MAINTENANCE',
   Paid: 'PAID',
   Unpaid: 'UNPAID',
   Partial: 'PARTIAL',
@@ -52,6 +68,13 @@ export const STATUS_VALUES = {
   CheckedIn: 'CHECKED_IN',
   CheckedOut: 'CHECKED_OUT',
   Cancelled: 'CANCELLED',
+  'For Sale': 'FOR_SALE',
+  'For Rent': 'FOR_RENT',
+  Both: 'BOTH',
+  'Sale & Rent': 'BOTH',
+  Daily: 'DAILY',
+  Weekly: 'WEEKLY',
+  Monthly: 'MONTHLY',
 };
 
 export const METHOD_LABELS = {
@@ -105,6 +128,15 @@ export function isoDate(value) {
 export function defaultUsageForUnitType(unitTypeLabel) {
   if (unitTypeLabel === 'Commercial Shop') return 'shop';
   return 'apartment';
+}
+
+/** Keep Guest / Airbnb (and apartment) when changing bedroom type; only shop forces shop. */
+export function usageAfterUnitTypeChange(unitTypeLabel, currentUsage) {
+  const usage = String(currentUsage || '').toLowerCase();
+  if (unitTypeLabel === 'Commercial Shop') return 'shop';
+  if (usage === 'shop') return 'apartment';
+  if (usage === 'guest' || usage === 'apartment') return usage;
+  return defaultUsageForUnitType(unitTypeLabel);
 }
 
 export function usageToApi(usageLabel) {

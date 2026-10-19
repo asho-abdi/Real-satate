@@ -3,8 +3,10 @@ import path from 'node:path';
 import { Router } from 'express';
 import { authenticate } from '../../middlewares/auth.js';
 import { authorize } from '../../middlewares/authorize.js';
+import { uploadDocument } from '../../middlewares/upload.js';
 import { asyncHandler } from '../../utils/asyncHandler.js';
 import { AppError } from '../../utils/AppError.js';
+import { success } from '../../utils/apiResponse.js';
 import { uploadRoot, propertiesDir, unitsDir, documentsDir } from '../../middlewares/upload.js';
 
 const ALLOWED_DIRS = {
@@ -15,6 +17,24 @@ const ALLOWED_DIRS = {
 
 const router = Router();
 router.use(authenticate);
+
+router.post(
+  '/documents',
+  uploadDocument.single('file'),
+  asyncHandler(async (req, res) => {
+    if (!req.file) {
+      throw new AppError('No file uploaded', 400);
+    }
+
+    return success(res, {
+      filename: req.file.filename,
+      originalName: req.file.originalname,
+      mimeType: req.file.mimetype,
+      size: req.file.size,
+      url: `/api/v1/files/documents/${req.file.filename}`,
+    }, 201);
+  }),
+);
 
 router.get(
   '/:category/:filename',

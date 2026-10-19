@@ -2,7 +2,7 @@ import { verifyAccess } from '../utils/tokens.js';
 import { AppError } from '../utils/AppError.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { findUserByIdWithRole } from '../repositories/user.repository.js';
-import { mapUserPermissions, sanitizeUser } from '../services/auth.service.js';
+import { sanitizeUser } from '../services/auth.service.js';
 
 /**
  * Extract Bearer token from Authorization header.
@@ -17,8 +17,15 @@ function extractBearer(req) {
   return token.trim();
 }
 
+async function attachUser(req, user) {
+  const sanitized = await sanitizeUser(user);
+  req.user = sanitized;
+  // Fresh building scope on every request so assignment changes apply immediately
+  req.user.buildingIds = sanitized.buildingIds;
+}
+
 /**
- * Require a valid access JWT and attach req.user.
+ * Require a valid access JWT and attach req.user (with permissions + buildingIds).
  */
 export const authenticate = asyncHandler(async (req, _res, next) => {
   const token = extractBearer(req);
@@ -41,11 +48,7 @@ export const authenticate = asyncHandler(async (req, _res, next) => {
     throw new AppError('Account is disabled', 403, { code: 'ACCOUNT_DISABLED' });
   }
 
-  const permissions = mapUserPermissions(user);
-  req.user = {
-    ...sanitizeUser(user),
-    permissions,
-  };
+  await attachUser(req, user);
   req.accessToken = token;
   next();
 });
@@ -64,10 +67,7 @@ export const optionalAuth = asyncHandler(async (req, _res, next) => {
     const payload = verifyAccess(token);
     const user = await findUserByIdWithRole(payload.sub);
     if (user && user.isActive !== false) {
-      req.user = {
-        ...sanitizeUser(user),
-        permissions: mapUserPermissions(user),
-      };
+      await attachUser(req, user);
       req.accessToken = token;
     } else {
       req.user = null;

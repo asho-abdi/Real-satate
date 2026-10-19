@@ -1,6 +1,7 @@
 {
   "name": "real-state",
   "private": true,
+  "type": "module",
   "workspaces": [
     "frontend",
     "backend"
@@ -15,7 +16,11 @@
     "start:backend": "npm run start --workspace=@real-state/backend",
     "prisma:generate": "npm run prisma:generate --workspace=@real-state/backend",
     "prisma:push": "npm run prisma:push --workspace=@real-state/backend",
+    "prisma:deploy": "npm run prisma:deploy --workspace=@real-state/backend",
+    "prisma:migrate:status": "npm run prisma:migrate:status --workspace=@real-state/backend",
     "prisma:seed": "npm run seed --workspace=@real-state/backend",
-    "db:backend": "npm run db:setup --workspace=@real-state/backend"
+    "db:backend": "npm run db:setup --workspace=@real-state/backend",
+    "prepare:secrets": "node scripts/generate-secrets.js",
+    "check:prod-env": "node scripts/check-prod-env.js"
   }
 }

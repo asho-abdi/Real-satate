@@ -7,6 +7,7 @@ import { AuthProvider } from './context/AuthContext.jsx';
 import { SettingsProvider } from './context/SettingsContext.jsx';
 import { ThemeProvider } from './context/ThemeContext.jsx';
 import { NotificationProvider } from './context/NotificationContext.jsx';
+import { LayoutProvider } from './context/LayoutContext.jsx';
 import './index.css';
 
 createRoot(document.getElementById('root')).render(
@@ -15,20 +16,22 @@ createRoot(document.getElementById('root')).render(
       <ThemeProvider>
         <AuthProvider>
           <SettingsProvider>
-            <NotificationProvider>
-              <App />
-              <Toaster
-                position="top-right"
-                toastOptions={{
-                  className: 'text-sm',
-                  style: {
-                    background: 'var(--surface)',
-                    color: 'var(--text)',
-                    border: '1px solid var(--border)',
-                  },
-                }}
-              />
-            </NotificationProvider>
+            <LayoutProvider>
+              <NotificationProvider>
+                <App />
+                <Toaster
+                  position="top-right"
+                  toastOptions={{
+                    className: 'text-sm',
+                    style: {
+                      background: 'var(--surface)',
+                      color: 'var(--text)',
+                      border: '1px solid var(--border)',
+                    },
+                  }}
+                />
+              </NotificationProvider>
+            </LayoutProvider>
           </SettingsProvider>
         </AuthProvider>
       </ThemeProvider>

@@ -5,7 +5,11 @@ import { authorize } from '../../middlewares/authorize.js';
 import { asyncHandler } from '../../utils/asyncHandler.js';
 import { success } from '../../utils/apiResponse.js';
 import { AppError } from '../../utils/AppError.js';
-import { bookingTotal } from '../../utils/rent.js';
+import { bookingTotal, periodBookingTotal, applyBookingDiscount } from '../../utils/rent.js';
+import {
+  assertUnitBuildingAccess,
+  unitBuildingFilter,
+} from '../../services/access.service.js';
 
 const router = Router();
 router.use(authenticate);
@@ -17,18 +21,66 @@ const bookingInclude = {
       floor: { select: { id: true, name: true, level: true } },
     },
   },
+  payments: {
+    orderBy: { paymentDate: 'asc' },
+    include: {
+      recordedBy: { select: { id: true, firstName: true, lastName: true, email: true } },
+    },
+  },
 };
 
 function serializeBooking(b) {
   if (!b) return b;
+  const payments = (b.payments || []).map((p) => ({
+    ...p,
+    amount: Number(p.amount),
+    recordedByName: p.recordedBy
+      ? `${p.recordedBy.firstName || ''} ${p.recordedBy.lastName || ''}`.trim() ||
+        p.recordedBy.email
+      : null,
+  }));
+  const amountPaid = Number(b.amountPaid ?? 0);
+  const totalAmount = Number(b.totalAmount);
   return {
     ...b,
     monthlyRent: Number(b.monthlyRent),
     dailyRent: Number(b.dailyRent),
+    periodRate: Number(b.periodRate ?? b.dailyRent ?? 0),
+    periodQuantity: Number(b.periodQuantity ?? b.nights ?? 1),
+    bookingPeriod: b.bookingPeriod || 'DAILY',
+    originalAmount: Number(b.originalAmount ?? totalAmount),
+    discountType: b.discountType || 'FIXED',
+    discountValue: Number(b.discountValue ?? b.discount ?? 0),
     discount: Number(b.discount),
-    totalAmount: Number(b.totalAmount),
-    amountPaid: Number(b.amountPaid ?? 0),
+    discountAmount: Number(b.discount),
+    servicesAmount: Number(b.servicesAmount ?? 0),
+    taxesAmount: Number(b.taxesAmount ?? 0),
+    adultsCount: Number(b.adultsCount ?? 1),
+    childrenCount: Number(b.childrenCount ?? 0),
+    email: b.email || null,
+    address: b.address || null,
+    country: b.country || null,
+    checkInTime: b.checkInTime || null,
+    totalAmount,
+    amountPaid,
+    balance: Math.max(0, Math.round((totalAmount - amountPaid) * 100) / 100),
+    notes: b.notes || null,
+    payments,
   };
+}
+
+function money(v) {
+  return Math.round((Number(v) || 0) * 100) / 100;
+}
+
+/** Combine YYYY-MM-DD + optional HH:mm into a Date. */
+function combineDateAndTime(dateStr, timeStr) {
+  const day = String(dateStr || '').slice(0, 10);
+  const time = String(timeStr || '').trim();
+  if (/^\d{2}:\d{2}$/.test(time)) {
+    return new Date(`${day}T${time}:00`);
+  }
+  return new Date(day);
 }
 
 function derivePaymentStatus(amountPaid, totalAmount) {
@@ -80,6 +132,7 @@ router.get(
     const where = {
       deletedAt: null,
       unit: { deletedAt: null, building: { deletedAt: null } },
+      ...unitBuildingFilter(req.user.buildingIds),
       ...(search
         ? {
             OR: [
@@ -110,14 +163,30 @@ router.post(
       fullName,
       phone,
       idNumber,
+      email,
+      address,
+      country,
       nationality,
       gender,
       emergencyContact,
+      identityDocument,
+      identityDocumentName,
+      adultsCount,
+      childrenCount,
+      checkInTime,
       checkIn,
       checkOut,
       discount = 0,
+      discountType = 'FIXED',
+      discountValue,
+      servicesAmount = 0,
+      taxesAmount = 0,
       paymentMethod = 'CASH',
       amountPaid,
+      bookingPeriod = 'DAILY',
+      periodQuantity,
+      periodRate,
+      notes,
     } = req.body || {};
 
     if (!unitId || !fullName || !phone || !idNumber || !checkIn || !checkOut) {
@@ -136,6 +205,7 @@ router.post(
       },
     });
     if (!unit) throw new AppError('Unit not found', 404);
+    await assertUnitBuildingAccess(req.user, unit.id, req.user.buildingIds);
     if (unit.usage !== 'GUEST') {
       throw new AppError('Bookings are only allowed on guest units', 400);
     }
@@ -143,13 +213,52 @@ router.post(
       throw new AppError(`Unit is ${unit.status.toLowerCase()} and cannot be booked`, 400);
     }
 
-    const totals = bookingTotal(unit.monthlyRent, checkIn, checkOut, discount);
-    if (totals.nights < 1) {
+    const totals = periodBookingTotal({
+      monthlyRent: unit.monthlyRent,
+      dailyRate: unit.dailyRate,
+      weeklyRate: unit.weeklyRent,
+      bookingPeriod,
+      periodQuantity:
+        periodQuantity !== undefined && periodQuantity !== null
+          ? Number(periodQuantity)
+          : undefined,
+      checkIn,
+      checkOut,
+      discountType,
+      discountValue:
+        discountValue !== undefined && discountValue !== null && discountValue !== ''
+          ? Number(discountValue)
+          : Number(discount) || 0,
+    });
+    if (periodRate !== undefined && periodRate !== null && periodRate !== '') {
+      totals.periodRate = Number(periodRate);
+      totals.subtotal = Math.round(totals.periodRate * totals.periodQuantity * 100) / 100;
+      Object.assign(
+        totals,
+        applyBookingDiscount(
+          totals.subtotal,
+          discountType,
+          discountValue !== undefined && discountValue !== null && discountValue !== ''
+            ? Number(discountValue)
+            : Number(discount) || 0,
+        ),
+      );
+    }
+    const services = money(servicesAmount);
+    const taxes = money(taxesAmount);
+    totals.servicesAmount = services;
+    totals.taxesAmount = taxes;
+    totals.totalAmount = money((totals.totalAmount || 0) + services + taxes);
+
+    if (totals.nights < 1 && totals.periodQuantity < 1) {
       throw new AppError('checkOut must be after checkIn', 400);
     }
 
+    const checkInAt = combineDateAndTime(checkIn, checkInTime);
+    const checkOutAt = new Date(checkOut);
+
     const today = startOfDay(new Date());
-    const checkInDay = startOfDay(checkIn);
+    const checkInDay = startOfDay(checkInAt);
     const unitStatus = checkInDay <= today ? 'OCCUPIED' : 'RESERVED';
     const bookingStatus = checkInDay <= today ? 'CHECKED_IN' : 'CONFIRMED';
 
@@ -158,7 +267,7 @@ router.post(
     const paid =
       amountPaid !== undefined && amountPaid !== null
         ? Math.min(Number(amountPaid), totals.totalAmount)
-        : totals.totalAmount;
+        : 0;
     const paymentStatus = derivePaymentStatus(paid, totals.totalAmount);
 
     const booking = await prisma.$transaction(async (tx) => {
@@ -179,30 +288,65 @@ router.post(
           fullName: String(fullName).trim(),
           phone: String(phone).trim(),
           idNumber: String(idNumber).trim(),
+          email: email ? String(email).trim() : null,
+          address: address ? String(address).trim() : null,
+          country: country ? String(country).trim() : null,
           nationality: nationality || null,
           gender: gender ? String(gender).toUpperCase() : null,
           emergencyContact: emergencyContact || null,
-          checkIn: new Date(checkIn),
-          checkOut: new Date(checkOut),
-          nights: totals.nights,
+          identityDocument: identityDocument ? String(identityDocument).trim() : null,
+          identityDocumentName: identityDocumentName
+            ? String(identityDocumentName).trim()
+            : null,
+          adultsCount: Math.max(1, Number(adultsCount) || 1),
+          childrenCount: Math.max(0, Number(childrenCount) || 0),
+          checkInTime: checkInTime ? String(checkInTime).trim() : null,
+          checkIn: checkInAt,
+          checkOut: checkOutAt,
+          bookingPeriod: totals.bookingPeriod,
+          periodRate: totals.periodRate,
+          periodQuantity: totals.periodQuantity,
+          nights: totals.nights || totals.periodQuantity,
           monthlyRent: unit.monthlyRent,
           dailyRent: totals.dailyRent,
+          originalAmount: totals.originalAmount ?? totals.subtotal,
+          discountType: totals.discountType || 'FIXED',
+          discountValue: totals.discountValue ?? 0,
           discount: totals.discount,
+          servicesAmount: services,
+          taxesAmount: taxes,
           totalAmount: totals.totalAmount,
           amountPaid: paid,
           paymentStatus,
           paymentMethod: paymentMethodValue,
           status: bookingStatus,
+          notes: notes ? String(notes).trim() : null,
         },
         include: bookingInclude,
       });
+
+      if (paid > 0) {
+        await tx.bookingPayment.create({
+          data: {
+            bookingId: created.id,
+            amount: paid,
+            method: paymentMethodValue,
+            paymentDate: new Date(),
+            comment: 'Initial payment on booking',
+            recordedById: req.user.id || null,
+          },
+        });
+      }
 
       await tx.unit.update({
         where: { id: unitId },
         data: { status: unitStatus },
       });
 
-      return created;
+      return tx.booking.findFirst({
+        where: { id: created.id },
+        include: bookingInclude,
+      });
     });
 
     return success(res, serializeBooking(booking), 201);
@@ -217,6 +361,7 @@ router.post(
       where: { id: req.params.id, deletedAt: null },
     });
     if (!booking) throw new AppError('Booking not found', 404);
+    await assertUnitBuildingAccess(req.user, booking.unitId, req.user.buildingIds);
     if (booking.status !== 'CONFIRMED') {
       throw new AppError(`Only CONFIRMED bookings can check in (current: ${booking.status})`, 400);
     }
@@ -266,6 +411,7 @@ router.patch(
       where: { id: req.params.id, deletedAt: null },
     });
     if (!booking) throw new AppError('Booking not found', 404);
+    await assertUnitBuildingAccess(req.user, booking.unitId, req.user.buildingIds);
 
     const editableStatuses = ['CONFIRMED', 'CHECKED_IN'];
     if (!editableStatuses.includes(booking.status)) {
@@ -279,6 +425,8 @@ router.patch(
       nationality,
       gender,
       emergencyContact,
+      identityDocument,
+      identityDocumentName,
       checkIn,
       checkOut,
       discount,
@@ -351,6 +499,14 @@ router.patch(
         ...(nationality !== undefined && { nationality }),
         ...(gender !== undefined && { gender: gender ? String(gender).toUpperCase() : null }),
         ...(emergencyContact !== undefined && { emergencyContact }),
+        ...(identityDocument !== undefined && {
+          identityDocument: identityDocument ? String(identityDocument).trim() : null,
+        }),
+        ...(identityDocumentName !== undefined && {
+          identityDocumentName: identityDocumentName
+            ? String(identityDocumentName).trim()
+            : null,
+        }),
         ...(datesChanged && isConfirmed && checkIn !== undefined && { checkIn: new Date(checkIn) }),
         ...(datesChanged && checkOut !== undefined && { checkOut: new Date(checkOut) }),
         ...(datesChanged && isConfirmed && discount !== undefined && { discount: nextDiscount }),
@@ -369,6 +525,73 @@ router.patch(
   }),
 );
 
+router.get(
+  '/:id/payments',
+  authorize('bookings:read'),
+  asyncHandler(async (req, res) => {
+    const booking = await prisma.booking.findFirst({
+      where: { id: req.params.id, deletedAt: null },
+      include: bookingInclude,
+    });
+    if (!booking) throw new AppError('Booking not found', 404);
+    await assertUnitBuildingAccess(req.user, booking.unitId, req.user.buildingIds);
+    return success(res, serializeBooking(booking).payments);
+  }),
+);
+
+router.post(
+  '/:id/payments',
+  authorize('bookings:update'),
+  asyncHandler(async (req, res) => {
+    const booking = await prisma.booking.findFirst({
+      where: { id: req.params.id, deletedAt: null },
+    });
+    if (!booking) throw new AppError('Booking not found', 404);
+    await assertUnitBuildingAccess(req.user, booking.unitId, req.user.buildingIds);
+
+    const { amount, paymentMethod = 'CASH', paymentDate, reference, comment } = req.body || {};
+    if (amount === undefined || amount === null || Number(amount) <= 0) {
+      throw new AppError('A positive payment amount is required', 400);
+    }
+
+    const method = String(paymentMethod).toUpperCase().replace(/-/g, '_');
+    const paymentMethodValue = method === 'E_BESA' || method === 'EBESA' ? 'E_BESA' : 'CASH';
+    const total = Number(booking.totalAmount);
+    const currentPaid = Number(booking.amountPaid || 0);
+    const nextPaid = Math.min(total, Math.round((currentPaid + Number(amount)) * 100) / 100);
+    const applied = Math.round((nextPaid - currentPaid) * 100) / 100;
+    if (applied <= 0) {
+      throw new AppError('Booking is already fully paid', 400);
+    }
+
+    const updated = await prisma.$transaction(async (tx) => {
+      await tx.bookingPayment.create({
+        data: {
+          bookingId: booking.id,
+          amount: applied,
+          method: paymentMethodValue,
+          paymentDate: paymentDate ? new Date(paymentDate) : new Date(),
+          reference: reference ? String(reference).trim() : null,
+          comment: comment ? String(comment).trim() : null,
+          recordedById: req.user.id || null,
+        },
+      });
+
+      return tx.booking.update({
+        where: { id: booking.id },
+        data: {
+          amountPaid: nextPaid,
+          paymentStatus: derivePaymentStatus(nextPaid, total),
+          paymentMethod: paymentMethodValue,
+        },
+        include: bookingInclude,
+      });
+    });
+
+    return success(res, serializeBooking(updated), 201);
+  }),
+);
+
 router.patch(
   '/:id/payment',
   authorize('bookings:update'),
@@ -377,15 +600,17 @@ router.patch(
       where: { id: req.params.id, deletedAt: null },
     });
     if (!booking) throw new AppError('Booking not found', 404);
+    await assertUnitBuildingAccess(req.user, booking.unitId, req.user.buildingIds);
 
-    const { amountPaid, paymentMethod } = req.body || {};
+    const { amountPaid, paymentMethod, reference, comment, paymentDate } = req.body || {};
     if (amountPaid === undefined || amountPaid === null) {
       throw new AppError('amountPaid is required', 400);
     }
 
     const total = Number(booking.totalAmount);
-    const paid = Math.min(Math.max(0, Number(amountPaid)), total);
-    const paymentStatus = derivePaymentStatus(paid, total);
+    const currentPaid = Number(booking.amountPaid || 0);
+    const targetPaid = Math.min(Math.max(0, Number(amountPaid)), total);
+    const delta = Math.round((targetPaid - currentPaid) * 100) / 100;
 
     const methodRaw =
       paymentMethod !== undefined
@@ -394,14 +619,30 @@ router.patch(
     const paymentMethodValue =
       methodRaw === 'E_BESA' || methodRaw === 'EBESA' ? 'E_BESA' : 'CASH';
 
-    const updated = await prisma.booking.update({
-      where: { id: booking.id },
-      data: {
-        amountPaid: paid,
-        paymentStatus,
-        paymentMethod: paymentMethodValue,
-      },
-      include: bookingInclude,
+    const updated = await prisma.$transaction(async (tx) => {
+      if (delta > 0) {
+        await tx.bookingPayment.create({
+          data: {
+            bookingId: booking.id,
+            amount: delta,
+            method: paymentMethodValue,
+            paymentDate: paymentDate ? new Date(paymentDate) : new Date(),
+            reference: reference ? String(reference).trim() : null,
+            comment: comment ? String(comment).trim() : 'Payment recorded',
+            recordedById: req.user.id || null,
+          },
+        });
+      }
+
+      return tx.booking.update({
+        where: { id: booking.id },
+        data: {
+          amountPaid: targetPaid,
+          paymentStatus: derivePaymentStatus(targetPaid, total),
+          paymentMethod: paymentMethodValue,
+        },
+        include: bookingInclude,
+      });
     });
 
     return success(res, serializeBooking(updated));
@@ -416,6 +657,7 @@ router.post(
       where: { id: req.params.id, deletedAt: null },
     });
     if (!booking) throw new AppError('Booking not found', 404);
+    await assertUnitBuildingAccess(req.user, booking.unitId, req.user.buildingIds);
     if (booking.status !== 'CHECKED_IN') {
       throw new AppError(`Only CHECKED_IN bookings can check out (current: ${booking.status})`, 400);
     }
@@ -475,6 +717,7 @@ router.post(
       where: { id: req.params.id, deletedAt: null },
     });
     if (!booking) throw new AppError('Booking not found', 404);
+    await assertUnitBuildingAccess(req.user, booking.unitId, req.user.buildingIds);
     if (booking.status === 'CHECKED_OUT' || booking.status === 'CANCELLED') {
       throw new AppError(`Cannot cancel a ${booking.status} booking`, 400);
     }

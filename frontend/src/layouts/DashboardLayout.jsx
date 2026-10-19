@@ -2,17 +2,22 @@ import { useState } from 'react';
 import { Outlet } from 'react-router-dom';
 import Sidebar from '../components/layout/Sidebar.jsx';
 import TopNavbar from '../components/layout/TopNavbar.jsx';
+import { useLayout } from '../context/LayoutContext.jsx';
 
 export default function DashboardLayout() {
+  const { isSidebar } = useLayout();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [search, setSearch] = useState('');
 
   return (
     <div className="min-h-screen bg-[var(--bg)]">
-      <Sidebar open={false} onClose={() => {}} isMobile={false} />
+      {isSidebar ? (
+        <Sidebar open onClose={() => {}} isMobile={false} />
+      ) : null}
+
       <Sidebar open={mobileOpen} onClose={() => setMobileOpen(false)} isMobile />
 
-      <div className="lg:pl-[260px]">
+      <div className={isSidebar ? 'lg:pl-[260px]' : undefined}>
         <TopNavbar
           onMenuClick={() => setMobileOpen(true)}
           search={search}

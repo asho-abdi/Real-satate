@@ -6,6 +6,10 @@ import { asyncHandler } from '../../utils/asyncHandler.js';
 import { success } from '../../utils/apiResponse.js';
 import { AppError } from '../../utils/AppError.js';
 import { currentMonthKey } from '../../utils/rent.js';
+import {
+  assertUnitBuildingAccess,
+  unitBuildingFilter,
+} from '../../services/access.service.js';
 
 const router = Router();
 router.use(authenticate);
@@ -31,9 +35,12 @@ function serialize(t) {
 router.get(
   '/',
   authorize('tenants:read'),
-  asyncHandler(async (_req, res) => {
+  asyncHandler(async (req, res) => {
     const data = await prisma.tenant.findMany({
-      where: { deletedAt: null },
+      where: {
+        deletedAt: null,
+        ...unitBuildingFilter(req.user.buildingIds),
+      },
       include: tenantInclude,
       orderBy: { createdAt: 'desc' },
     });
@@ -52,6 +59,8 @@ router.post(
       nationality,
       gender,
       emergencyContact,
+      identityDocument,
+      identityDocumentName,
       unitId,
       monthlyRent,
       discount = 0,
@@ -67,6 +76,7 @@ router.post(
       where: { id: unitId, deletedAt: null },
     });
     if (!unit) throw new AppError('Unit not found', 404);
+    await assertUnitBuildingAccess(req.user, unit.id, req.user.buildingIds);
     if (unit.usage !== 'APARTMENT') {
       throw new AppError('Tenants can only be assigned to apartment units', 400);
     }
@@ -88,6 +98,10 @@ router.post(
           nationality: nationality || null,
           gender: gender ? String(gender).toUpperCase() : null,
           emergencyContact: emergencyContact || null,
+          identityDocument: identityDocument ? String(identityDocument).trim() : null,
+          identityDocumentName: identityDocumentName
+            ? String(identityDocumentName).trim()
+            : null,
           unitId,
           monthlyRent: rent,
           discount: disc,
@@ -128,6 +142,7 @@ router.patch(
       where: { id: req.params.id, deletedAt: null },
     });
     if (!existing) throw new AppError('Tenant not found', 404);
+    await assertUnitBuildingAccess(req.user, existing.unitId, req.user.buildingIds);
 
     const {
       fullName,
@@ -136,6 +151,8 @@ router.patch(
       nationality,
       gender,
       emergencyContact,
+      identityDocument,
+      identityDocumentName,
       monthlyRent,
       discount,
       leaseStart,
@@ -152,6 +169,14 @@ router.patch(
         ...(nationality !== undefined && { nationality }),
         ...(gender !== undefined && { gender: gender ? String(gender).toUpperCase() : null }),
         ...(emergencyContact !== undefined && { emergencyContact }),
+        ...(identityDocument !== undefined && {
+          identityDocument: identityDocument ? String(identityDocument).trim() : null,
+        }),
+        ...(identityDocumentName !== undefined && {
+          identityDocumentName: identityDocumentName
+            ? String(identityDocumentName).trim()
+            : null,
+        }),
         ...(monthlyRent !== undefined && { monthlyRent }),
         ...(discount !== undefined && { discount }),
         ...(leaseStart !== undefined && { leaseStart: new Date(leaseStart) }),

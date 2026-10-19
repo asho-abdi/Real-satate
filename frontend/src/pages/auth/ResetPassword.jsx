@@ -40,7 +40,7 @@ export default function ResetPassword() {
     <div>
       <h1 className="page-title text-3xl text-[var(--text)] md:text-4xl">Choose a new password</h1>
       <p className="mt-2 text-sm text-[var(--text-muted)]">
-        Set a strong password for your EstateOps account.
+        Set a strong password for your RJK REALTY account.
       </p>
 
       <form onSubmit={handleSubmit(onSubmit)} className="mt-8 space-y-4">

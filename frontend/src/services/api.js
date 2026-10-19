@@ -63,6 +63,9 @@ api.interceptors.request.use(
     if (auth?.token && !String(auth.token).startsWith('mock-')) {
       config.headers.Authorization = `Bearer ${auth.token}`;
     }
+    if (typeof FormData !== 'undefined' && config.data instanceof FormData) {
+      delete config.headers['Content-Type'];
+    }
     return config;
   },
   (error) => Promise.reject(error),

@@ -4,6 +4,11 @@ import { authenticate } from '../../middlewares/auth.js';
 import { authorize } from '../../middlewares/authorize.js';
 import { asyncHandler } from '../../utils/asyncHandler.js';
 import { success } from '../../utils/apiResponse.js';
+import {
+  buildingIdFilter,
+  resourceBuildingFilter,
+  unitBuildingFilter,
+} from '../../services/access.service.js';
 
 const router = Router();
 router.use(authenticate);
@@ -23,6 +28,10 @@ router.get(
       return success(res, { query: q, results: [] });
     }
 
+    const buildingScope = buildingIdFilter(req.user.buildingIds);
+    const unitScope = resourceBuildingFilter(req.user.buildingIds);
+    const nestedUnitScope = unitBuildingFilter(req.user.buildingIds);
+
     const [
       buildings,
       floors,
@@ -34,6 +43,7 @@ router.get(
       prisma.building.findMany({
         where: {
           deletedAt: null,
+          ...buildingScope,
           OR: [{ name: contains(q) }, { code: contains(q) }, { address: contains(q) }],
         },
         select: { id: true, name: true, code: true, address: true },
@@ -44,6 +54,7 @@ router.get(
         where: {
           deletedAt: null,
           building: { deletedAt: null },
+          ...unitScope,
           OR: [
             { name: contains(q) },
             { building: { name: contains(q) } },
@@ -64,6 +75,7 @@ router.get(
         where: {
           deletedAt: null,
           building: { deletedAt: null },
+          ...unitScope,
           OR: [
             { roomNumber: contains(q) },
             { building: { name: contains(q) } },
@@ -87,6 +99,7 @@ router.get(
       prisma.booking.findMany({
         where: {
           deletedAt: null,
+          ...nestedUnitScope,
           OR: [
             { fullName: contains(q) },
             { phone: contains(q) },
@@ -113,6 +126,7 @@ router.get(
       prisma.tenant.findMany({
         where: {
           deletedAt: null,
+          ...nestedUnitScope,
           OR: [
             { fullName: contains(q) },
             { phone: contains(q) },
@@ -137,6 +151,7 @@ router.get(
       prisma.business.findMany({
         where: {
           deletedAt: null,
+          ...nestedUnitScope,
           OR: [
             { businessName: contains(q) },
             { contactName: contains(q) },

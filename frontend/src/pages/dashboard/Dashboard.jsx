@@ -6,6 +6,7 @@ import {
   MdBusiness,
   MdDoorFront,
   MdLayers,
+  MdBuild,
   MdLocalMall,
   MdWarningAmber,
 } from 'react-icons/md';
@@ -31,8 +32,8 @@ import { APP_NAME } from '../../utils/constants.js';
 import { rentalApi } from '../../services/rentalApi.js';
 import { formatCurrency } from '../../utils/format.js';
 
-const BRAND = '#FF551A';
-const CHART_COLORS = ['#FF551A', '#3b82f6', '#10b981', '#f59e0b', '#8b5cf6'];
+const BRAND = '#3B3486';
+const CHART_COLORS = ['#3B3486', '#5B4DB8', '#0F9F6E', '#D97706', '#241F5C'];
 
 function TrendPill({ value, label = '' }) {
   const positive = value >= 0;
@@ -87,17 +88,21 @@ export default function Dashboard() {
   const [bookings, setBookings] = useState([]);
   const [outstanding, setOutstanding] = useState([]);
   const [rooms, setRooms] = useState([]);
+  const [workSummary, setWorkSummary] = useState(null);
+  const [shopSales, setShopSales] = useState([]);
   const [error, setError] = useState('');
 
   useEffect(() => {
     let alive = true;
     (async () => {
       try {
-        const [dash, guests, out, units] = await Promise.all([
+        const [dash, guests, out, units, work, sales] = await Promise.all([
           rentalApi.getDashboard(),
           rentalApi.listBookings(),
           rentalApi.getOutstandingReport(),
           rentalApi.listUnits(),
+          rentalApi.getWorkProjectSummary().catch(() => null),
+          rentalApi.listShopSales().catch(() => []),
         ]);
         if (!alive) return;
         setStats(dash);
@@ -112,6 +117,8 @@ export default function Dashboard() {
           status: p.status === 'UNPAID' ? 'Unpaid' : p.status === 'PARTIAL' ? 'Partial' : p.status,
         })));
         setRooms(units);
+        setWorkSummary(work);
+        setShopSales(sales || []);
       } catch (err) {
         if (alive) setError(err.message || 'Failed to load dashboard');
       }
@@ -139,11 +146,14 @@ export default function Dashboard() {
   }, [stats]);
 
   const statusBarData = useMemo(() => {
-    const counts = { Available: 0, Occupied: 0, Reserved: 0 };
+    const counts = { Available: 0, Rented: 0, Reserved: 0, Sold: 0, Maintenance: 0 };
     for (const r of rooms) {
-      if (counts[r.status] !== undefined) counts[r.status] += 1;
+      const key = r.status === 'Occupied' ? 'Rented' : r.status;
+      if (counts[key] !== undefined) counts[key] += 1;
     }
-    return Object.entries(counts).map(([name, total]) => ({ name, total }));
+    return Object.entries(counts)
+      .filter(([, total]) => total > 0)
+      .map(([name, total]) => ({ name, total }));
   }, [rooms]);
 
   const revenueTrend = useMemo(() => {
@@ -186,37 +196,219 @@ export default function Dashboard() {
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
-          title="Buildings"
+          title="Total Properties"
           value={stats.totalBuildings}
-          trend={stats.totalBuildings > 0 ? 11 : 0}
           icon={MdBusiness}
-          iconBg="rgba(255,85,26,0.12)"
+          iconBg="rgba(59,52,134,0.12)"
           iconColor={BRAND}
         />
         <StatCard
-          title="Total Rooms"
-          value={stats.totalRooms}
-          trend={occupancyRate}
-          icon={MdDoorFront}
+          title="For Sale"
+          value={stats.forSale ?? 0}
+          icon={MdLocalMall}
+          iconBg="rgba(139,92,246,0.12)"
+          iconColor="#8b5cf6"
+        />
+        <StatCard
+          title="For Rent"
+          value={stats.forRent ?? 0}
+          icon={MdApartment}
           iconBg="rgba(59,130,246,0.12)"
           iconColor="#3b82f6"
         />
         <StatCard
-          title="Monthly Revenue"
-          value={formatCurrency(stats.monthlyRevenue)}
-          trend={stats.monthlyRevenue > 0 ? 24 : 0}
+          title="Available Units"
+          value={stats.availableRooms}
+          icon={MdDoorFront}
+          iconBg="rgba(16,185,129,0.12)"
+          iconColor="#10b981"
+        />
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <StatCard
+          title="Rental Income"
+          value={formatCurrency(stats.totalRentalIncome || stats.monthlyRevenue || 0)}
           icon={MdAttachMoney}
           iconBg="rgba(16,185,129,0.12)"
           iconColor="#10b981"
         />
         <StatCard
-          title="Outstanding"
-          value={formatCurrency(stats.outstandingPayments)}
-          trend={stats.outstandingPayments > 0 ? -12 : 0}
-          icon={MdWarningAmber}
+          title="Total Sales"
+          value={formatCurrency(stats.totalSales || 0)}
+          icon={MdLocalMall}
+          iconBg="rgba(139,92,246,0.12)"
+          iconColor="#8b5cf6"
+        />
+        <StatCard
+          title="Maintenance spent"
+          value={formatCurrency(stats.maintenanceSpent || 0)}
+          icon={MdBuild}
+          iconBg="rgba(244,63,94,0.12)"
+          iconColor="#f43f5e"
+        />
+        <StatCard
+          title="Net revenue"
+          value={formatCurrency(
+            stats.netRevenue ??
+              (stats.totalRentalIncome || stats.monthlyRevenue || 0) - (stats.maintenanceSpent || 0),
+          )}
+          icon={MdAttachMoney}
+          iconBg="rgba(16,185,129,0.12)"
+          iconColor="#10b981"
+        />
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <StatCard
+          title="Total Expenses"
+          value={formatCurrency(stats.totalExpenses || 0)}
+          icon={MdLayers}
           iconBg="rgba(245,158,11,0.12)"
           iconColor="#f59e0b"
         />
+        <StatCard
+          title="Outstanding"
+          value={formatCurrency(stats.outstandingPayments)}
+          icon={MdWarningAmber}
+          iconBg="rgba(244,63,94,0.12)"
+          iconColor="#f43f5e"
+        />
+        <StatCard title="Current Guests" value={stats.currentGuests} icon={MdApartment} iconBg="rgba(59,130,246,0.12)" iconColor="#3b82f6" />
+        <StatCard title="Active Bookings" value={stats.activeBookings ?? 0} icon={MdDoorFront} iconBg="rgba(59,52,134,0.12)" iconColor={BRAND} />
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <StatCard title="Upcoming Check-ins" value={stats.upcomingCheckIns ?? stats.todayCheckIns} icon={MdBusiness} iconBg="rgba(16,185,129,0.12)" iconColor="#10b981" />
+        <StatCard title="Upcoming Check-outs" value={stats.upcomingCheckOuts ?? stats.todayCheckOuts} icon={MdWarningAmber} iconBg="rgba(245,158,11,0.12)" iconColor="#f59e0b" />
+        <StatCard title="Sold Shops" value={shopSales.length} icon={MdLocalMall} iconBg="rgba(139,92,246,0.12)" iconColor="#8b5cf6" />
+        <StatCard title="Maintenance jobs" value={stats.maintenanceCount ?? 0} icon={MdBuild} iconBg="rgba(59,52,134,0.12)" iconColor={BRAND} />
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        <StatCard title="WP Active" value={workSummary?.inProgress ?? 0} icon={MdLayers} iconBg="rgba(59,52,134,0.12)" iconColor={BRAND} />
+        <StatCard title="WP Planning" value={workSummary?.planning ?? 0} icon={MdBusiness} iconBg="rgba(59,130,246,0.12)" iconColor="#3b82f6" />
+        <StatCard title="WP Completed" value={workSummary?.completed ?? 0} icon={MdApartment} iconBg="rgba(16,185,129,0.12)" iconColor="#10b981" />
+      </div>
+
+      <div className="mb-1 grid gap-4 sm:grid-cols-2">
+        <Card
+          title="Property maintenance"
+          action={
+            <Link to="/maintenance" className="text-xs font-medium text-brand-500 hover:underline">
+              Open Maintenance
+            </Link>
+          }
+        >
+          <div className="grid grid-cols-3 gap-2 text-center text-xs">
+            <div className="rounded-lg bg-[var(--surface-2)] p-2">
+              <p className="font-bold text-[var(--text)]">{stats.maintenanceCount ?? 0}</p>
+              <p className="text-[var(--text-muted)]">Jobs</p>
+            </div>
+            <div className="rounded-lg bg-[var(--surface-2)] p-2">
+              <p className="font-bold text-rose-600">{formatCurrency(stats.maintenanceSpent || 0)}</p>
+              <p className="text-[var(--text-muted)]">Spent</p>
+            </div>
+            <div className="rounded-lg bg-[var(--surface-2)] p-2">
+              <p className="font-bold text-rose-600">{formatCurrency(stats.maintenanceThisMonth || 0)}</p>
+              <p className="text-[var(--text-muted)]">This month</p>
+            </div>
+          </div>
+          <p className="mt-3 text-xs text-[var(--text-muted)]">
+            Net revenue after maintenance:{' '}
+            <span className="font-semibold text-emerald-600">
+              {formatCurrency(
+                stats.netRevenue ??
+                  (stats.totalRentalIncome || stats.monthlyRevenue || 0) - (stats.maintenanceSpent || 0),
+              )}
+            </span>
+          </p>
+        </Card>
+        <Card
+          title="Money movements"
+          action={
+            <Link to="/expenses" className="text-xs font-medium text-brand-500 hover:underline">
+              View all
+            </Link>
+          }
+        >
+          <p className="text-2xl font-bold text-[var(--text)]">{formatCurrency(stats.totalExpenses || 0)}</p>
+          <p className="mt-1 text-xs text-[var(--text-muted)]">
+            This month: {formatCurrency(stats.expensesThisMonth || 0)} · Includes maintenance linked as
+            finance spend
+          </p>
+        </Card>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-3">
+        <Card
+          title="Working Progress"
+          className="lg:col-span-1"
+          action={
+            <Link to="/work-progress" className="text-xs font-medium text-brand-500 hover:underline">
+              View all
+            </Link>
+          }
+        >
+          {(workSummary?.recent || []).length === 0 && !(stats.activeWork || []).length ? (
+            <p className="text-sm text-[var(--text-muted)]">No projects yet. Open Working Progress to create one.</p>
+          ) : (
+            <ul className="space-y-3">
+              {(workSummary?.recent || []).length
+                ? workSummary.recent.map((w) => (
+                    <li key={w.id} className="flex items-center justify-between gap-2 text-sm">
+                      <Link to={`/work-progress/${w.id}`} className="font-medium text-[var(--text)] hover:text-brand-500">
+                        {w.name}
+                      </Link>
+                      <Badge status={w.status}>{String(w.status || '').replace(/_/g, ' ')}</Badge>
+                    </li>
+                  ))
+                : (stats.activeWork || []).map((w) => (
+                    <li key={w.id}>
+                      <div className="flex items-center justify-between gap-2 text-sm">
+                        <span className="font-medium text-[var(--text)]">
+                          {w.unit ? `Unit ${w.unit}` : w.building} — {w.title}
+                        </span>
+                        <span className="text-[var(--text-muted)]">{w.progressPercent || 0}%</span>
+                      </div>
+                      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[var(--primary-light)]">
+                        <div
+                          className="h-full rounded-full bg-[var(--primary)]"
+                          style={{ width: `${Math.min(100, Number(w.progressPercent) || 0)}%` }}
+                        />
+                      </div>
+                    </li>
+                  ))}
+            </ul>
+          )}
+          <div className="mt-4 grid grid-cols-3 gap-2 text-center text-xs">
+            <div className="rounded-lg bg-[var(--surface-2)] p-2">
+              <p className="font-bold text-[var(--text)]">{workSummary?.inProgress ?? stats.workActive ?? 0}</p>
+              <p className="text-[var(--text-muted)]">Active</p>
+            </div>
+            <div className="rounded-lg bg-[var(--surface-2)] p-2">
+              <p className="font-bold text-[var(--text)]">{workSummary?.completed ?? stats.workCompleted ?? 0}</p>
+              <p className="text-[var(--text-muted)]">Done</p>
+            </div>
+            <div className="rounded-lg bg-[var(--surface-2)] p-2">
+              <p className="font-bold text-[var(--text)]">{workSummary?.planning ?? stats.workPending ?? 0}</p>
+              <p className="text-[var(--text-muted)]">Planning</p>
+            </div>
+          </div>
+        </Card>
+
+        <Card title="Unit Status" className="lg:col-span-2">
+          <div className="h-56">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={statusBarData}>
+                <XAxis dataKey="name" tick={{ fontSize: 12 }} />
+                <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
+                <Tooltip contentStyle={tooltipStyle} />
+                <Bar dataKey="total" fill={BRAND} radius={[6, 6, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </Card>
       </div>
 
       <div className="grid gap-4 xl:grid-cols-12">

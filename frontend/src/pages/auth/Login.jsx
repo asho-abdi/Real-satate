@@ -12,9 +12,7 @@ export default function Login() {
     handleSubmit,
     formState: { errors },
   } = useForm({
-    defaultValues: import.meta.env.DEV
-      ? { email: 'admin@estateops.com', password: 'Admin@12345' }
-      : { email: '', password: '' },
+    defaultValues: { email: '', password: '' },
   });
 
   const onSubmit = async (values) => {
@@ -71,12 +69,6 @@ export default function Login() {
         </Button>
       </form>
 
-      {import.meta.env.DEV ? (
-        <p className="mt-6 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-xs text-[var(--text-muted)]">
-          Demo: <span className="font-medium text-[var(--text)]">admin@estateops.com</span> /{' '}
-          <span className="font-medium text-[var(--text)]">Admin@12345</span>
-        </p>
-      ) : null}
     </div>
   );
 }

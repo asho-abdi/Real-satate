@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
-import { useOutletContext } from 'react-router-dom';
+import { useOutletContext, Link } from 'react-router-dom';
 import { MdWarning } from 'react-icons/md';
 import PageHeader from '../../components/ui/PageHeader.jsx';
 import Card from '../../components/ui/Card.jsx';
@@ -12,7 +12,8 @@ import Badge from '../../components/ui/Badge.jsx';
 import Spinner from '../../components/ui/Spinner.jsx';
 import PaymentCalendar from '../../components/rentals/PaymentCalendar.jsx';
 import { formatCurrency, formatDate, cn } from '../../utils/format.js';
-import { rentalApi } from '../../services/rentalApi.js';
+import { rentalApi, resolveIdentityAttachment } from '../../services/rentalApi.js';
+import IdentityDocumentField from '../../components/ui/IdentityDocumentField.jsx';
 
 const emptyForm = {
   fullName: '',
@@ -48,6 +49,7 @@ export default function Apartments() {
   const [regFloorId, setRegFloorId] = useState('');
   const [roomId, setRoomId] = useState('');
   const [form, setForm] = useState(emptyForm);
+  const [identityFile, setIdentityFile] = useState(null);
 
   // filter state (tenant list)
   const [filterBuildingId, setFilterBuildingId] = useState('');
@@ -62,6 +64,8 @@ export default function Apartments() {
   // edit modal
   const [editModal, setEditModal] = useState(null);
   const [editForm, setEditForm] = useState(emptyForm);
+  const [editIdentityFile, setEditIdentityFile] = useState(null);
+  const [clearIdentity, setClearIdentity] = useState(false);
   const [savingEdit, setSavingEdit] = useState(false);
 
   const load = useCallback(async () => {
@@ -169,6 +173,7 @@ export default function Apartments() {
       return;
     }
     try {
+      const identity = await resolveIdentityAttachment(identityFile);
       await rentalApi.createTenant({
         ...form,
         fullName: form.fullName.trim(),
@@ -177,6 +182,7 @@ export default function Apartments() {
         roomId: selectedRoom.id,
         monthlyRent: Number(form.monthlyRent) || selectedRoom.monthlyRent,
         discount: Number(form.discount) || 0,
+        ...identity,
       });
       toast.success('Tenant registered');
       setTab('tenants');
@@ -184,6 +190,7 @@ export default function Apartments() {
       setRegFloorId('');
       setRoomId('');
       setForm(emptyForm);
+      setIdentityFile(null);
       await load();
     } catch (err) {
       toast.error(err.message || 'Could not register tenant');
@@ -203,20 +210,32 @@ export default function Apartments() {
       monthlyRent: String(tenant.monthlyRent ?? ''),
       discount: tenant.discount ?? 0,
       leaseStart: tenant.leaseStart || '',
+      identityDocument: tenant.identityDocument || null,
+      identityDocumentName: tenant.identityDocumentName || null,
     });
+    setEditIdentityFile(null);
+    setClearIdentity(false);
   };
 
   const saveEdit = async () => {
     if (!editModal) return;
     setSavingEdit(true);
     try {
+      const identity = await resolveIdentityAttachment(editIdentityFile, {
+        clear: clearIdentity,
+        identityDocument: editForm.identityDocument,
+        identityDocumentName: editForm.identityDocumentName,
+      });
       await rentalApi.updateTenant(editModal.tenant.id, {
         ...editForm,
         monthlyRent: Number(editForm.monthlyRent),
         discount: Number(editForm.discount) || 0,
+        ...identity,
       });
       toast.success('Tenant updated');
       setEditModal(null);
+      setEditIdentityFile(null);
+      setClearIdentity(false);
       await load();
     } catch (err) {
       toast.error(err.message || 'Could not update tenant');
@@ -353,6 +372,12 @@ export default function Apartments() {
               value={form.idNumber}
               onChange={(e) => setForm({ ...form, idNumber: e.target.value })}
             />
+            <IdentityDocumentField
+              className="sm:col-span-2"
+              file={identityFile}
+              onFileChange={setIdentityFile}
+              onClear={() => setIdentityFile(null)}
+            />
             <Input
               label="Nationality"
               value={form.nationality}
@@ -466,12 +491,20 @@ export default function Apartments() {
                   key={t.id}
                   title={`${t.fullName} · ${t.roomNumber}`}
                   action={
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      {t.unitId || t.roomId ? (
+                        <Link
+                          to={`/units/${t.unitId || t.roomId}`}
+                          className="inline-flex h-10 items-center justify-center rounded-xl bg-brand-500 px-4 text-sm font-semibold text-white shadow-sm shadow-brand-500/30 transition hover:bg-brand-600 focus:outline-none focus:ring-2 focus:ring-brand-500/40 dark:bg-brand-500 dark:text-white dark:hover:bg-brand-400"
+                        >
+                          Open profile
+                        </Link>
+                      ) : null}
                       <Badge status={t.status}>{t.status}</Badge>
                       <button
                         type="button"
                         onClick={() => openEdit(t)}
-                        className="rounded-xl border border-[var(--border)] px-3 py-1.5 text-xs font-medium text-[var(--text-muted)] transition hover:bg-[var(--surface-2)]"
+                        className="inline-flex h-10 items-center rounded-xl border border-[var(--border)] px-3 text-sm font-medium text-[var(--text-muted)] transition hover:bg-[var(--surface-2)]"
                       >
                         Edit
                       </button>
@@ -479,7 +512,7 @@ export default function Apartments() {
                         <button
                           type="button"
                           onClick={() => openTerminate(t)}
-                          className="flex items-center gap-1.5 rounded-xl border border-rose-200 px-3 py-1.5 text-xs font-medium text-rose-600 transition hover:bg-rose-50 dark:border-rose-800 dark:text-rose-400 dark:hover:bg-rose-950/30"
+                          className="inline-flex h-10 items-center gap-1.5 rounded-xl border border-rose-200 px-3 text-sm font-medium text-rose-600 transition hover:bg-rose-50 dark:border-rose-800 dark:text-rose-400 dark:hover:bg-rose-950/30"
                         >
                           Terminate Lease
                         </button>
@@ -495,6 +528,19 @@ export default function Apartments() {
                     {formatDate(t.leaseStart)}
                     {t.leaseEnd ? ` · Ended ${formatDate(t.leaseEnd)}` : ''}
                   </p>
+                  {t.identityDocument ? (
+                    <div className="mb-2">
+                      <IdentityDocumentField
+                        label="ID document"
+                        hint=""
+                        readOnly
+                        value={{
+                          identityDocument: t.identityDocument,
+                          identityDocumentName: t.identityDocumentName,
+                        }}
+                      />
+                    </div>
+                  ) : null}
                   {t.status === 'Active' ? (
                     <div className="mt-4">
                       <PaymentCalendar
@@ -539,6 +585,31 @@ export default function Apartments() {
             <Input label="Full name" value={editForm.fullName} onChange={(e) => setEditForm({ ...editForm, fullName: e.target.value })} />
             <Input label="Phone" value={editForm.phone} onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })} />
             <Input label="ID number" value={editForm.idNumber} onChange={(e) => setEditForm({ ...editForm, idNumber: e.target.value })} />
+            <IdentityDocumentField
+              className="sm:col-span-2"
+              file={editIdentityFile}
+              value={
+                clearIdentity
+                  ? null
+                  : {
+                      identityDocument: editForm.identityDocument,
+                      identityDocumentName: editForm.identityDocumentName,
+                    }
+              }
+              onFileChange={(f) => {
+                setEditIdentityFile(f);
+                setClearIdentity(false);
+              }}
+              onClear={() => {
+                setEditIdentityFile(null);
+                setClearIdentity(true);
+                setEditForm((prev) => ({
+                  ...prev,
+                  identityDocument: null,
+                  identityDocumentName: null,
+                }));
+              }}
+            />
             <Input label="Nationality" value={editForm.nationality} onChange={(e) => setEditForm({ ...editForm, nationality: e.target.value })} />
             <Select label="Gender" value={editForm.gender} onChange={(e) => setEditForm({ ...editForm, gender: e.target.value })}>
               <option value="">Select</option>

@@ -1,6 +1,5 @@
 import { lazy, Suspense } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext.jsx';
 import AuthLayout from '../layouts/AuthLayout.jsx';
 import DashboardLayout from '../layouts/DashboardLayout.jsx';
 import ProtectedRoute from './ProtectedRoute.jsx';
@@ -12,6 +11,7 @@ const ResetPassword = lazy(() => import('../pages/auth/ResetPassword.jsx'));
 const Profile = lazy(() => import('../pages/auth/Profile.jsx'));
 const ChangePassword = lazy(() => import('../pages/auth/ChangePassword.jsx'));
 const Dashboard = lazy(() => import('../pages/dashboard/Dashboard.jsx'));
+const Today = lazy(() => import('../pages/Today.jsx'));
 const Buildings = lazy(() => import('../pages/setup/Buildings.jsx'));
 const BuildingDetail = lazy(() => import('../pages/setup/BuildingDetail.jsx'));
 const Rooms = lazy(() => import('../pages/setup/Rooms.jsx'));
@@ -21,13 +21,13 @@ const Shops = lazy(() => import('../pages/shops/Shops.jsx'));
 const Payments = lazy(() => import('../pages/payments/Payments.jsx'));
 const Outstanding = lazy(() => import('../pages/payments/Outstanding.jsx'));
 const Reports = lazy(() => import('../pages/reports/Reports.jsx'));
+const Expenses = lazy(() => import('../pages/Expenses.jsx'));
+const Maintenance = lazy(() => import('../pages/Maintenance.jsx'));
+const WorkProgress = lazy(() => import('../pages/WorkProgress.jsx'));
+const UnitProfile = lazy(() => import('../pages/units/UnitProfile.jsx'));
 const Settings = lazy(() => import('../pages/Settings.jsx'));
+const UsersAdmin = lazy(() => import('../pages/UsersAdmin.jsx'));
 const NotFound = lazy(() => import('../pages/NotFound.jsx'));
-
-function RootRedirect() {
-  const { isAuthenticated } = useAuth();
-  return <Navigate to={isAuthenticated ? '/dashboard' : '/login'} replace />;
-}
 
 function FallBack() {
   return (
@@ -41,7 +41,7 @@ export default function AppRoutes() {
   return (
     <Suspense fallback={<FallBack />}>
       <Routes>
-        <Route path="/" element={<RootRedirect />} />
+        <Route path="/" element={<Navigate to="/dashboard" replace />} />
 
         <Route element={<AuthLayout />}>
           <Route path="/login" element={<Login />} />
@@ -52,10 +52,13 @@ export default function AppRoutes() {
         <Route element={<ProtectedRoute />}>
           <Route element={<DashboardLayout />}>
             <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/today" element={<Today />} />
 
             <Route path="/buildings" element={<Buildings />} />
             <Route path="/buildings/:id" element={<BuildingDetail />} />
-            <Route path="/rooms" element={<Rooms />} />
+            <Route path="/availability" element={<Rooms />} />
+            <Route path="/rooms" element={<Navigate to="/availability" replace />} />
+            <Route path="/units/:id" element={<UnitProfile />} />
 
             <Route path="/bookings/new" element={<Navigate to="/bookings?tab=new" replace />} />
             <Route path="/bookings" element={<Bookings />} />
@@ -66,9 +69,14 @@ export default function AppRoutes() {
             <Route path="/payments" element={<Payments />} />
             <Route path="/outstanding" element={<Outstanding />} />
             <Route path="/reports" element={<Reports />} />
+            <Route path="/expenses" element={<Expenses />} />
+            <Route path="/maintenance" element={<Maintenance />} />
+            <Route path="/work-progress" element={<WorkProgress />} />
+            <Route path="/work-progress/:id" element={<WorkProgress />} />
 
             <Route path="/profile" element={<Profile />} />
             <Route path="/change-password" element={<ChangePassword />} />
+            <Route path="/users" element={<UsersAdmin />} />
             <Route path="/settings" element={<Settings />} />
           </Route>
         </Route>

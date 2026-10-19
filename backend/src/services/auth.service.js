@@ -11,29 +11,48 @@ import {
 import { sendMail } from '../utils/mailer.js';
 import * as userRepo from '../repositories/user.repository.js';
 import * as refreshTokenRepo from '../repositories/refreshToken.repository.js';
+import {
+  getAccessibleBuildingIds,
+  isAdminUser,
+  loadPermissionCodes,
+} from './access.service.js';
 
-export function mapUserPermissions(user) {
-  const role = String(user?.role || '').toUpperCase();
-  if (role === 'ADMIN' || role === 'SUPER_ADMIN') {
-    return ['*'];
-  }
-  return ['buildings:read', 'units:read', 'bookings:read', 'payments:read'];
+export async function mapUserPermissions(user) {
+  return loadPermissionCodes(user);
 }
 
-export function sanitizeUser(user) {
+export async function sanitizeUser(user, extras = {}) {
   if (!user) return null;
   const {
     passwordHash,
     resetPasswordToken,
     resetPasswordExpires,
+    roleRef,
+    buildings,
     ...rest
   } = user;
 
+  const roleCode = roleRef?.code || user.role;
+  const permissions = extras.permissions ?? (await mapUserPermissions(user));
+  const buildingIds =
+    extras.buildingIds !== undefined
+      ? extras.buildingIds
+      : await getAccessibleBuildingIds({ ...user, role: roleCode });
+
   return {
     ...rest,
+    role: roleCode,
+    roleId: user.roleId || roleRef?.id || null,
+    roleName: roleRef?.name || roleCode,
     name: `${user.firstName || ''} ${user.lastName || ''}`.trim(),
-    roleName: user.role,
-    permissions: mapUserPermissions(user),
+    isAdmin: isAdminUser({ role: roleCode }),
+    permissions,
+    buildingIds,
+    buildings: (buildings || []).map((ub) => ({
+      id: ub.building?.id || ub.buildingId,
+      code: ub.building?.code,
+      name: ub.building?.name,
+    })),
   };
 }
 
@@ -42,10 +61,11 @@ function hashToken(token) {
 }
 
 async function issueTokenPair(user) {
+  const roleCode = user.roleRef?.code || user.role;
   const accessToken = signAccessToken({
     sub: user.id,
     email: user.email,
-    role: user.role,
+    role: roleCode,
   });
   const refreshToken = signRefreshToken({ sub: user.id });
   const expiresAt = getTokenExpiry(refreshToken);
@@ -74,7 +94,7 @@ export async function login({ email, password }, ctx = {}) {
   const tokens = await issueTokenPair(user);
 
   return {
-    user: sanitizeUser(user),
+    user: await sanitizeUser(user),
     accessToken: tokens.accessToken,
     refreshToken: tokens.refreshToken,
   };
@@ -105,11 +125,17 @@ export async function refreshTokens(refreshToken) {
     throw new AppError('Refresh token revoked or expired', 401);
   }
 
+  // Reload full user with role + buildings for accurate claims
+  const user = await userRepo.findUserByIdWithRole(stored.user.id);
+  if (!user || !user.isActive) {
+    throw new AppError('User not found or disabled', 401);
+  }
+
   await refreshTokenRepo.revokeRefreshToken(hashToken(refreshToken));
-  const tokens = await issueTokenPair(stored.user);
+  const tokens = await issueTokenPair(user);
 
   return {
-    user: sanitizeUser(stored.user),
+    user: await sanitizeUser(user),
     accessToken: tokens.accessToken,
     refreshToken: tokens.refreshToken,
   };
@@ -177,13 +203,13 @@ export async function updateProfile(userId, { firstName, lastName, phone, name }
     nextLast = parts.slice(1).join(' ') || user.lastName;
   }
 
-  const updated = await userRepo.updateUser(userId, {
+  await userRepo.updateUser(userId, {
     ...(nextFirst !== undefined && { firstName: String(nextFirst).trim() }),
     ...(nextLast !== undefined && { lastName: String(nextLast).trim() }),
     ...(phone !== undefined && { phone: phone ? String(phone).trim() : null }),
   });
 
-  return sanitizeUser(updated);
+  return getMe(userId);
 }
 
 export default {

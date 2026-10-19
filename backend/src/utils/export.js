@@ -138,7 +138,7 @@ export function exportPdf(res, filename, title, columns, rows, options = {}) {
     doc.save();
     doc.rect(0, 0, pageWidth, 56).fill(BRAND.headerBg);
     doc.fillColor(BRAND.headerText).font('Helvetica-Bold').fontSize(14);
-    doc.text('Property Rentals', margin, 16, { width: contentWidth, lineBreak: false });
+    doc.text('RJK REALTY', margin, 16, { width: contentWidth, lineBreak: false });
     doc.font('Helvetica').fontSize(8).fillColor('#ccfbf1');
     doc.text('Operations report', margin, 36, { width: contentWidth, lineBreak: false });
     doc.restore();

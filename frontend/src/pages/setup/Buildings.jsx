@@ -7,8 +7,13 @@ import Card from '../../components/ui/Card.jsx';
 import Button from '../../components/ui/Button.jsx';
 import Input from '../../components/ui/Input.jsx';
 import Modal from '../../components/ui/Modal.jsx';
+import ConfirmDialog from '../../components/ui/ConfirmDialog.jsx';
 import Spinner from '../../components/ui/Spinner.jsx';
 import { rentalApi } from '../../services/rentalApi.js';
+import Select from '../../components/ui/Select.jsx';
+import Badge from '../../components/ui/Badge.jsx';
+import { TRANSACTION_TYPES } from '../../utils/constants.js';
+import { labelStatus } from '../../utils/labels.js';
 
 const emptyForm = {
   name: '',
@@ -16,6 +21,7 @@ const emptyForm = {
   address: '',
   floorsCount: 4,
   notes: '',
+  transactionType: 'FOR_RENT',
 };
 
 export default function Buildings() {
@@ -25,6 +31,8 @@ export default function Buildings() {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(emptyForm);
+  const [confirm, setConfirm] = useState(null);
+  const [deleting, setDeleting] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -65,6 +73,7 @@ export default function Buildings() {
       address: b.address || '',
       floorsCount: b.floorsCount ?? 4,
       notes: b.notes || '',
+      transactionType: b.transactionType || 'FOR_RENT',
     });
     setOpen(true);
   };
@@ -81,6 +90,7 @@ export default function Buildings() {
         address: form.address.trim() || null,
         floorsCount: Number(form.floorsCount) || 0,
         notes: form.notes.trim() || null,
+        transactionType: form.transactionType || 'FOR_RENT',
       };
       if (editing) {
         await rentalApi.updateBuilding(editing.id, payload);
@@ -98,11 +108,37 @@ export default function Buildings() {
     }
   };
 
+  const askDelete = (b) => {
+    const floors = b._count?.floors ?? 0;
+    const rooms = b._count?.units ?? 0;
+    setConfirm({
+      title: 'Delete Building?',
+      message:
+        floors > 0 || rooms > 0
+          ? `Are you sure you want to delete "${b.name}" (${b.code})? Its ${floors} floor${floors === 1 ? '' : 's'} and ${rooms} unit${rooms === 1 ? '' : 's'} will also be removed from the active list. This cannot be undone.`
+          : `Are you sure you want to delete "${b.name}" (${b.code})? This cannot be undone.`,
+      confirmLabel: 'Delete Building',
+      onConfirm: async () => {
+        setDeleting(true);
+        try {
+          await rentalApi.deleteBuilding(b.id);
+          toast.success('Building deleted');
+          setConfirm(null);
+          await load();
+        } catch (err) {
+          toast.error(err.message || 'Could not delete building');
+        } finally {
+          setDeleting(false);
+        }
+      },
+    });
+  };
+
   return (
     <div>
       <PageHeader
         title="Buildings"
-        subtitle="Register buildings, then floors and rooms. You choose shop, apartment, or guest per room."
+        subtitle="Register buildings, then floors and units. You choose shop, apartment, or guest per unit."
         actions={
           <Button className="h-12 px-5 text-base" onClick={openCreate}>
             Add Building
@@ -131,13 +167,18 @@ export default function Buildings() {
                     {b.code}
                   </p>
                   <h2 className="mt-1 text-2xl font-semibold text-[var(--text)]">{b.name}</h2>
+                  <div className="mt-2">
+                    <Badge status={labelStatus(b.transactionType || 'FOR_RENT')}>
+                      {labelStatus(b.transactionType || 'FOR_RENT')}
+                    </Badge>
+                  </div>
                   <p className="mt-1 text-sm text-[var(--text-muted)]">{b.address}</p>
                   <p className="mt-3 text-sm text-[var(--text)]">
                     {b.floorsCount} floors
                     {b._count ? (
                       <span className="text-[var(--text-muted)]">
                         {' '}
-                        · {b._count.floors} registered · {b._count.units} rooms
+                        · {b._count.floors} registered · {b._count.units} units
                       </span>
                     ) : null}
                     {b.notes ? (
@@ -148,6 +189,13 @@ export default function Buildings() {
                 <div className="flex shrink-0 flex-wrap gap-2">
                   <Button variant="secondary" className="h-10 px-3 text-sm" onClick={() => openEdit(b)}>
                     Edit
+                  </Button>
+                  <Button
+                    variant="danger"
+                    className="h-10 px-3 text-sm"
+                    onClick={() => askDelete(b)}
+                  >
+                    Delete
                   </Button>
                   <Link to={`/buildings/${b.id}`}>
                     <Button variant="secondary" className="h-12 px-4">
@@ -213,13 +261,36 @@ export default function Buildings() {
             value={form.floorsCount}
             onChange={(e) => setForm({ ...form, floorsCount: e.target.value })}
           />
+          <Select
+            label="Offer type"
+            value={form.transactionType}
+            onChange={(e) => setForm({ ...form, transactionType: e.target.value })}
+          >
+            {TRANSACTION_TYPES.map((t) => (
+              <option key={t.value} value={t.value}>
+                {t.label}
+              </option>
+            ))}
+          </Select>
           <Input
             label="Notes"
+            className="sm:col-span-2"
             value={form.notes}
             onChange={(e) => setForm({ ...form, notes: e.target.value })}
           />
         </div>
       </Modal>
+
+      <ConfirmDialog
+        open={Boolean(confirm)}
+        onClose={() => !deleting && setConfirm(null)}
+        onConfirm={confirm?.onConfirm}
+        title={confirm?.title}
+        message={confirm?.message}
+        confirmLabel={confirm?.confirmLabel || 'Delete Building'}
+        danger
+        loading={deleting}
+      />
     </div>
   );
 }

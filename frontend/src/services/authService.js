@@ -8,6 +8,11 @@ function mapSession(data) {
     email: user.email,
     phone: user.phone || '',
     role: user.role || user.roleName || 'ADMIN',
+    roleName: user.roleName || user.role || 'ADMIN',
+    isAdmin: Boolean(user.isAdmin || user.role === 'ADMIN' || user.role === 'SUPER_ADMIN'),
+    permissions: user.permissions || [],
+    buildingIds: user.buildingIds === null ? null : user.buildingIds || [],
+    buildings: user.buildings || [],
     token: data.accessToken,
     refreshToken: data.refreshToken,
     avatar:
@@ -29,6 +34,11 @@ export async function getMe() {
       email: user.email || session.email,
       phone: user.phone || session.phone || '',
       role: user.role || user.roleName || session.role,
+      roleName: user.roleName || user.role || session.roleName,
+      isAdmin: Boolean(user.isAdmin || user.role === 'ADMIN' || user.role === 'SUPER_ADMIN'),
+      permissions: user.permissions || session.permissions || [],
+      buildingIds: user.buildingIds === null ? null : user.buildingIds || session.buildingIds || [],
+      buildings: user.buildings || session.buildings || [],
       token: session.token,
       refreshToken: session.refreshToken,
       avatar:

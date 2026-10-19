@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
-import { useOutletContext } from 'react-router-dom';
+import { Link, useOutletContext } from 'react-router-dom';
 import { MdWarning } from 'react-icons/md';
 import PageHeader from '../../components/ui/PageHeader.jsx';
 import Card from '../../components/ui/Card.jsx';
@@ -12,9 +12,12 @@ import Badge from '../../components/ui/Badge.jsx';
 import Spinner from '../../components/ui/Spinner.jsx';
 import PaymentCalendar from '../../components/rentals/PaymentCalendar.jsx';
 import { formatCurrency, formatDate, cn } from '../../utils/format.js';
-import { rentalApi } from '../../services/rentalApi.js';
+import { rentalApi, resolveIdentityAttachment } from '../../services/rentalApi.js';
+import IdentityDocumentField from '../../components/ui/IdentityDocumentField.jsx';
+import { SHOP_DEAL_TYPES, PAYMENT_METHODS } from '../../utils/constants.js';
 
 const emptyForm = {
+  dealType: 'RENTAL',
   businessName: '',
   contactName: '',
   phone: '',
@@ -22,6 +25,10 @@ const emptyForm = {
   monthlyRent: '',
   discount: 0,
   leaseStart: '',
+  salePrice: '',
+  saleDate: '',
+  amountPaid: '',
+  monthlyMaintenance: '',
 };
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -34,6 +41,7 @@ export default function Shops() {
   const [floors, setFloors] = useState([]);
   const [rooms, setRooms] = useState([]);
   const [businesses, setBusinesses] = useState([]);
+  const [sales, setSales] = useState([]);
   const [payments, setPayments] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -45,6 +53,7 @@ export default function Shops() {
   const [regFloorId, setRegFloorId] = useState('');
   const [roomId, setRoomId] = useState('');
   const [form, setForm] = useState(emptyForm);
+  const [identityFile, setIdentityFile] = useState(null);
 
   // filter state (business list)
   const [filterBuildingId, setFilterBuildingId] = useState('');
@@ -59,23 +68,27 @@ export default function Shops() {
   // edit modal
   const [editModal, setEditModal] = useState(null);
   const [editForm, setEditForm] = useState(emptyForm);
+  const [editIdentityFile, setEditIdentityFile] = useState(null);
+  const [clearIdentity, setClearIdentity] = useState(false);
   const [savingEdit, setSavingEdit] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [b, f, u, biz, p] = await Promise.all([
+      const [b, f, u, biz, p, sold] = await Promise.all([
         rentalApi.listBuildings(),
         rentalApi.listFloors(),
         rentalApi.listUnits({ usage: 'SHOP' }),
         rentalApi.listBusinesses(),
         rentalApi.listPayments(),
+        rentalApi.listShopSales(),
       ]);
       setBuildings(b);
       setFloors(f);
       setRooms(u);
       setBusinesses(biz);
       setPayments(p.filter((x) => x.tenantType === 'shop'));
+      setSales(sold || []);
     } catch (err) {
       toast.error(err.message || 'Failed to load shops');
     } finally {
@@ -97,9 +110,17 @@ export default function Shops() {
     [floors, filterBuildingId],
   );
 
+  const soldUnitIds = useMemo(
+    () => new Set((sales || []).map((s) => s.unitId).filter(Boolean)),
+    [sales],
+  );
+
   const activeBusinesses = useMemo(
-    () => businesses.filter((b) => b.status === 'Active'),
-    [businesses],
+    () =>
+      businesses.filter(
+        (b) => b.status === 'Active' && !soldUnitIds.has(b.unitId || b.roomId),
+      ),
+    [businesses, soldUnitIds],
   );
   const pastBusinesses = useMemo(
     () => businesses.filter((b) => b.status !== 'Active'),
@@ -146,8 +167,45 @@ export default function Shops() {
   };
 
   const register = async () => {
+    if (!selectedRoom) {
+      toast.error('Select a shop unit');
+      return;
+    }
+
+    if (form.dealType === 'SALE') {
+      if (!form.businessName.trim() || !form.phone.trim() || !form.salePrice || !form.saleDate) {
+        toast.error('Buyer name, phone, sale price, and sale date are required');
+        return;
+      }
+      try {
+        const identity = await resolveIdentityAttachment(identityFile);
+        await rentalApi.createShopSale({
+          unitId: selectedRoom.id,
+          buyerName: form.businessName.trim(),
+          contactName: form.contactName.trim() || null,
+          phone: form.phone.trim(),
+          idNumber: form.idNumber.trim() || null,
+          salePrice: Number(form.salePrice),
+          saleDate: form.saleDate,
+          amountPaid: Number(form.amountPaid) || 0,
+          monthlyMaintenance: Number(form.monthlyMaintenance) || 0,
+          ...identity,
+        });
+        toast.success('Shop sale recorded');
+        setTab('sold');
+        setRegBuildingId('');
+        setRegFloorId('');
+        setRoomId('');
+        setForm(emptyForm);
+        setIdentityFile(null);
+        await load();
+      } catch (err) {
+        toast.error(err.message || 'Could not record sale');
+      }
+      return;
+    }
+
     if (
-      !selectedRoom ||
       !form.businessName.trim() ||
       !form.contactName.trim() ||
       !form.phone.trim() ||
@@ -157,6 +215,7 @@ export default function Shops() {
       return;
     }
     try {
+      const identity = await resolveIdentityAttachment(identityFile);
       await rentalApi.createBusiness({
         ...form,
         businessName: form.businessName.trim(),
@@ -166,13 +225,15 @@ export default function Shops() {
         roomId: selectedRoom.id,
         monthlyRent: Number(form.monthlyRent) || selectedRoom.monthlyRent,
         discount: Number(form.discount) || 0,
+        ...identity,
       });
-      toast.success('Business registered');
+      toast.success('Rental shop registered');
       setTab('tenants');
       setRegBuildingId('');
       setRegFloorId('');
       setRoomId('');
       setForm(emptyForm);
+      setIdentityFile(null);
       await load();
     } catch (err) {
       toast.error(err.message || 'Could not register business');
@@ -190,20 +251,32 @@ export default function Shops() {
       monthlyRent: String(biz.monthlyRent ?? ''),
       discount: biz.discount ?? 0,
       leaseStart: biz.leaseStart || '',
+      identityDocument: biz.identityDocument || null,
+      identityDocumentName: biz.identityDocumentName || null,
     });
+    setEditIdentityFile(null);
+    setClearIdentity(false);
   };
 
   const saveEdit = async () => {
     if (!editModal) return;
     setSavingEdit(true);
     try {
+      const identity = await resolveIdentityAttachment(editIdentityFile, {
+        clear: clearIdentity,
+        identityDocument: editForm.identityDocument,
+        identityDocumentName: editForm.identityDocumentName,
+      });
       await rentalApi.updateBusiness(editModal.biz.id, {
         ...editForm,
         monthlyRent: Number(editForm.monthlyRent),
         discount: Number(editForm.discount) || 0,
+        ...identity,
       });
       toast.success('Business updated');
       setEditModal(null);
+      setEditIdentityFile(null);
+      setClearIdentity(false);
       await load();
     } catch (err) {
       toast.error(err.message || 'Could not update business');
@@ -245,14 +318,32 @@ export default function Shops() {
 
   return (
     <div>
-      <PageHeader title="Shops" subtitle="Commercial shops and monthly rent calendar." />
+      <PageHeader title="Shops" subtitle="Purchased commercial units and rental shops stay in separate records." />
+
+      <div className="mb-6 grid gap-4 md:grid-cols-2">
+        <div className="rounded-[1.5rem] border border-[var(--border)] bg-[var(--primary-light)] p-5">
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--primary)]">Purchased commercial</p>
+          <h2 className="mt-2 text-lg font-semibold text-[var(--text)]">One-time purchase</h2>
+          <p className="mt-2 text-sm leading-relaxed text-[var(--text-muted)]">
+            The buyer purchases the shop once. The company then bills a monthly charge through Other Charges. Sale balance and monthly charges stay separate under Purchased.
+          </p>
+        </div>
+        <div className="rounded-[1.5rem] border border-[var(--border)] bg-white p-5">
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--primary)]">Rental shops</p>
+          <h2 className="mt-2 text-lg font-semibold text-[var(--text)]">Still owned by the company</h2>
+          <p className="mt-2 text-sm leading-relaxed text-[var(--text-muted)]">
+            The shop stays with the owner. The tenant pays monthly rent. Those leases live under Rental shops, with their own payment history.
+          </p>
+        </div>
+      </div>
 
       {/* tab strip */}
       <div className="mb-6 flex flex-wrap gap-2">
         {[
-          { id: 'tenants', label: `Active Businesses (${activeBusinesses.length})` },
-          { id: 'past', label: `Past Businesses (${pastBusinesses.length})` },
-          { id: 'register', label: 'Register Business' },
+          { id: 'tenants', label: `Rental shops (${activeBusinesses.length})` },
+          { id: 'sold', label: `Purchased (${sales.length})` },
+          { id: 'past', label: `Past rentals (${pastBusinesses.length})` },
+          { id: 'register', label: 'Register Shop' },
         ].map((t) => (
           <button
             key={t.id}
@@ -261,7 +352,7 @@ export default function Shops() {
             className={cn(
               'h-12 rounded-xl px-5 text-base font-medium transition',
               tab === t.id
-                ? 'bg-brand-700 text-white dark:bg-brand-400 dark:text-ink-950'
+                ? 'bg-[var(--primary)] text-white'
                 : 'bg-[var(--surface)] text-[var(--text-muted)] ring-1 ring-[var(--border)]',
             )}
           >
@@ -272,8 +363,17 @@ export default function Shops() {
 
       {/* ── Register form ─────────────────────────────────────── */}
       {tab === 'register' ? (
-        <Card title="Register Business">
+        <Card title="Register Shop">
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <Select
+              label="Business model"
+              value={form.dealType}
+              onChange={(e) => setForm({ ...form, dealType: e.target.value })}
+            >
+              {SHOP_DEAL_TYPES.map((d) => (
+                <option key={d.value} value={d.value}>{d.label}</option>
+              ))}
+            </Select>
             <Select
               label="Building"
               value={regBuildingId}
@@ -315,12 +415,12 @@ export default function Shops() {
               <option value="">Select</option>
               {shops.map((r) => (
                 <option key={r.id} value={r.id}>
-                  {r.roomNumber} · {formatCurrency(r.monthlyRent)}
+                  {r.roomNumber} · {formatCurrency(r.monthlyRent || r.salePrice || 0)}
                 </option>
               ))}
             </Select>
             <Input
-              label="Business name"
+              label={form.dealType === 'SALE' ? 'Buyer / owner name' : 'Business name'}
               value={form.businessName}
               onChange={(e) => setForm({ ...form, businessName: e.target.value })}
             />
@@ -339,29 +439,69 @@ export default function Shops() {
               value={form.idNumber}
               onChange={(e) => setForm({ ...form, idNumber: e.target.value })}
             />
-            <Input
-              label="Monthly rent"
-              type="number"
-              value={form.monthlyRent}
-              onChange={(e) => setForm({ ...form, monthlyRent: e.target.value })}
+            <IdentityDocumentField
+              className="sm:col-span-2"
+              label="Identity / license document"
+              file={identityFile}
+              onFileChange={setIdentityFile}
+              onClear={() => setIdentityFile(null)}
             />
-            <Input
-              label="Discount"
-              type="number"
-              value={form.discount}
-              onChange={(e) => setForm({ ...form, discount: e.target.value })}
-            />
-            <Input
-              label="Lease start"
-              type="date"
-              value={form.leaseStart}
-              onChange={(e) => setForm({ ...form, leaseStart: e.target.value })}
-            />
+            {form.dealType === 'SALE' ? (
+              <>
+                <Input
+                  label="Sale price"
+                  type="number"
+                  value={form.salePrice}
+                  onChange={(e) => setForm({ ...form, salePrice: e.target.value })}
+                />
+                <Input
+                  label="Sale date"
+                  type="date"
+                  value={form.saleDate}
+                  onChange={(e) => setForm({ ...form, saleDate: e.target.value })}
+                />
+                <Input
+                  label="Amount paid"
+                  type="number"
+                  value={form.amountPaid}
+                  onChange={(e) => setForm({ ...form, amountPaid: e.target.value })}
+                />
+                <Input
+                  label="Monthly charge (owner)"
+                  type="number"
+                  value={form.monthlyMaintenance}
+                  onChange={(e) => setForm({ ...form, monthlyMaintenance: e.target.value })}
+                />
+              </>
+            ) : (
+              <>
+                <Input
+                  label="Monthly rent"
+                  type="number"
+                  value={form.monthlyRent}
+                  onChange={(e) => setForm({ ...form, monthlyRent: e.target.value })}
+                />
+                <Input
+                  label="Discount"
+                  type="number"
+                  value={form.discount}
+                  onChange={(e) => setForm({ ...form, discount: e.target.value })}
+                />
+                <Input
+                  label="Lease start"
+                  type="date"
+                  value={form.leaseStart}
+                  onChange={(e) => setForm({ ...form, leaseStart: e.target.value })}
+                />
+              </>
+            )}
           </div>
           <Button className="mt-6 h-12 px-8 text-base" onClick={register}>
-            Save Business
+            {form.dealType === 'SALE' ? 'Record Sale' : 'Save Rental'}
           </Button>
         </Card>
+      ) : tab === 'sold' ? (
+        <SoldShopsPanel sales={sales} onRefresh={load} />
       ) : (
         <>
           {/* ── Filter bar ──────────────────────────────────────── */}
@@ -435,12 +575,20 @@ export default function Shops() {
                   key={b.id}
                   title={`${b.businessName} · ${b.roomNumber}`}
                   action={
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      {b.unitId || b.roomId ? (
+                        <Link
+                          to={`/units/${b.unitId || b.roomId}`}
+                          className="inline-flex h-10 items-center justify-center rounded-xl bg-brand-500 px-4 text-sm font-semibold text-white shadow-sm shadow-brand-500/30 transition hover:bg-brand-600 focus:outline-none focus:ring-2 focus:ring-brand-500/40 dark:bg-brand-500 dark:text-white dark:hover:bg-brand-400"
+                        >
+                          Open profile
+                        </Link>
+                      ) : null}
                       <Badge status={b.status}>{b.status}</Badge>
                       <button
                         type="button"
                         onClick={() => openEdit(b)}
-                        className="rounded-xl border border-[var(--border)] px-3 py-1.5 text-xs font-medium text-[var(--text-muted)] transition hover:bg-[var(--surface-2)]"
+                        className="inline-flex h-10 items-center rounded-xl border border-[var(--border)] px-3 text-sm font-medium text-[var(--text-muted)] transition hover:bg-[var(--surface-2)]"
                       >
                         Edit
                       </button>
@@ -448,7 +596,7 @@ export default function Shops() {
                         <button
                           type="button"
                           onClick={() => openTerminate(b)}
-                          className="flex items-center gap-1.5 rounded-xl border border-rose-200 px-3 py-1.5 text-xs font-medium text-rose-600 transition hover:bg-rose-50 dark:border-rose-800 dark:text-rose-400 dark:hover:bg-rose-950/30"
+                          className="inline-flex h-10 items-center gap-1.5 rounded-xl border border-rose-200 px-3 text-sm font-medium text-rose-600 transition hover:bg-rose-50 dark:border-rose-800 dark:text-rose-400 dark:hover:bg-rose-950/30"
                         >
                           Terminate Lease
                         </button>
@@ -464,6 +612,19 @@ export default function Shops() {
                     {formatDate(b.leaseStart)}
                     {b.leaseEnd ? ` · Ended ${formatDate(b.leaseEnd)}` : ''}
                   </p>
+                  {b.identityDocument ? (
+                    <div className="mb-2">
+                      <IdentityDocumentField
+                        label="ID document"
+                        hint=""
+                        readOnly
+                        value={{
+                          identityDocument: b.identityDocument,
+                          identityDocumentName: b.identityDocumentName,
+                        }}
+                      />
+                    </div>
+                  ) : null}
                   {b.status === 'Active' ? (
                     <div className="mt-4">
                       <PaymentCalendar
@@ -509,6 +670,32 @@ export default function Shops() {
             <Input label="Contact name" value={editForm.contactName} onChange={(e) => setEditForm({ ...editForm, contactName: e.target.value })} />
             <Input label="Phone" value={editForm.phone} onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })} />
             <Input label="License / ID" value={editForm.idNumber} onChange={(e) => setEditForm({ ...editForm, idNumber: e.target.value })} />
+            <IdentityDocumentField
+              className="sm:col-span-2"
+              label="Identity / license document"
+              file={editIdentityFile}
+              value={
+                clearIdentity
+                  ? null
+                  : {
+                      identityDocument: editForm.identityDocument,
+                      identityDocumentName: editForm.identityDocumentName,
+                    }
+              }
+              onFileChange={(f) => {
+                setEditIdentityFile(f);
+                setClearIdentity(false);
+              }}
+              onClear={() => {
+                setEditIdentityFile(null);
+                setClearIdentity(true);
+                setEditForm((prev) => ({
+                  ...prev,
+                  identityDocument: null,
+                  identityDocumentName: null,
+                }));
+              }}
+            />
             <Input label="Monthly rent" type="number" value={editForm.monthlyRent} onChange={(e) => setEditForm({ ...editForm, monthlyRent: e.target.value })} />
             <Input label="Discount" type="number" value={editForm.discount} onChange={(e) => setEditForm({ ...editForm, discount: e.target.value })} />
             <Input label="Lease start" type="date" value={editForm.leaseStart} onChange={(e) => setEditForm({ ...editForm, leaseStart: e.target.value })} />
@@ -577,5 +764,261 @@ export default function Shops() {
         ) : null}
       </Modal>
     </div>
+  );
+}
+
+function SoldShopsPanel({ sales, onRefresh }) {
+  const [payModal, setPayModal] = useState(null);
+  const [maintModal, setMaintModal] = useState(null);
+  const [payForm, setPayForm] = useState({ amount: '', paymentDate: today(), paymentMethod: 'Cash', notes: '' });
+  const [maintForm, setMaintForm] = useState({
+    month: new Date().toISOString().slice(0, 7),
+    amountDue: '',
+    amountPaid: '',
+    paymentDate: today(),
+    paymentMethod: 'Cash',
+    notes: '',
+  });
+  const [saving, setSaving] = useState(false);
+
+  const openSalePay = (sale) => {
+    setPayModal(sale);
+    setPayForm({
+      amount: sale.balance > 0 ? String(sale.balance) : '',
+      paymentDate: today(),
+      paymentMethod: 'Cash',
+      notes: '',
+    });
+  };
+
+  const openMaint = (sale) => {
+    setMaintModal(sale);
+    setMaintForm({
+      month: new Date().toISOString().slice(0, 7),
+      amountDue: String(sale.monthlyMaintenance || 0),
+      amountPaid: String(sale.monthlyMaintenance || 0),
+      paymentDate: today(),
+      paymentMethod: 'Cash',
+      notes: '',
+    });
+  };
+
+  const saveSalePayment = async () => {
+    if (!payModal) return;
+    const amount = Number(payForm.amount);
+    if (!(amount > 0)) {
+      toast.error('Enter a payment amount');
+      return;
+    }
+    setSaving(true);
+    try {
+      await rentalApi.addShopSalePayment(payModal.id, {
+        amount,
+        paymentDate: payForm.paymentDate,
+        paymentMethod: payForm.paymentMethod,
+        notes: payForm.notes || null,
+      });
+      toast.success('Sale payment recorded');
+      setPayModal(null);
+      await onRefresh();
+    } catch (err) {
+      toast.error(err.message || 'Could not record payment');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const saveMaintenance = async () => {
+    if (!maintModal) return;
+    const amountPaid = Number(maintForm.amountPaid);
+    if (!(amountPaid > 0) || !maintForm.month) {
+      toast.error('Month and amount paid are required');
+      return;
+    }
+    setSaving(true);
+    try {
+      await rentalApi.recordShopMaintenance(maintModal.id, {
+        month: maintForm.month,
+        amountDue: Number(maintForm.amountDue) || Number(maintModal.monthlyMaintenance) || amountPaid,
+        amountPaid,
+        paymentDate: maintForm.paymentDate,
+        paymentMethod: maintForm.paymentMethod,
+        notes: maintForm.notes || null,
+      });
+      toast.success('Monthly charge payment recorded');
+      setMaintModal(null);
+      await onRefresh();
+    } catch (err) {
+      toast.error(err.message || 'Could not record monthly charge');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (!sales.length) {
+    return (
+      <Card>
+        <p className="text-sm text-[var(--text-muted)]">
+          No sold shops yet. Use Register Shop → Sold to record a sale.
+        </p>
+      </Card>
+    );
+  }
+
+  return (
+    <>
+      <div className="space-y-4">
+        {sales.map((s) => {
+          const unit = s.unit || {};
+          const building = unit.building?.name || '—';
+          const floor = unit.floor?.name || '—';
+          const room = unit.unitNumber || unit.roomNumber || '—';
+          return (
+            <Card key={s.id}>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="text-lg font-semibold text-[var(--text)]">{s.buyerName}</h3>
+                    <Badge status="Sold">Sold</Badge>
+                    <Badge status={s.balance > 0 ? 'Partial' : 'Paid'}>
+                      {s.balance > 0 ? 'Balance due' : 'Sale paid'}
+                    </Badge>
+                  </div>
+                  <p className="mt-1 text-sm text-[var(--text-muted)]">
+                    {building} · {floor} · Unit {room}
+                    {s.phone ? ` · ${s.phone}` : ''}
+                    {s.saleDate ? ` · Sold ${formatDate(s.saleDate)}` : ''}
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {s.unit?.id ? (
+                    <Link
+                      to={`/units/${s.unit.id}`}
+                      className="inline-flex h-10 items-center justify-center rounded-xl bg-brand-500 px-4 text-sm font-semibold text-white shadow-sm shadow-brand-500/30 transition hover:bg-brand-600 dark:bg-brand-500 dark:text-white dark:hover:bg-brand-400"
+                    >
+                      Open profile
+                    </Link>
+                  ) : null}
+                  <Button variant="secondary" className="h-10 px-4 text-sm" onClick={() => openSalePay(s)}>
+                    Sale payment
+                  </Button>
+                  <Button className="h-10 px-4 text-sm" onClick={() => openMaint(s)}>
+                    Monthly charge
+                  </Button>
+                </div>
+              </div>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 text-sm">
+                <div>
+                  <p className="text-[var(--text-muted)]">Sale price</p>
+                  <p className="font-medium">{formatCurrency(s.salePrice)}</p>
+                </div>
+                <div>
+                  <p className="text-[var(--text-muted)]">Paid</p>
+                  <p className="font-medium">{formatCurrency(s.amountPaid)}</p>
+                </div>
+                <div>
+                  <p className="text-[var(--text-muted)]">Remaining</p>
+                  <p className="font-medium">{formatCurrency(s.balance)}</p>
+                </div>
+                <div>
+                  <p className="text-[var(--text-muted)]">Monthly charge</p>
+                  <p className="font-medium">{formatCurrency(s.monthlyMaintenance || 0)}</p>
+                </div>
+              </div>
+              {(s.salePayments?.length || s.ownerCharges?.length || s.maintenancePayments?.length) ? (
+                <div className="mt-4 grid gap-4 lg:grid-cols-2">
+                  {s.salePayments?.length ? (
+                    <div>
+                      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">Sale payments</p>
+                      <ul className="space-y-1 text-sm">
+                        {s.salePayments.map((p) => (
+                          <li key={p.id} className="flex justify-between gap-2 border-b border-[var(--border)] py-1">
+                            <span>{formatDate(p.paymentDate)} · {p.paymentMethod || '—'}</span>
+                            <span className="font-medium">{formatCurrency(p.amount)}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+                  {s.ownerCharges?.length ? (
+                    <div>
+                      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">Monthly charges</p>
+                      <ul className="space-y-1 text-sm">
+                        {s.ownerCharges.map((p) => (
+                          <li key={p.id} className="flex justify-between gap-2 border-b border-[var(--border)] py-1">
+                            <span>{p.month || '—'} · {p.status || '—'}</span>
+                            <span className="font-medium">{formatCurrency(p.amountPaid)} / {formatCurrency(p.amountDue)}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : s.maintenancePayments?.length ? (
+                    <div>
+                      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">Legacy monthly history</p>
+                      <ul className="space-y-1 text-sm">
+                        {s.maintenancePayments.map((p) => (
+                          <li key={p.id} className="flex justify-between gap-2 border-b border-[var(--border)] py-1">
+                            <span>{p.month} · {p.status || '—'}</span>
+                            <span className="font-medium">{formatCurrency(p.amountPaid)}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+            </Card>
+          );
+        })}
+      </div>
+
+      <Modal
+        open={Boolean(payModal)}
+        onClose={() => !saving && setPayModal(null)}
+        title="Record sale payment"
+        footer={
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" onClick={() => setPayModal(null)} disabled={saving}>Cancel</Button>
+            <Button onClick={saveSalePayment} disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
+          </div>
+        }
+      >
+        {payModal ? (
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Input label="Amount" type="number" value={payForm.amount} onChange={(e) => setPayForm({ ...payForm, amount: e.target.value })} />
+            <Input label="Date" type="date" value={payForm.paymentDate} onChange={(e) => setPayForm({ ...payForm, paymentDate: e.target.value })} />
+            <Select label="Method" value={payForm.paymentMethod} onChange={(e) => setPayForm({ ...payForm, paymentMethod: e.target.value })}>
+              {PAYMENT_METHODS.map((m) => <option key={m} value={m}>{m}</option>)}
+            </Select>
+            <Input label="Notes" value={payForm.notes} onChange={(e) => setPayForm({ ...payForm, notes: e.target.value })} />
+          </div>
+        ) : null}
+      </Modal>
+
+      <Modal
+        open={Boolean(maintModal)}
+        onClose={() => !saving && setMaintModal(null)}
+        title="Record monthly charge payment"
+        footer={
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" onClick={() => setMaintModal(null)} disabled={saving}>Cancel</Button>
+            <Button onClick={saveMaintenance} disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
+          </div>
+        }
+      >
+        {maintModal ? (
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Input label="Month" type="month" value={maintForm.month} onChange={(e) => setMaintForm({ ...maintForm, month: e.target.value })} />
+            <Input label="Amount due" type="number" value={maintForm.amountDue} onChange={(e) => setMaintForm({ ...maintForm, amountDue: e.target.value })} />
+            <Input label="Amount paid" type="number" value={maintForm.amountPaid} onChange={(e) => setMaintForm({ ...maintForm, amountPaid: e.target.value })} />
+            <Input label="Date" type="date" value={maintForm.paymentDate} onChange={(e) => setMaintForm({ ...maintForm, paymentDate: e.target.value })} />
+            <Select label="Method" value={maintForm.paymentMethod} onChange={(e) => setMaintForm({ ...maintForm, paymentMethod: e.target.value })}>
+              {PAYMENT_METHODS.map((m) => <option key={m} value={m}>{m}</option>)}
+            </Select>
+            <Input label="Notes" value={maintForm.notes} onChange={(e) => setMaintForm({ ...maintForm, notes: e.target.value })} />
+          </div>
+        ) : null}
+      </Modal>
+    </>
   );
 }

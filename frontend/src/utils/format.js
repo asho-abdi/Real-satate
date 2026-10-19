@@ -1,8 +1,8 @@
-let appCurrency = 'USD';
-let appName = 'Property Rentals';
+let appCurrency = 'KES';
+let appName = 'RJK REALTY';
 
 export function setAppCurrency(currency) {
-  appCurrency = currency || 'USD';
+  appCurrency = currency || 'KES';
 }
 
 export function getAppCurrency() {
@@ -10,7 +10,7 @@ export function getAppCurrency() {
 }
 
 export function setAppName(name) {
-  appName = name || 'Property Rentals';
+  appName = name || 'RJK REALTY';
 }
 
 export function getAppName() {
@@ -18,7 +18,7 @@ export function getAppName() {
 }
 
 export function formatCurrency(value, currency = appCurrency) {
-  return new Intl.NumberFormat('en-US', {
+  return new Intl.NumberFormat(currency === 'KES' ? 'en-KE' : 'en-US', {
     style: 'currency',
     currency,
     minimumFractionDigits: 2,

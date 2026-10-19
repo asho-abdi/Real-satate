@@ -93,9 +93,14 @@ const env = Object.freeze({
   isDevelopment: NODE_ENV === 'development',
 
   PORT: int('PORT', 5000),
-  APP_NAME: optional('APP_NAME', 'EstateOps API'),
+  APP_NAME: optional('APP_NAME', 'RJK Realty API'),
   APP_URL: optional('APP_URL', 'http://localhost:5000'),
   FRONTEND_URL: optional('FRONTEND_URL', 'http://localhost:5173'),
+  /** Extra allowed CORS origins (comma-separated). FRONTEND_URL is always included. */
+  CORS_ORIGINS: optional('CORS_ORIGINS', '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean),
   API_PREFIX: optional('API_PREFIX', '/api/v1'),
 
   DATABASE_URL: required(
