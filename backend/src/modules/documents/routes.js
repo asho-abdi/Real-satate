@@ -8,6 +8,7 @@ import { success } from '../../utils/apiResponse.js';
 import { AppError } from '../../utils/AppError.js';
 import { assertUnitBuildingAccess } from '../../services/access.service.js';
 import { logActivity } from '../../services/activity.service.js';
+import { assertSafeUploadedFile } from '../../utils/fileMagic.js';
 
 const router = Router();
 router.use(authenticate);
@@ -27,11 +28,23 @@ router.get(
   authorize('units:read'),
   asyncHandler(async (req, res) => {
     const { entityType, entityId, unitId } = req.query;
+    const buildingIds = req.user.buildingIds;
+
+    if (unitId) {
+      await assertUnitBuildingAccess(req.user, String(unitId), buildingIds);
+    }
+
     const where = {
       deletedAt: null,
       ...(unitId ? { unitId: String(unitId) } : {}),
       ...(entityType && entityId
         ? { entityType: String(entityType).toUpperCase(), entityId: String(entityId) }
+        : {}),
+      // Building managers only see documents tied to their buildings
+      ...(buildingIds !== null
+        ? {
+            unit: { buildingId: { in: buildingIds }, deletedAt: null },
+          }
         : {}),
     };
     const rows = await prisma.entityDocument.findMany({
@@ -61,6 +74,8 @@ router.post(
     if (!req.file) throw new AppError('No file uploaded', 400);
     if (!entityId) throw new AppError('entityId is required', 400);
 
+    assertSafeUploadedFile(req.file.path, 'document');
+
     const type = String(entityType).toUpperCase();
     if (!VALID_TYPES.has(type)) throw new AppError('Invalid entityType', 400);
     const cat = String(category).toUpperCase();
@@ -72,6 +87,9 @@ router.post(
       await assertUnitBuildingAccess(req.user, entityId, req.user.buildingIds);
     } else if (resolvedUnitId) {
       await assertUnitBuildingAccess(req.user, resolvedUnitId, req.user.buildingIds);
+    } else if (req.user.buildingIds !== null) {
+      // Non-admin uploads must be tied to an accessible unit
+      throw new AppError('unitId is required for this document', 400);
     }
 
     const url = `/api/v1/files/documents/${req.file.filename}`;

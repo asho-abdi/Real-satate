@@ -8,6 +8,13 @@ import { asyncHandler } from '../../utils/asyncHandler.js';
 import { success } from '../../utils/apiResponse.js';
 import { AppError } from '../../utils/AppError.js';
 import { sanitizeUser } from '../../services/auth.service.js';
+import {
+  DEFAULT_STAFF_PAGES,
+  normalizeAllowedPages,
+} from '../../constants/pageAccess.js';
+import { validatePasswordStrength } from '../../utils/passwordPolicy.js';
+import { logActivity } from '../../services/activity.service.js';
+import * as refreshTokenRepo from '../../repositories/refreshToken.repository.js';
 
 const router = Router();
 router.use(authenticate);
@@ -65,12 +72,16 @@ router.post(
       roleId,
       roleCode,
       buildingIds = [],
+      allowedPages,
       isActive = true,
     } = req.body || {};
 
     if (!email || !password || !firstName || !lastName) {
       throw new AppError('email, password, firstName, and lastName are required', 400);
     }
+
+    const strength = validatePasswordStrength(password);
+    if (!strength.ok) throw new AppError(strength.message, 400, { code: 'WEAK_PASSWORD' });
 
     const role = roleId
       ? await prisma.role.findUnique({ where: { id: roleId } })
@@ -86,7 +97,7 @@ router.post(
 
     const uniqueBuildingIds = [...new Set((buildingIds || []).map(String).filter(Boolean))];
     if (role.code === 'BUILDING_MANAGER' && uniqueBuildingIds.length === 0) {
-      throw new AppError('Building Manager must be assigned at least one building', 400);
+      throw new AppError('Assign at least one building this user can manage', 400);
     }
 
     if (uniqueBuildingIds.length) {
@@ -96,6 +107,16 @@ router.post(
       if (count !== uniqueBuildingIds.length) {
         throw new AppError('One or more buildings were not found', 400);
       }
+    }
+
+    const pages =
+      role.code === 'ADMIN'
+        ? []
+        : normalizeAllowedPages(
+            allowedPages !== undefined ? allowedPages : DEFAULT_STAFF_PAGES,
+          );
+    if (role.code === 'BUILDING_MANAGER' && pages.length === 0) {
+      throw new AppError('Select at least one page this user can open', 400);
     }
 
     const passwordHash = await bcrypt.hash(String(password), 12);
@@ -109,6 +130,7 @@ router.post(
         isActive: Boolean(isActive),
         role: role.code,
         roleId: role.id,
+        allowedPages: role.code === 'ADMIN' ? [] : pages,
         buildings:
           role.code === 'ADMIN'
             ? undefined
@@ -117,6 +139,15 @@ router.post(
               },
       },
       include: userInclude,
+    });
+
+    await logActivity({
+      entityType: 'USER',
+      entityId: user.id,
+      action: 'USER_CREATED',
+      summary: `User created: ${user.email}`,
+      meta: { role: role.code, buildings: uniqueBuildingIds.length, pages },
+      actorId: req.user.id,
     });
 
     return success(res, await serializeManagedUser(user), 201);
@@ -139,6 +170,7 @@ router.patch(
       roleId,
       roleCode,
       buildingIds,
+      allowedPages,
       isActive,
     } = req.body || {};
 
@@ -159,11 +191,12 @@ router.patch(
 
     const nextRoleCode = role?.code || existing.role;
     let nextBuildingIds = buildingIds;
+    let nextPages = allowedPages;
 
     if (nextBuildingIds !== undefined) {
       nextBuildingIds = [...new Set((nextBuildingIds || []).map(String).filter(Boolean))];
       if (nextRoleCode === 'BUILDING_MANAGER' && nextBuildingIds.length === 0) {
-        throw new AppError('Building Manager must be assigned at least one building', 400);
+        throw new AppError('Assign at least one building this user can manage', 400);
       }
       if (nextBuildingIds.length) {
         const count = await prisma.building.count({
@@ -175,6 +208,15 @@ router.patch(
       }
     }
 
+    if (nextPages !== undefined) {
+      nextPages = nextRoleCode === 'ADMIN' ? [] : normalizeAllowedPages(nextPages);
+      if (nextRoleCode === 'BUILDING_MANAGER' && nextPages.length === 0) {
+        throw new AppError('Select at least one page this user can open', 400);
+      }
+    } else if (role && role.code === 'ADMIN') {
+      nextPages = [];
+    }
+
     const data = {
       ...(email !== undefined && { email: String(email).toLowerCase().trim() }),
       ...(firstName !== undefined && { firstName: String(firstName).trim() }),
@@ -182,8 +224,19 @@ router.patch(
       ...(phone !== undefined && { phone: phone ? String(phone).trim() : null }),
       ...(isActive !== undefined && { isActive: Boolean(isActive) }),
       ...(role && { role: role.code, roleId: role.id }),
-      ...(password ? { passwordHash: await bcrypt.hash(String(password), 12) } : {}),
+      ...(nextPages !== undefined && { allowedPages: nextPages }),
     };
+
+    if (password) {
+      const strength = validatePasswordStrength(password);
+      if (!strength.ok) throw new AppError(strength.message, 400, { code: 'WEAK_PASSWORD' });
+      data.passwordHash = await bcrypt.hash(String(password), 12);
+    }
+
+    // Prevent self privilege escalation through this admin endpoint accidentally
+    if (req.user.id === existing.id && role && role.code !== existing.role) {
+      throw new AppError('You cannot change your own role', 400, { code: 'SELF_ROLE_CHANGE' });
+    }
 
     const user = await prisma.$transaction(async (tx) => {
       const updated = await tx.user.update({
@@ -209,6 +262,25 @@ router.patch(
         where: { id: updated.id },
         include: userInclude,
       });
+    });
+
+    // Role / page / password / building changes invalidate active sessions
+    if (role || nextPages !== undefined || nextBuildingIds !== undefined || password) {
+      await refreshTokenRepo.revokeAllUserRefreshTokens(existing.id);
+    }
+
+    await logActivity({
+      entityType: 'USER',
+      entityId: existing.id,
+      action: 'USER_UPDATED',
+      summary: `User updated: ${user.email}`,
+      meta: {
+        roleChanged: Boolean(role),
+        pagesChanged: nextPages !== undefined,
+        buildingsChanged: nextBuildingIds !== undefined,
+        passwordRotated: Boolean(password),
+      },
+      actorId: req.user.id,
     });
 
     return success(res, await serializeManagedUser(user));

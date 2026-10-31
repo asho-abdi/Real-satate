@@ -1,11 +1,12 @@
 import { cn } from '../../utils/format.js';
 
 const variants = {
-  primary: 'bg-brand-500 text-white hover:bg-brand-600 shadow-sm shadow-brand-500/20',
+  primary:
+    'bg-[var(--primary)] text-white hover:bg-[var(--primary-dark)] shadow-sm shadow-[color-mix(in_oklab,var(--primary)_22%,transparent)] dark:bg-sky-500 dark:hover:bg-sky-400',
   secondary:
-    'bg-[var(--surface-2)] text-[var(--text)] border border-[var(--border)] hover:bg-[var(--border)]',
+    'bg-[var(--surface)] text-[var(--text)] border border-[var(--border)] hover:bg-[var(--surface-2)] hover:border-[color-mix(in_oklab,var(--primary)_28%,var(--border))]',
   ghost: 'bg-transparent text-[var(--text-muted)] hover:bg-[var(--surface-2)] hover:text-[var(--text)]',
-  danger: 'bg-rose-600 text-white hover:bg-rose-700',
+  danger: 'bg-[var(--danger)] text-white hover:brightness-95',
 };
 
 const sizes = {

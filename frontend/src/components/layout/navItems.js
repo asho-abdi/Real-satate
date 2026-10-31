@@ -1,23 +1,19 @@
 import { NAV_SECTIONS } from '../../utils/constants.js';
+import { userCanAccessRoute } from '../../utils/pageAccess.js';
 
 /** Short labels for topbar dropdown parents. */
 export const TOPBAR_SECTION_LABELS = {
-  Home: 'Home',
-  Properties: 'Properties',
-  'Rentals & Sales': 'Rentals',
+  Overview: 'Overview',
+  Portfolio: 'Portfolio',
   Finance: 'Finance',
   Operations: 'Operations',
-  Account: 'Account',
+  System: 'System',
 };
 
 export function filterNavSections(user) {
-  const isAdmin = Boolean(user?.isAdmin || user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN');
   return NAV_SECTIONS.map((section) => ({
     ...section,
     topLabel: TOPBAR_SECTION_LABELS[section.title] || section.title,
-    items: section.items.filter((item) => {
-      if (item.to === '/users') return isAdmin;
-      return true;
-    }),
+    items: section.items.filter((item) => userCanAccessRoute(user, item.to)),
   })).filter((section) => section.items.length > 0);
 }

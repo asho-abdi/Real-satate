@@ -66,11 +66,11 @@ export default function FloorTabMenu({
         onClick={toggle}
         className={cn(
           'flex w-8 shrink-0 items-center justify-center border-l transition-all duration-150',
-          'text-[#172033] hover:bg-black/10',
-          isSelected ? 'border-white/25' : 'border-[#E2E8F0]',
+          'hover:bg-black/10',
+          isSelected ? 'border-white/25 text-white' : 'border-[var(--border)] text-[var(--text)]',
         )}
       >
-        <MdMoreVert className="h-4 w-4 text-[#172033]" />
+        <MdMoreVert className="h-4 w-4" />
       </button>
 
       {isOpen
@@ -79,7 +79,7 @@ export default function FloorTabMenu({
               ref={menuRef}
               role="menu"
               style={{ top: coords.top, left: coords.left }}
-              className="fixed z-[80] min-w-[10.75rem] animate-fade-in overflow-hidden rounded-xl border border-[#E2E8F0] bg-white py-1 shadow-lg"
+              className="fixed z-[80] min-w-[10.75rem] animate-fade-in overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface)] py-1 shadow-lg"
               onMouseDown={(event) => event.stopPropagation()}
             >
               <button
@@ -89,7 +89,7 @@ export default function FloorTabMenu({
                   onOpenChange?.(false);
                   onEdit?.();
                 }}
-                className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left text-sm text-[#172033] transition hover:bg-[#F5F7FA]"
+                className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left text-sm text-[var(--text)] transition hover:bg-[var(--surface-2)]"
               >
                 <MdEdit className="h-4 w-4 text-[#F05A28]" />
                 Edit Floor
@@ -101,7 +101,7 @@ export default function FloorTabMenu({
                   onOpenChange?.(false);
                   onDelete?.();
                 }}
-                className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left text-sm text-[#EF4444] transition hover:bg-rose-50"
+                className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left text-sm text-[var(--danger)] transition hover:bg-rose-50"
               >
                 <MdDeleteOutline className="h-4 w-4" />
                 Delete Floor

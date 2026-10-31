@@ -11,6 +11,7 @@ import Modal from '../../components/ui/Modal.jsx';
 import Badge from '../../components/ui/Badge.jsx';
 import Spinner from '../../components/ui/Spinner.jsx';
 import PaymentCalendar from '../../components/rentals/PaymentCalendar.jsx';
+import StatementModal from '../../components/finance/StatementModal.jsx';
 import { formatCurrency, formatDate, cn } from '../../utils/format.js';
 import { rentalApi, resolveIdentityAttachment } from '../../services/rentalApi.js';
 import IdentityDocumentField from '../../components/ui/IdentityDocumentField.jsx';
@@ -67,6 +68,7 @@ export default function Apartments() {
   const [editIdentityFile, setEditIdentityFile] = useState(null);
   const [clearIdentity, setClearIdentity] = useState(false);
   const [savingEdit, setSavingEdit] = useState(false);
+  const [statementParty, setStatementParty] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -503,6 +505,13 @@ export default function Apartments() {
                       <Badge status={t.status}>{t.status}</Badge>
                       <button
                         type="button"
+                        onClick={() => setStatementParty({ tenantId: t.id })}
+                        className="inline-flex h-10 items-center rounded-xl border border-[var(--border)] px-3 text-sm font-medium text-[var(--text)] transition hover:bg-[var(--surface-2)]"
+                      >
+                        Statement
+                      </button>
+                      <button
+                        type="button"
                         onClick={() => openEdit(t)}
                         className="inline-flex h-10 items-center rounded-xl border border-[var(--border)] px-3 text-sm font-medium text-[var(--text-muted)] transition hover:bg-[var(--surface-2)]"
                       >
@@ -684,6 +693,12 @@ export default function Apartments() {
           </div>
         ) : null}
       </Modal>
+
+      <StatementModal
+        open={!!statementParty}
+        onClose={() => setStatementParty(null)}
+        party={statementParty}
+      />
     </div>
   );
 }

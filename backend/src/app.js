@@ -20,9 +20,29 @@ export function createExpressApp() {
 
   app.set('trust proxy', 1);
 
-  app.use(helmet({
-    crossOriginResourcePolicy: { policy: 'cross-origin' },
-  }));
+  app.use(
+    helmet({
+      crossOriginResourcePolicy: { policy: 'cross-origin' },
+      contentSecurityPolicy: env.isProduction
+        ? {
+            useDefaults: true,
+            directives: {
+              defaultSrc: ["'none'"],
+              frameAncestors: ["'none'"],
+            },
+          }
+        : false,
+      referrerPolicy: { policy: 'no-referrer' },
+      hsts: env.isProduction
+        ? {
+            // Enable only when HTTPS is confirmed in front of this app.
+            // Safe default: off until FRONTEND_URL is https://
+            maxAge: String(env.FRONTEND_URL || '').startsWith('https://') ? 15552000 : 0,
+            includeSubDomains: false,
+          }
+        : false,
+    }),
+  );
   app.use(compression());
   const allowedOrigins = new Set(
     [
@@ -55,12 +75,15 @@ export function createExpressApp() {
         return callback(new Error(`CORS blocked for origin: ${origin}`));
       },
       credentials: true,
+      methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+      allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-Id'],
+      maxAge: 600,
     }),
   );
   app.use(morgan(env.isProduction ? 'combined' : 'dev'));
   app.use(requestContext);
-  app.use(express.json({ limit: '2mb' }));
-  app.use(express.urlencoded({ extended: true, limit: '2mb' }));
+  app.use(express.json({ limit: '1mb' }));
+  app.use(express.urlencoded({ extended: false, limit: '1mb' }));
   app.use(apiRateLimiter);
 
   app.get('/health', (_req, res) => {
@@ -69,13 +92,17 @@ export function createExpressApp() {
       data: {
         status: 'ok',
         service: env.APP_NAME,
-        env: env.NODE_ENV,
+        // Do not expose NODE_ENV details beyond a coarse flag
+        env: env.isProduction ? 'production' : 'non-production',
         timestamp: new Date().toISOString(),
       },
     });
   });
 
-  app.use('/api/docs', swaggerRoutes);
+  // Swagger UI is a reconnaissance surface — never expose in production
+  if (!env.isProduction) {
+    app.use('/api/docs', swaggerRoutes);
+  }
   app.use(env.API_PREFIX, apiRoutes);
 
   app.use(notFoundHandler);

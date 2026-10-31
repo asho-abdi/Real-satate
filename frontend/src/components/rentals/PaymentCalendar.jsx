@@ -22,7 +22,7 @@ import { MdClose } from 'react-icons/md';
 import Input from '../ui/Input.jsx';
 import Select from '../ui/Select.jsx';
 import Button from '../ui/Button.jsx';
-import { PAYMENT_METHODS } from '../../utils/constants.js';
+import PaymentMethodFields from '../payments/PaymentMethodFields.jsx';
 import { formatCurrency, formatDate, cn } from '../../utils/format.js';
 import { rentalApi } from '../../services/rentalApi.js';
 import toast from 'react-hot-toast';
@@ -193,9 +193,12 @@ export default function PaymentCalendar({
   const [saving, setSaving] = useState(false);
   const [payForm, setPayForm] = useState({
     amountPaid: '',
-    method: 'Cash',
+    method: 'CASH',
     paymentDate: '',
     reference: '',
+    receivedByName: '',
+    agentName: '',
+    officeMpesaNumber: '',
     notes: '',
   });
 
@@ -264,9 +267,12 @@ export default function PaymentCalendar({
     setPayModal({ row });
     setPayForm({
       amountPaid: String(row.outstanding || row.monthlyDue),
-      method: row.record?.method || 'Cash',
+      method: row.record?.method || 'CASH',
       paymentDate: new Date().toISOString().slice(0, 10),
-      reference: row.record?.notes || '',
+      reference: row.record?.reference || '',
+      receivedByName: row.record?.receivedByName || '',
+      agentName: row.record?.agentName || '',
+      officeMpesaNumber: row.record?.officeMpesaNumber || '',
       notes: '',
     });
   };
@@ -287,14 +293,20 @@ export default function PaymentCalendar({
     setSaving(true);
     try {
       const totalPaid = row.paid + addPaid;
-      const notes = [payForm.reference, payForm.notes].filter(Boolean).join(' | ') || null;
+      const paymentDetails = {
+        method: payForm.method,
+        reference: payForm.reference || null,
+        receivedByName: payForm.receivedByName || null,
+        agentName: payForm.agentName || null,
+        officeMpesaNumber: payForm.officeMpesaNumber || null,
+        paymentDate: payForm.paymentDate || new Date().toISOString().slice(0, 10),
+        notes: payForm.notes || null,
+      };
       if (row.record?.id) {
         await rentalApi.updatePayment(row.record.id, {
           amountPaid: totalPaid,
           amountDue: row.monthlyDue,
-          method: payForm.method,
-          paymentDate: payForm.paymentDate || new Date().toISOString().slice(0, 10),
-          notes,
+          ...paymentDetails,
         });
       } else {
         await rentalApi.createPayment({
@@ -303,9 +315,7 @@ export default function PaymentCalendar({
           month: row.key,
           amountDue: row.monthlyDue,
           amountPaid: addPaid,
-          method: payForm.method,
-          paymentDate: payForm.paymentDate || new Date().toISOString().slice(0, 10),
-          notes,
+          ...paymentDetails,
         });
       }
       toast.success('Payment recorded');
@@ -579,29 +589,18 @@ export default function PaymentCalendar({
                 value={payForm.amountPaid}
                 onChange={(e) => setPayForm({ ...payForm, amountPaid: e.target.value })}
               />
-              <Select
-                label="Payment Method"
-                value={payForm.method}
-                onChange={(e) => setPayForm({ ...payForm, method: e.target.value })}
-              >
-                {PAYMENT_METHODS.map((m) => (
-                  <option key={m} value={m}>
-                    {m}
-                  </option>
-                ))}
-              </Select>
               <Input
                 label="Payment Date"
                 type="date"
                 value={payForm.paymentDate}
                 onChange={(e) => setPayForm({ ...payForm, paymentDate: e.target.value })}
               />
-              <Input
-                label="Reference (optional)"
-                placeholder="Receipt #, bank ref…"
-                value={payForm.reference}
-                onChange={(e) => setPayForm({ ...payForm, reference: e.target.value })}
-              />
+              <div className="sm:col-span-2">
+                <PaymentMethodFields
+                  value={payForm}
+                  onChange={(next) => setPayForm({ ...payForm, ...next })}
+                />
+              </div>
               <div className="sm:col-span-2">
                 <label className="mb-1.5 block text-sm font-medium text-[var(--text)]">
                   Notes (optional)

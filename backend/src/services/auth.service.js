@@ -16,6 +16,9 @@ import {
   isAdminUser,
   loadPermissionCodes,
 } from './access.service.js';
+import { normalizeAllowedPages } from '../constants/pageAccess.js';
+import { logActivity } from './activity.service.js';
+import { validatePasswordStrength } from '../utils/passwordPolicy.js';
 
 export async function mapUserPermissions(user) {
   return loadPermissionCodes(user);
@@ -33,6 +36,7 @@ export async function sanitizeUser(user, extras = {}) {
   } = user;
 
   const roleCode = roleRef?.code || user.role;
+  const allowedPages = normalizeAllowedPages(user.allowedPages);
   const permissions = extras.permissions ?? (await mapUserPermissions(user));
   const buildingIds =
     extras.buildingIds !== undefined
@@ -46,6 +50,7 @@ export async function sanitizeUser(user, extras = {}) {
     roleName: roleRef?.name || roleCode,
     name: `${user.firstName || ''} ${user.lastName || ''}`.trim(),
     isAdmin: isAdminUser({ role: roleCode }),
+    allowedPages,
     permissions,
     buildingIds,
     buildings: (buildings || []).map((ub) => ({
@@ -82,16 +87,39 @@ async function issueTokenPair(user) {
 export async function login({ email, password }, ctx = {}) {
   const user = await userRepo.findUserByEmail(email);
   if (!user || !user.isActive) {
+    await logActivity({
+      entityType: 'AUTH',
+      entityId: 'login',
+      action: 'LOGIN_FAILED',
+      summary: 'Failed login attempt',
+      meta: { email: String(email || '').toLowerCase().slice(0, 120), reason: 'unknown_or_disabled', ip: ctx.ip || null },
+    });
     throw new AppError('Invalid email or password', 401, { code: 'INVALID_CREDENTIALS' });
   }
 
   const ok = await comparePassword(password, user.passwordHash);
   if (!ok) {
+    await logActivity({
+      entityType: 'AUTH',
+      entityId: user.id,
+      action: 'LOGIN_FAILED',
+      summary: 'Failed login attempt',
+      meta: { reason: 'bad_password', ip: ctx.ip || null },
+      actorId: user.id,
+    });
     throw new AppError('Invalid email or password', 401, { code: 'INVALID_CREDENTIALS' });
   }
 
   await userRepo.touchLastLogin(user.id);
   const tokens = await issueTokenPair(user);
+  await logActivity({
+    entityType: 'AUTH',
+    entityId: user.id,
+    action: 'LOGIN_SUCCESS',
+    summary: 'User signed in',
+    meta: { ip: ctx.ip || null, userAgent: ctx.userAgent ? String(ctx.userAgent).slice(0, 200) : null },
+    actorId: user.id,
+  });
 
   return {
     user: await sanitizeUser(user),
@@ -160,6 +188,9 @@ export async function forgotPassword(email) {
 }
 
 export async function resetPassword({ token, password }) {
+  const strength = validatePasswordStrength(password);
+  if (!strength.ok) throw new AppError(strength.message, 400, { code: 'WEAK_PASSWORD' });
+
   const user = await userRepo.findUserByResetToken(hashToken(token));
   if (!user) {
     throw new AppError('Invalid or expired reset token', 400);
@@ -171,10 +202,20 @@ export async function resetPassword({ token, password }) {
     resetPasswordExpires: null,
   });
   await refreshTokenRepo.revokeAllUserRefreshTokens(user.id);
+  await logActivity({
+    entityType: 'AUTH',
+    entityId: user.id,
+    action: 'PASSWORD_RESET',
+    summary: 'Password reset completed',
+    actorId: user.id,
+  });
   return { success: true };
 }
 
 export async function changePassword(userId, { currentPassword, newPassword }) {
+  const strength = validatePasswordStrength(newPassword);
+  if (!strength.ok) throw new AppError(strength.message, 400, { code: 'WEAK_PASSWORD' });
+
   const user = await userRepo.findUserByIdWithRole(userId);
   if (!user) throw new AppError('User not found', 404);
   const ok = await comparePassword(currentPassword, user.passwordHash);
@@ -182,6 +223,13 @@ export async function changePassword(userId, { currentPassword, newPassword }) {
   const passwordHash = await hashPassword(newPassword);
   await userRepo.updateUser(userId, { passwordHash });
   await refreshTokenRepo.revokeAllUserRefreshTokens(userId);
+  await logActivity({
+    entityType: 'AUTH',
+    entityId: userId,
+    action: 'PASSWORD_CHANGED',
+    summary: 'Password changed',
+    actorId: userId,
+  });
   return { success: true };
 }
 
@@ -191,10 +239,12 @@ export async function getMe(userId) {
   return sanitizeUser(user);
 }
 
-export async function updateProfile(userId, { firstName, lastName, phone, name }) {
+export async function updateProfile(userId, payload = {}) {
   const user = await userRepo.findUserByIdWithRole(userId);
   if (!user) throw new AppError('User not found', 404);
 
+  // Explicit allowlist — ignore role/password/permissions mass-assignment attempts
+  const { firstName, lastName, phone, name } = payload;
   let nextFirst = firstName;
   let nextLast = lastName;
   if (name && firstName === undefined && lastName === undefined) {

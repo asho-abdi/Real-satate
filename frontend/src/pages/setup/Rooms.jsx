@@ -228,7 +228,7 @@ function RoomRow({ r, onStatusChange, onEditRoom, onViewPhotos }) {
         <div className="flex flex-wrap gap-1.5">
           <Link
             to={`/units/${r.id}`}
-            className="inline-flex h-9 items-center justify-center rounded-xl bg-brand-500 px-3 text-xs font-semibold text-white shadow-sm shadow-brand-500/30 transition hover:bg-brand-600 dark:bg-brand-500 dark:text-white dark:hover:bg-brand-400"
+            className="inline-flex h-9 items-center justify-center rounded-xl bg-brand-500 px-3 text-xs font-semibold !text-white shadow-sm shadow-brand-500/30 transition hover:bg-brand-600 dark:bg-brand-500 dark:!text-white dark:hover:bg-brand-400"
           >
             Open profile
           </Link>

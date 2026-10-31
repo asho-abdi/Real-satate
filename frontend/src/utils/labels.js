@@ -2,6 +2,7 @@
 
 export const UNIT_TYPE_LABELS = {
   COMMERCIAL_SHOP: 'Commercial Shop',
+  COMMERCIAL_OFFICE: 'Commercial Office',
   APARTMENT: 'Apartment',
   STUDIO_APARTMENT: 'Studio Apartment',
   ONE_BEDROOM: '1 Bedroom',
@@ -11,6 +12,7 @@ export const UNIT_TYPE_LABELS = {
 
 export const UNIT_TYPE_VALUES = {
   'Commercial Shop': 'COMMERCIAL_SHOP',
+  'Commercial Office': 'COMMERCIAL_OFFICE',
   Apartment: 'APARTMENT',
   'Studio Apartment': 'STUDIO_APARTMENT',
   '1 Bedroom': 'ONE_BEDROOM',
@@ -20,6 +22,7 @@ export const UNIT_TYPE_VALUES = {
 
 export const USAGE_LABELS = {
   SHOP: 'shop',
+  OFFICE: 'office',
   APARTMENT: 'apartment',
   GUEST: 'guest',
 };
@@ -79,12 +82,19 @@ export const STATUS_VALUES = {
 
 export const METHOD_LABELS = {
   CASH: 'Cash',
-  E_BESA: 'E-besa',
+  MPESA: 'MPESA – Office Number',
+  AGENT: 'Agent – Withdrawal from Office Agent',
+  E_BESA: 'MPESA – Office Number',
 };
 
 export const METHOD_VALUES = {
   Cash: 'CASH',
-  'E-besa': 'E_BESA',
+  'MPESA – Office Number': 'MPESA',
+  'Agent – Withdrawal from Office Agent': 'AGENT',
+  'E-besa': 'MPESA',
+  MPESA: 'MPESA',
+  AGENT: 'AGENT',
+  CASH: 'CASH',
 };
 
 export const GENDER_VALUES = {
@@ -127,19 +137,21 @@ export function isoDate(value) {
 /** Default usage when unit type changes — admin can override in the form. */
 export function defaultUsageForUnitType(unitTypeLabel) {
   if (unitTypeLabel === 'Commercial Shop') return 'shop';
+  if (unitTypeLabel === 'Commercial Office') return 'office';
   return 'apartment';
 }
 
-/** Keep Guest / Airbnb (and apartment) when changing bedroom type; only shop forces shop. */
+/** Keep Guest / Airbnb (and apartment) when changing bedroom type; shop/office force commercial. */
 export function usageAfterUnitTypeChange(unitTypeLabel, currentUsage) {
   const usage = String(currentUsage || '').toLowerCase();
   if (unitTypeLabel === 'Commercial Shop') return 'shop';
-  if (usage === 'shop') return 'apartment';
+  if (unitTypeLabel === 'Commercial Office') return 'office';
+  if (usage === 'shop' || usage === 'office') return 'apartment';
   if (usage === 'guest' || usage === 'apartment') return usage;
   return defaultUsageForUnitType(unitTypeLabel);
 }
 
 export function usageToApi(usageLabel) {
-  const map = { shop: 'SHOP', apartment: 'APARTMENT', guest: 'GUEST' };
+  const map = { shop: 'SHOP', office: 'OFFICE', apartment: 'APARTMENT', guest: 'GUEST' };
   return map[String(usageLabel || '').toLowerCase()] || 'APARTMENT';
 }

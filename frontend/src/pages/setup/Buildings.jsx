@@ -173,17 +173,11 @@ export default function Buildings() {
                     </Badge>
                   </div>
                   <p className="mt-1 text-sm text-[var(--text-muted)]">{b.address}</p>
-                  <p className="mt-3 text-sm text-[var(--text)]">
-                    {b.floorsCount} floors
-                    {b._count ? (
-                      <span className="text-[var(--text-muted)]">
-                        {' '}
-                        · {b._count.floors} registered · {b._count.units} units
-                      </span>
-                    ) : null}
-                    {b.notes ? (
-                      <span className="text-[var(--text-muted)]"> · {b.notes}</span>
-                    ) : null}
+                  <p className="mt-3 text-sm text-[var(--text-muted)]">
+                    {b._count?.floors ?? 0} floor{(b._count?.floors ?? 0) === 1 ? '' : 's'} registered
+                    {' · '}
+                    {b._count?.units ?? 0} unit{(b._count?.units ?? 0) === 1 ? '' : 's'}
+                    {b.notes ? ` · ${b.notes}` : ''}
                   </p>
                 </div>
                 <div className="flex shrink-0 flex-wrap gap-2">
@@ -255,11 +249,12 @@ export default function Buildings() {
             onChange={(e) => setForm({ ...form, address: e.target.value })}
           />
           <Input
-            label="Floors count"
+            label="Planned floors (optional)"
             type="number"
-            min={1}
+            min={0}
             value={form.floorsCount}
             onChange={(e) => setForm({ ...form, floorsCount: e.target.value })}
+            hint="Target size only — registered floors come from Manage floors."
           />
           <Select
             label="Offer type"

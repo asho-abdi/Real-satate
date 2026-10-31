@@ -6,10 +6,31 @@ import { uploadUnitImages } from '../../middlewares/upload.js';
 import { asyncHandler } from '../../utils/asyncHandler.js';
 import { success } from '../../utils/apiResponse.js';
 import { AppError } from '../../utils/AppError.js';
-import { assertBuildingAccess } from '../../services/access.service.js';
+import {
+  assertBuildingAccess,
+  isAdminUser,
+} from '../../services/access.service.js';
 
 const router = Router();
 router.use(authenticate);
+
+/** Non-admins only see projects tied to their buildings (null buildingId = admin-only). */
+function projectScope(buildingIds) {
+  if (buildingIds === null) return {};
+  return { buildingId: { in: buildingIds } };
+}
+
+async function assertProjectAccess(user, project) {
+  if (!project) throw new AppError('Project not found', 404);
+  if (isAdminUser(user)) return project;
+  if (!project.buildingId) {
+    throw new AppError('You do not have access to this project', 403, {
+      code: 'BUILDING_FORBIDDEN',
+    });
+  }
+  await assertBuildingAccess(user, project.buildingId, user.buildingIds);
+  return project;
+}
 
 const SECTION_TEMPLATES = {
   suppliers: {
@@ -124,6 +145,7 @@ router.get(
     const rows = await prisma.workProject.findMany({
       where: {
         deletedAt: null,
+        ...projectScope(req.user.buildingIds),
         ...(status ? { status: String(status).toUpperCase() } : {}),
       },
       include: {
@@ -145,8 +167,8 @@ router.get(
 router.get(
   '/summary',
   authorize('work:read'),
-  asyncHandler(async (_req, res) => {
-    const base = { deletedAt: null };
+  asyncHandler(async (req, res) => {
+    const base = { deletedAt: null, ...projectScope(req.user.buildingIds) };
     const [planning, inProgress, onHold, completed, recent] = await Promise.all([
       prisma.workProject.count({ where: { ...base, status: 'PLANNING' } }),
       prisma.workProject.count({ where: { ...base, status: 'IN_PROGRESS' } }),
@@ -184,7 +206,7 @@ router.get(
       where: { id: req.params.id, deletedAt: null },
       include: projectInclude,
     });
-    if (!project) throw new AppError('Project not found', 404);
+    await assertProjectAccess(req.user, project);
     return success(res, serializeProject(project));
   }),
 );
@@ -208,6 +230,9 @@ router.post(
     } = body;
 
     if (!name || !String(name).trim()) throw new AppError('Project name is required', 400);
+    if (!isAdminUser(req.user) && !buildingId) {
+      throw new AppError('Building is required for this project', 400);
+    }
     if (buildingId) {
       await assertBuildingAccess(req.user, buildingId, req.user.buildingIds);
     }
@@ -275,7 +300,7 @@ router.patch(
     const existing = await prisma.workProject.findFirst({
       where: { id: req.params.id, deletedAt: null },
     });
-    if (!existing) throw new AppError('Project not found', 404);
+    await assertProjectAccess(req.user, existing);
 
     const body = req.body || {};
     const data = {};
@@ -283,7 +308,15 @@ router.patch(
     if (body.description !== undefined) {
       data.description = body.description ? String(body.description).trim() : null;
     }
-    if (body.buildingId !== undefined) data.buildingId = body.buildingId || null;
+    if (body.buildingId !== undefined) {
+      if (!isAdminUser(req.user) && !body.buildingId) {
+        throw new AppError('Building is required for this project', 400);
+      }
+      if (body.buildingId) {
+        await assertBuildingAccess(req.user, body.buildingId, req.user.buildingIds);
+      }
+      data.buildingId = body.buildingId || null;
+    }
     if (body.startDate !== undefined) data.startDate = body.startDate ? new Date(body.startDate) : null;
     if (body.expectedEndDate !== undefined) {
       data.expectedEndDate = body.expectedEndDate ? new Date(body.expectedEndDate) : null;
@@ -314,7 +347,7 @@ router.delete(
     const existing = await prisma.workProject.findFirst({
       where: { id: req.params.id, deletedAt: null },
     });
-    if (!existing) throw new AppError('Project not found', 404);
+    await assertProjectAccess(req.user, existing);
     await prisma.workProject.update({
       where: { id: existing.id },
       data: { deletedAt: new Date() },
@@ -330,7 +363,7 @@ router.post(
     const project = await prisma.workProject.findFirst({
       where: { id: req.params.id, deletedAt: null },
     });
-    if (!project) throw new AppError('Project not found', 404);
+    await assertProjectAccess(req.user, project);
 
     const { name, key, fieldSchema, template } = req.body || {};
     let schema = fieldSchema;
@@ -383,6 +416,7 @@ router.post(
       include: { project: true },
     });
     if (!section || section.project.deletedAt) throw new AppError('Section not found', 404);
+    await assertProjectAccess(req.user, section.project);
 
     const data = req.body?.data || req.body || {};
     const record = await prisma.workRecord.create({
@@ -402,8 +436,10 @@ router.patch(
   asyncHandler(async (req, res) => {
     const existing = await prisma.workRecord.findFirst({
       where: { id: req.params.recordId, deletedAt: null },
+      include: { section: { include: { project: true } } },
     });
     if (!existing) throw new AppError('Record not found', 404);
+    await assertProjectAccess(req.user, existing.section?.project);
     const data = req.body?.data || req.body || {};
     const updated = await prisma.workRecord.update({
       where: { id: existing.id },
@@ -419,8 +455,10 @@ router.delete(
   asyncHandler(async (req, res) => {
     const existing = await prisma.workRecord.findFirst({
       where: { id: req.params.recordId, deletedAt: null },
+      include: { section: { include: { project: true } } },
     });
     if (!existing) throw new AppError('Record not found', 404);
+    await assertProjectAccess(req.user, existing.section?.project);
     await prisma.workRecord.update({
       where: { id: existing.id },
       data: { deletedAt: new Date() },

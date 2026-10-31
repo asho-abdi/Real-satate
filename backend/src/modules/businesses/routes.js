@@ -110,8 +110,8 @@ router.post(
     });
     if (!unit) throw new AppError('Unit not found', 404);
     await assertUnitBuildingAccess(req.user, unit.id, req.user.buildingIds);
-    if (unit.usage !== 'SHOP') {
-      throw new AppError('Businesses can only be assigned to shop units', 400);
+    if (unit.usage !== 'SHOP' && unit.usage !== 'OFFICE') {
+      throw new AppError('Businesses can only be assigned to shop or office units', 400);
     }
     if (unit.status !== 'AVAILABLE') {
       throw new AppError(`Unit is ${unit.status.toLowerCase()} and cannot be rented`, 400);

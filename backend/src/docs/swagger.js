@@ -56,8 +56,8 @@ const definition = {
                 type: 'object',
                 required: ['email', 'password'],
                 properties: {
-                  email: { type: 'string', example: 'admin@estateops.com' },
-                  password: { type: 'string', example: 'Admin@12345' },
+                  email: { type: 'string', example: 'user@example.com' },
+                  password: { type: 'string', example: 'your-password' },
                 },
               },
             },

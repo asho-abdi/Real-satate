@@ -11,13 +11,12 @@ function mapSession(data) {
     roleName: user.roleName || user.role || 'ADMIN',
     isAdmin: Boolean(user.isAdmin || user.role === 'ADMIN' || user.role === 'SUPER_ADMIN'),
     permissions: user.permissions || [],
+    allowedPages: Array.isArray(user.allowedPages) ? user.allowedPages : [],
     buildingIds: user.buildingIds === null ? null : user.buildingIds || [],
     buildings: user.buildings || [],
     token: data.accessToken,
     refreshToken: data.refreshToken,
-    avatar:
-      user.avatar ||
-      'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop',
+    avatar: user.avatar || null,
   };
 }
 
@@ -37,14 +36,14 @@ export async function getMe() {
       roleName: user.roleName || user.role || session.roleName,
       isAdmin: Boolean(user.isAdmin || user.role === 'ADMIN' || user.role === 'SUPER_ADMIN'),
       permissions: user.permissions || session.permissions || [],
+      allowedPages: Array.isArray(user.allowedPages)
+        ? user.allowedPages
+        : session.allowedPages || [],
       buildingIds: user.buildingIds === null ? null : user.buildingIds || session.buildingIds || [],
       buildings: user.buildings || session.buildings || [],
       token: session.token,
       refreshToken: session.refreshToken,
-      avatar:
-        user.avatar ||
-        session.avatar ||
-        'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop',
+      avatar: user.avatar || session.avatar || null,
     };
   } catch (error) {
     const normalized = normalizeApiError(error);

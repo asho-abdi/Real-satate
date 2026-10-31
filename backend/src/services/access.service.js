@@ -1,5 +1,9 @@
 import prisma from '../config/database.js';
 import { AppError } from '../utils/AppError.js';
+import {
+  normalizeAllowedPages,
+  permissionsFromPages,
+} from '../constants/pageAccess.js';
 
 const ADMIN_ROLES = new Set(['ADMIN', 'SUPER_ADMIN']);
 
@@ -12,13 +16,20 @@ export function isAdminUser(user) {
 }
 
 /**
- * Load permission codes for a user from their role.
- * Admin roles always get wildcard `*`.
+ * Load permission codes for a user.
+ * - Admin: wildcard `*`
+ * - Staff with `allowedPages`: permissions derived from those pages
+ * - Legacy staff (no pages set): fall back to role permissions
  * @param {object} user
  * @returns {Promise<string[]>}
  */
 export async function loadPermissionCodes(user) {
   if (isAdminUser(user)) return ['*'];
+
+  const pages = normalizeAllowedPages(user.allowedPages);
+  if (pages.length > 0) {
+    return permissionsFromPages(pages);
+  }
 
   const roleId = user.roleId || user.roleRef?.id;
   if (roleId) {

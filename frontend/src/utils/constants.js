@@ -2,6 +2,7 @@ export const APP_NAME = import.meta.env.VITE_APP_NAME || 'RJK REALTY';
 
 export const UNIT_TYPES = [
   'Commercial Shop',
+  'Commercial Office',
   'Apartment',
   'Studio Apartment',
   '1 Bedroom',
@@ -47,11 +48,23 @@ export const WORK_STATUSES = [
 /** Admin chooses how each room is used — not tied to a building. */
 export const UNIT_USAGES = [
   { label: 'Commercial shop', value: 'shop' },
+  { label: 'Commercial office', value: 'office' },
   { label: 'Residential apartment', value: 'apartment' },
   { label: 'Guest / Airbnb', value: 'guest' },
 ];
 
-export const PAYMENT_METHODS = ['Cash', 'E-besa'];
+/** Controlled payment methods — do not treat as free text. */
+export const PAYMENT_METHODS = [
+  'Cash',
+  'MPESA – Office Number',
+  'Agent – Withdrawal from Office Agent',
+];
+
+export const PAYMENT_METHOD_OPTIONS = [
+  { value: 'CASH', label: 'Cash' },
+  { value: 'MPESA', label: 'MPESA – Office Number' },
+  { value: 'AGENT', label: 'Agent – Withdrawal from Office Agent' },
+];
 
 export const PAYMENT_STATUSES = ['Paid', 'Unpaid', 'Partial'];
 
@@ -127,25 +140,20 @@ export const SHOP_DEAL_TYPES = [
 
 export const NAV_SECTIONS = [
   {
-    title: 'Home',
+    title: 'Overview',
     items: [
-      { label: 'Today', to: '/today', icon: 'MdToday' },
       { label: 'Dashboard', to: '/dashboard', icon: 'MdDashboard' },
+      { label: 'Today', to: '/today', icon: 'MdToday' },
     ],
   },
   {
-    title: 'Properties',
+    title: 'Portfolio',
     items: [
       { label: 'Buildings', to: '/buildings', icon: 'MdBusiness' },
       { label: 'Availability', to: '/availability', icon: 'MdDoorFront' },
-    ],
-  },
-  {
-    title: 'Rentals & Sales',
-    items: [
-      { label: 'Guest Bookings', to: '/bookings', icon: 'MdHotel' },
       { label: 'Apartments', to: '/apartments', icon: 'MdApartment' },
       { label: 'Shops', to: '/shops', icon: 'MdStorefront' },
+      { label: 'Guest Bookings', to: '/bookings', icon: 'MdHotel' },
     ],
   },
   {
@@ -165,7 +173,7 @@ export const NAV_SECTIONS = [
     ],
   },
   {
-    title: 'Account',
+    title: 'System',
     items: [
       { label: 'Users & Access', to: '/users', icon: 'MdManageAccounts' },
       { label: 'Settings', to: '/settings', icon: 'MdSettings' },

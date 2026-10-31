@@ -133,7 +133,6 @@ export default function TopNavbar({ onMenuClick, search, onSearchChange }) {
   const [activeIndex, setActiveIndex] = useState(-1);
   const notifRef = useRef(null);
   const userRef = useRef(null);
-  const searchRef = useRef(null);
   const debounceRef = useRef(null);
   const requestIdRef = useRef(0);
 
@@ -141,7 +140,7 @@ export default function TopNavbar({ onMenuClick, search, onSearchChange }) {
     const onDocClick = (e) => {
       if (notifRef.current && !notifRef.current.contains(e.target)) setNotifOpen(false);
       if (userRef.current && !userRef.current.contains(e.target)) setUserOpen(false);
-      if (searchRef.current && !searchRef.current.contains(e.target)) {
+      if (!e.target.closest?.('[data-search-root]')) {
         setSearchOpen(false);
         setSearchPanel(false);
       }
@@ -242,14 +241,68 @@ export default function TopNavbar({ onMenuClick, search, onSearchChange }) {
           <MdMenu className="h-5 w-5" />
         </button>
 
-        <Link to="/today" className="flex shrink-0 items-center gap-2.5">
-          <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand-500/15 text-brand-500">
-            <MdShield className="h-5 w-5" />
-          </span>
-          <span className="hidden text-base font-bold tracking-tight text-[var(--text)] sm:inline">
-            {APP_NAME}
-          </span>
-        </Link>
+        {isTopbar ? (
+          <Link to="/dashboard" className="flex shrink-0 items-center gap-2.5">
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[color-mix(in_oklab,var(--primary)_12%,transparent)] text-[var(--primary)] dark:bg-sky-400/15 dark:text-sky-300">
+              <MdShield className="h-5 w-5" />
+            </span>
+            <span className="hidden text-base font-bold tracking-tight text-[var(--text)] sm:inline">
+              {APP_NAME}
+            </span>
+          </Link>
+        ) : null}
+
+        {isSidebar ? (
+          <div className="relative hidden min-w-0 flex-1 lg:block" data-search-root>
+            <div className="relative max-w-md">
+              <MdSearch className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-muted)]" />
+              <input
+                type="search"
+                value={search}
+                onChange={(e) => onSearchChange(e.target.value)}
+                onKeyDown={onSearchKeyDown}
+                onFocus={() => setSearchPanel(true)}
+                placeholder="Search units, guests, phone…"
+                className="h-10 w-full rounded-xl border border-[var(--border)] bg-[var(--surface-2)] pl-9 pr-3 text-sm outline-none transition focus:border-[var(--accent)] focus:bg-[var(--surface)] focus:ring-2 focus:ring-[var(--accent)]/15"
+              />
+            </div>
+            {searchPanel && String(search || '').trim() ? (
+              <div className="absolute left-0 top-[calc(100%+0.5rem)] z-40 w-full max-w-md overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface)] shadow-lg">
+                <ul className="max-h-72 overflow-y-auto py-1">
+                  {results.map((item, index) => {
+                    const meta = TYPE_META[item.type] || { label: item.type, icon: MdBusiness };
+                    const Icon = meta.icon;
+                    return (
+                      <li key={`${item.type}-${item.id}`}>
+                        <button
+                          type="button"
+                          onMouseEnter={() => setActiveIndex(index)}
+                          onClick={() => selectResult(item)}
+                          className={`flex w-full items-start gap-3 px-3 py-2.5 text-left text-sm ${
+                            index === activeIndex ? 'bg-[var(--surface-2)]' : 'hover:bg-[var(--surface-2)]'
+                          }`}
+                        >
+                          <Icon className="mt-0.5 h-4 w-4 shrink-0 text-[var(--accent)]" />
+                          <span className="min-w-0">
+                            <span className="block truncate font-medium">{item.title}</span>
+                            {item.subtitle ? (
+                              <span className="block truncate text-xs text-[var(--text-muted)]">
+                                {item.subtitle}
+                              </span>
+                            ) : null}
+                          </span>
+                        </button>
+                      </li>
+                    );
+                  })}
+                  {!searching && !results.length ? (
+                    <li className="px-3 py-6 text-center text-sm text-[var(--text-muted)]">No matches</li>
+                  ) : null}
+                </ul>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
 
         {isTopbar ? (
           <nav className="hidden min-w-0 flex-1 items-center gap-0.5 lg:flex" aria-label="Primary">
@@ -265,41 +318,39 @@ export default function TopNavbar({ onMenuClick, search, onSearchChange }) {
               />
             ))}
           </nav>
-        ) : (
-          <div className="hidden flex-1 lg:block" />
-        )}
+        ) : null}
 
         <div className="ml-auto flex shrink-0 items-center gap-0.5 sm:gap-1">
-          <div className="mr-1 hidden items-center rounded-lg border border-[var(--border)] p-0.5 sm:flex">
-            <button
-              type="button"
-              onClick={() => setNavLayout('topbar')}
-              className={cn(
-                'inline-flex items-center gap-1 rounded-md px-2 py-1.5 text-xs font-medium transition-colors',
-                isTopbar
-                  ? 'bg-brand-500/12 text-brand-600 dark:text-brand-400'
-                  : 'text-[var(--text-muted)] hover:text-[var(--text)]',
-              )}
-              aria-pressed={isTopbar}
-              title="Topbar layout (default)"
-            >
-              <MdWebAsset className="h-4 w-4" />
-              <span className="hidden md:inline">Topbar</span>
-            </button>
+          <div className="mr-1 hidden items-center rounded-xl border border-[var(--border)] p-0.5 sm:flex">
             <button
               type="button"
               onClick={() => setNavLayout('sidebar')}
               className={cn(
-                'inline-flex items-center gap-1 rounded-md px-2 py-1.5 text-xs font-medium transition-colors',
+                'inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-medium transition-colors',
                 isSidebar
-                  ? 'bg-brand-500/12 text-brand-600 dark:text-brand-400'
+                  ? 'bg-[color-mix(in_oklab,var(--primary)_12%,transparent)] text-[var(--primary)] dark:bg-sky-400/15 dark:text-sky-300'
                   : 'text-[var(--text-muted)] hover:text-[var(--text)]',
               )}
               aria-pressed={isSidebar}
-              title="Sidebar layout"
+              title="Sidebar layout (default)"
             >
               <MdViewSidebar className="h-4 w-4" />
               <span className="hidden md:inline">Sidebar</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setNavLayout('topbar')}
+              className={cn(
+                'inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-medium transition-colors',
+                isTopbar
+                  ? 'bg-[color-mix(in_oklab,var(--primary)_12%,transparent)] text-[var(--primary)] dark:bg-sky-400/15 dark:text-sky-300'
+                  : 'text-[var(--text-muted)] hover:text-[var(--text)]',
+              )}
+              aria-pressed={isTopbar}
+              title="Topbar layout"
+            >
+              <MdWebAsset className="h-4 w-4" />
+              <span className="hidden md:inline">Topbar</span>
             </button>
           </div>
 
@@ -312,11 +363,11 @@ export default function TopNavbar({ onMenuClick, search, onSearchChange }) {
             <MdFullscreen className="h-[18px] w-[18px]" />
           </button>
 
-          <div className="relative" ref={searchRef}>
+          <div className={cn('relative', isSidebar && 'lg:hidden')} data-search-root>
             <button
               type="button"
               onClick={() => setSearchPanel((v) => !v)}
-              className="rounded-md p-2.5 text-[var(--text-muted)] hover:bg-[var(--surface-2)] hover:text-[var(--text)]"
+              className="rounded-xl p-2.5 text-[var(--text-muted)] hover:bg-[var(--surface-2)] hover:text-[var(--text)]"
               aria-label="Search"
             >
               <MdSearch className="h-[18px] w-[18px]" />
@@ -324,7 +375,7 @@ export default function TopNavbar({ onMenuClick, search, onSearchChange }) {
 
             {searchPanel ? (
               <div className="absolute right-0 top-[calc(100%+0.5rem)] z-40 w-80 sm:w-96">
-                <div className="overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--surface)] shadow-lg">
+                <div className="overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface)] shadow-lg">
                   <div className="border-b border-[var(--border)] p-3">
                     <input
                       type="search"
@@ -333,7 +384,7 @@ export default function TopNavbar({ onMenuClick, search, onSearchChange }) {
                       onChange={(e) => onSearchChange(e.target.value)}
                       onKeyDown={onSearchKeyDown}
                       placeholder="Search customer, phone, room…"
-                      className="h-9 w-full rounded-md border border-[var(--border)] bg-[var(--surface-2)] px-3 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20"
+                      className="h-9 w-full rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 text-sm outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/20"
                     />
                   </div>
                   {searchOpen && String(search || '').trim() ? (
@@ -351,7 +402,7 @@ export default function TopNavbar({ onMenuClick, search, onSearchChange }) {
                                 index === activeIndex ? 'bg-[var(--surface-2)]' : 'hover:bg-[var(--surface-2)]'
                               }`}
                             >
-                              <Icon className="mt-0.5 h-4 w-4 shrink-0 text-brand-500" />
+                              <Icon className="mt-0.5 h-4 w-4 shrink-0 text-[var(--accent)]" />
                               <span className="min-w-0">
                                 <span className="block truncate font-medium">{item.title}</span>
                                 {item.subtitle ? (

@@ -10,7 +10,7 @@ import {
 } from '../validators/auth.validators.js';
 import { validate } from '../middlewares/validate.js';
 import { authenticate } from '../middlewares/auth.js';
-import { authRateLimiter } from '../middlewares/rateLimiter.js';
+import { authRateLimiter, passwordResetRateLimiter } from '../middlewares/rateLimiter.js';
 
 const router = Router();
 
@@ -19,7 +19,7 @@ router.post('/logout', logoutValidators, validate, authController.logout);
 router.post('/refresh', authRateLimiter, refreshValidators, validate, authController.refresh);
 router.post(
   '/forgot-password',
-  authRateLimiter,
+  passwordResetRateLimiter,
   forgotPasswordValidators,
   validate,
   authController.forgotPassword,

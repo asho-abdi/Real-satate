@@ -1,185 +1,210 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   MdApartment,
-  MdAttachMoney,
-  MdBusiness,
   MdDoorFront,
-  MdLayers,
-  MdBuild,
-  MdLocalMall,
+  MdLogin,
+  MdLogout,
+  MdPayments,
+  MdRefresh,
+  MdTrendingUp,
   MdWarningAmber,
 } from 'react-icons/md';
-import {
-  Bar,
-  BarChart,
-  Cell,
-  Line,
-  LineChart,
-  Pie,
-  PieChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from 'recharts';
-import Breadcrumb from '../../components/ui/Breadcrumb.jsx';
-import Card from '../../components/ui/Card.jsx';
-import Button from '../../components/ui/Button.jsx';
 import Badge from '../../components/ui/Badge.jsx';
+import Button from '../../components/ui/Button.jsx';
 import Spinner from '../../components/ui/Spinner.jsx';
-import { APP_NAME } from '../../utils/constants.js';
 import { rentalApi } from '../../services/rentalApi.js';
-import { formatCurrency } from '../../utils/format.js';
+import { formatCurrency, formatDate, cn } from '../../utils/format.js';
+import { labelUnitType } from '../../utils/labels.js';
 
-const BRAND = '#3B3486';
-const CHART_COLORS = ['#3B3486', '#5B4DB8', '#0F9F6E', '#D97706', '#241F5C'];
+const DUE_KIND_LABEL = {
+  RENT: 'Rent',
+  OWNER_MONTHLY: 'Owner monthly',
+  OTHER_CHARGE: 'Other charge',
+  GUEST: 'Guest booking',
+};
 
-function TrendPill({ value, label = '' }) {
-  const positive = value >= 0;
-  return (
-    <span
-      className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold ${
-        positive
-          ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
-          : 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300'
-      }`}
-    >
-      {positive ? '+' : ''}
-      {value}%
-      {label ? ` ${label}` : ''}
-    </span>
-  );
+function nairobiToday() {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Africa/Nairobi',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date());
 }
 
-function StatCard({ title, value, trend, icon: Icon, iconBg, iconColor }) {
+function formatDayLabel(dateKey) {
+  if (!dateKey) return 'Today';
+  return new Intl.DateTimeFormat('en-GB', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+    timeZone: 'Africa/Nairobi',
+  }).format(new Date(`${dateKey}T12:00:00+03:00`));
+}
+
+function formatTime(value) {
+  if (!value) return '—';
+  return new Intl.DateTimeFormat('en-GB', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+    timeZone: 'Africa/Nairobi',
+  }).format(new Date(value));
+}
+
+function KpiCard({ title, value, hint, icon: Icon, tone = 'navy' }) {
+  const tones = {
+    navy: 'bg-[color-mix(in_oklab,var(--primary)_12%,transparent)] text-[var(--primary)] dark:bg-sky-400/15 dark:text-sky-300',
+    teal: 'bg-teal-500/12 text-teal-700 dark:bg-teal-400/15 dark:text-teal-300',
+    sky: 'bg-sky-500/12 text-sky-700 dark:bg-sky-400/15 dark:text-sky-300',
+    amber: 'bg-amber-500/12 text-amber-700 dark:bg-amber-400/15 dark:text-amber-300',
+    rose: 'bg-rose-500/12 text-rose-700 dark:bg-rose-400/15 dark:text-rose-300',
+    emerald: 'bg-emerald-500/12 text-emerald-700 dark:bg-emerald-400/15 dark:text-emerald-300',
+  };
+
   return (
-    <div className="dashboard-stat-card p-5">
-      <div className="flex items-start justify-between gap-4">
+    <div className="dashboard-stat-card rise-in p-4 sm:p-5">
+      <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-sm font-medium text-[var(--text-muted)]">{title}</p>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">
+            {title}
+          </p>
           <p className="mt-2 truncate text-2xl font-bold tracking-tight text-[var(--text)]">{value}</p>
-          {trend !== undefined ? (
-            <div className="mt-2">
-              <TrendPill value={trend} />
-            </div>
-          ) : null}
+          {hint ? <p className="mt-1.5 text-xs text-[var(--text-muted)]">{hint}</p> : null}
         </div>
-        <span
-          className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full"
-          style={{ backgroundColor: iconBg, color: iconColor }}
-        >
-          <Icon className="h-5 w-5" />
+        <span className={cn('flex h-10 w-10 shrink-0 items-center justify-center rounded-xl', tones[tone])}>
+          <Icon className="h-[18px] w-[18px]" />
         </span>
       </div>
     </div>
   );
 }
 
-const tooltipStyle = {
-  background: 'var(--surface)',
-  border: '1px solid var(--border)',
-  borderRadius: 8,
-  fontSize: 12,
-};
+function Panel({ title, count, action, children, className }) {
+  return (
+    <section className={cn('dashboard-panel overflow-hidden', className)}>
+      <div className="flex items-center justify-between gap-3 border-b border-[var(--border)] px-4 py-3">
+        <div className="flex min-w-0 items-center gap-2">
+          <h2 className="truncate text-sm font-semibold text-[var(--text)]">{title}</h2>
+          {typeof count === 'number' ? (
+            <span className="rounded-md bg-[var(--surface-2)] px-1.5 py-0.5 text-[11px] font-semibold text-[var(--text-muted)]">
+              {count}
+            </span>
+          ) : null}
+        </div>
+        {action || null}
+      </div>
+      <div className="overflow-x-auto">{children}</div>
+    </section>
+  );
+}
+
+function EmptyRow({ colSpan, message }) {
+  return (
+    <tr>
+      <td colSpan={colSpan} className="px-4 py-8 text-center text-sm text-[var(--text-muted)]">
+        {message}
+      </td>
+    </tr>
+  );
+}
+
+function OccupancyBar({ label, value, total, color }) {
+  const pct = total > 0 ? Math.round((value / total) * 100) : 0;
+  return (
+    <div>
+      <div className="mb-1.5 flex items-center justify-between gap-2 text-xs">
+        <span className="font-medium text-[var(--text)]">{label}</span>
+        <span className="tabular-nums text-[var(--text-muted)]">
+          {value} · {pct}%
+        </span>
+      </div>
+      <div className="h-2 overflow-hidden rounded-full bg-[var(--surface-2)]">
+        <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: color }} />
+      </div>
+    </div>
+  );
+}
 
 export default function Dashboard() {
+  const [date, setDate] = useState(nairobiToday);
   const [stats, setStats] = useState(null);
-  const [bookings, setBookings] = useState([]);
-  const [outstanding, setOutstanding] = useState([]);
-  const [rooms, setRooms] = useState([]);
-  const [workSummary, setWorkSummary] = useState(null);
-  const [shopSales, setShopSales] = useState([]);
+  const [board, setBoard] = useState(null);
+  const [payments, setPayments] = useState([]);
+  const [units, setUnits] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
 
-  useEffect(() => {
-    let alive = true;
-    (async () => {
+  const load = useCallback(
+    async ({ soft } = {}) => {
+      if (soft) setRefreshing(true);
+      else setLoading(true);
+      setError('');
       try {
-        const [dash, guests, out, units, work, sales] = await Promise.all([
+        const [dash, todayBoard, pays, unitRows] = await Promise.all([
           rentalApi.getDashboard(),
-          rentalApi.listBookings(),
-          rentalApi.getOutstandingReport(),
-          rentalApi.listUnits(),
-          rentalApi.getWorkProjectSummary().catch(() => null),
-          rentalApi.listShopSales().catch(() => []),
+          rentalApi.getTodayBoard(date),
+          rentalApi.listPayments().catch(() => []),
+          rentalApi.listUnits().catch(() => []),
         ]);
-        if (!alive) return;
         setStats(dash);
-        setBookings(guests.slice(0, 5));
-        setOutstanding((out.items || []).slice(0, 5).map((p) => ({
-          id: p.id,
-          name: p.tenant?.fullName || p.business?.businessName || '—',
-          roomNumber: p.tenant?.unit?.roomNumber || p.business?.unit?.roomNumber || '—',
-          month: p.month,
-          amountDue: p.amountDue,
-          amountPaid: p.amountPaid,
-          status: p.status === 'UNPAID' ? 'Unpaid' : p.status === 'PARTIAL' ? 'Partial' : p.status,
-        })));
-        setRooms(units);
-        setWorkSummary(work);
-        setShopSales(sales || []);
+        setBoard(todayBoard);
+        setPayments(Array.isArray(pays) ? pays : []);
+        setUnits(Array.isArray(unitRows) ? unitRows : []);
       } catch (err) {
-        if (alive) setError(err.message || 'Failed to load dashboard');
+        setError(err.message || 'Failed to load dashboard');
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
       }
-    })();
-    return () => {
-      alive = false;
-    };
-  }, []);
+    },
+    [date],
+  );
 
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const summary = board?.summary || {};
   const occupancyRate = useMemo(() => {
     if (!stats?.totalRooms) return 0;
-    return Math.round((stats.occupiedRooms / stats.totalRooms) * 100);
+    return Math.round(((stats.occupiedRooms || 0) / stats.totalRooms) * 100);
   }, [stats]);
 
-  const occupancyData = useMemo(() => {
-    if (!stats) return [];
-    return [
-      { name: 'Occupied', value: stats.occupiedRooms || 0 },
-      { name: 'Available', value: stats.availableRooms || 0 },
-      {
-        name: 'Other',
-        value: Math.max(0, (stats.totalRooms || 0) - (stats.occupiedRooms || 0) - (stats.availableRooms || 0)),
-      },
-    ].filter((d) => d.value > 0);
-  }, [stats]);
-
-  const statusBarData = useMemo(() => {
-    const counts = { Available: 0, Rented: 0, Reserved: 0, Sold: 0, Maintenance: 0 };
-    for (const r of rooms) {
-      const key = r.status === 'Occupied' ? 'Rented' : r.status;
+  const occupancyBreakdown = useMemo(() => {
+    const counts = {
+      Available: 0,
+      Occupied: 0,
+      Reserved: 0,
+      Maintenance: 0,
+      Sold: 0,
+    };
+    for (const u of units) {
+      const key = u.status === 'Rented' ? 'Occupied' : u.status;
       if (counts[key] !== undefined) counts[key] += 1;
+      else if (u.status === 'Occupied') counts.Occupied += 1;
     }
-    return Object.entries(counts)
-      .filter(([, total]) => total > 0)
-      .map(([name, total]) => ({ name, total }));
-  }, [rooms]);
+    const total = units.length || stats?.totalRooms || 0;
+    return { counts, total };
+  }, [units, stats]);
 
-  const revenueTrend = useMemo(() => {
-    const base = stats?.monthlyRevenue || 0;
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'];
-    return months.map((month, i) => ({
-      month,
-      revenue: Math.round(base * (0.55 + i * 0.09)),
-    }));
-  }, [stats]);
+  const recentPayments = useMemo(() => {
+    return [...payments]
+      .filter((p) => p.paymentDate || p.amountPaid > 0)
+      .sort((a, b) => {
+        const da = a.paymentDate ? new Date(a.paymentDate).getTime() : 0;
+        const db = b.paymentDate ? new Date(b.paymentDate).getTime() : 0;
+        return db - da;
+      })
+      .slice(0, 8);
+  }, [payments]);
 
-  if (error) {
-    return (
-      <div>
-        <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-          <h1 className="page-title text-xl text-[var(--text)] md:text-2xl">Dashboard</h1>
-          <Breadcrumb items={[{ label: APP_NAME, to: '/dashboard' }, { label: 'Dashboard' }]} />
-        </div>
-        <Card>
-          <p className="text-sm text-[var(--text-muted)]">{error}</p>
-        </Card>
-      </div>
-    );
-  }
+  const dayLabel = formatDayLabel(board?.date || date);
 
-  if (!stats) {
+  if (loading && !stats && !board) {
     return (
       <div className="flex justify-center py-24">
         <Spinner label="Loading dashboard…" />
@@ -187,435 +212,431 @@ export default function Dashboard() {
     );
   }
 
+  if (error && !stats && !board) {
+    return (
+      <div className="dashboard-panel p-6">
+        <p className="text-sm text-[var(--text-muted)]">{error}</p>
+        <Button type="button" className="mt-4" onClick={() => load()}>
+          Retry
+        </Button>
+      </div>
+    );
+  }
+
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="page-title text-xl text-[var(--text)] md:text-2xl">Dashboard</h1>
-        <Breadcrumb items={[{ label: APP_NAME, to: '/dashboard' }, { label: 'Dashboard' }]} />
-      </div>
+    <div className="space-y-5 md:space-y-6">
+      <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div className="min-w-0">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--accent)]">
+            Operations
+          </p>
+          <h1 className="page-title mt-1 text-2xl text-[var(--text)] md:text-[1.75rem]">Today</h1>
+          <p className="mt-1.5 max-w-xl text-sm text-[var(--text-muted)]">
+            Property board for {dayLabel}. Track availability, guest movement, and collections.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            type="date"
+            value={date}
+            onChange={(e) => setDate(e.target.value || nairobiToday())}
+            className="h-10 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 text-sm text-[var(--text)] outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/20"
+            aria-label="Select date"
+          />
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={() => load({ soft: true })}
+            disabled={refreshing}
+          >
+            <MdRefresh className={cn('mr-1.5 h-4 w-4', refreshing && 'animate-spin')} />
+            Refresh
+          </Button>
+          <Link
+            to="/today"
+            className="inline-flex h-10 items-center rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 text-sm font-medium text-[var(--text)] hover:bg-[var(--surface-2)]"
+          >
+            Full board
+          </Link>
+        </div>
+      </header>
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard
-          title="Total Properties"
-          value={stats.totalBuildings}
-          icon={MdBusiness}
-          iconBg="rgba(59,52,134,0.12)"
-          iconColor={BRAND}
-        />
-        <StatCard
-          title="For Sale"
-          value={stats.forSale ?? 0}
-          icon={MdLocalMall}
-          iconBg="rgba(139,92,246,0.12)"
-          iconColor="#8b5cf6"
-        />
-        <StatCard
-          title="For Rent"
-          value={stats.forRent ?? 0}
-          icon={MdApartment}
-          iconBg="rgba(59,130,246,0.12)"
-          iconColor="#3b82f6"
-        />
-        <StatCard
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
+        <KpiCard
           title="Available Units"
-          value={stats.availableRooms}
+          value={summary.availableUnits ?? stats?.availableRooms ?? 0}
+          hint={summary.becomingAvailable ? `${summary.becomingAvailable} freeing today` : 'Ready to assign'}
           icon={MdDoorFront}
-          iconBg="rgba(16,185,129,0.12)"
-          iconColor="#10b981"
+          tone="teal"
         />
-      </div>
-
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard
-          title="Rental Income"
-          value={formatCurrency(stats.totalRentalIncome || stats.monthlyRevenue || 0)}
-          icon={MdAttachMoney}
-          iconBg="rgba(16,185,129,0.12)"
-          iconColor="#10b981"
+        <KpiCard
+          title="Occupied Units"
+          value={stats?.occupiedRooms ?? 0}
+          hint={`${occupancyRate}% occupancy`}
+          icon={MdApartment}
+          tone="navy"
         />
-        <StatCard
-          title="Total Sales"
-          value={formatCurrency(stats.totalSales || 0)}
-          icon={MdLocalMall}
-          iconBg="rgba(139,92,246,0.12)"
-          iconColor="#8b5cf6"
+        <KpiCard
+          title="Check-ins Today"
+          value={summary.checkIns ?? stats?.todayCheckIns ?? 0}
+          hint="Guest arrivals"
+          icon={MdLogin}
+          tone="sky"
         />
-        <StatCard
-          title="Maintenance spent"
-          value={formatCurrency(stats.maintenanceSpent || 0)}
-          icon={MdBuild}
-          iconBg="rgba(244,63,94,0.12)"
-          iconColor="#f43f5e"
+        <KpiCard
+          title="Check-outs Today"
+          value={summary.checkOuts ?? stats?.todayCheckOuts ?? 0}
+          hint="Units freeing"
+          icon={MdLogout}
+          tone="amber"
         />
-        <StatCard
-          title="Net revenue"
-          value={formatCurrency(
-            stats.netRevenue ??
-              (stats.totalRentalIncome || stats.monthlyRevenue || 0) - (stats.maintenanceSpent || 0),
-          )}
-          icon={MdAttachMoney}
-          iconBg="rgba(16,185,129,0.12)"
-          iconColor="#10b981"
-        />
-      </div>
-
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard
-          title="Total Expenses"
-          value={formatCurrency(stats.totalExpenses || 0)}
-          icon={MdLayers}
-          iconBg="rgba(245,158,11,0.12)"
-          iconColor="#f59e0b"
-        />
-        <StatCard
-          title="Outstanding"
-          value={formatCurrency(stats.outstandingPayments)}
+        <KpiCard
+          title="Amount Due"
+          value={formatCurrency(summary.totalDue ?? stats?.outstandingPayments ?? 0)}
+          hint={`${summary.dueCount ?? 0} items`}
           icon={MdWarningAmber}
-          iconBg="rgba(244,63,94,0.12)"
-          iconColor="#f43f5e"
+          tone="rose"
         />
-        <StatCard title="Current Guests" value={stats.currentGuests} icon={MdApartment} iconBg="rgba(59,130,246,0.12)" iconColor="#3b82f6" />
-        <StatCard title="Active Bookings" value={stats.activeBookings ?? 0} icon={MdDoorFront} iconBg="rgba(59,52,134,0.12)" iconColor={BRAND} />
+        <KpiCard
+          title="Received Today"
+          value={formatCurrency(summary.totalReceivedToday ?? 0)}
+          hint="Collections"
+          icon={MdPayments}
+          tone="emerald"
+        />
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard title="Upcoming Check-ins" value={stats.upcomingCheckIns ?? stats.todayCheckIns} icon={MdBusiness} iconBg="rgba(16,185,129,0.12)" iconColor="#10b981" />
-        <StatCard title="Upcoming Check-outs" value={stats.upcomingCheckOuts ?? stats.todayCheckOuts} icon={MdWarningAmber} iconBg="rgba(245,158,11,0.12)" iconColor="#f59e0b" />
-        <StatCard title="Sold Shops" value={shopSales.length} icon={MdLocalMall} iconBg="rgba(139,92,246,0.12)" iconColor="#8b5cf6" />
-        <StatCard title="Maintenance jobs" value={stats.maintenanceCount ?? 0} icon={MdBuild} iconBg="rgba(59,52,134,0.12)" iconColor={BRAND} />
-      </div>
-
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        <StatCard title="WP Active" value={workSummary?.inProgress ?? 0} icon={MdLayers} iconBg="rgba(59,52,134,0.12)" iconColor={BRAND} />
-        <StatCard title="WP Planning" value={workSummary?.planning ?? 0} icon={MdBusiness} iconBg="rgba(59,130,246,0.12)" iconColor="#3b82f6" />
-        <StatCard title="WP Completed" value={workSummary?.completed ?? 0} icon={MdApartment} iconBg="rgba(16,185,129,0.12)" iconColor="#10b981" />
-      </div>
-
-      <div className="mb-1 grid gap-4 sm:grid-cols-2">
-        <Card
-          title="Property maintenance"
-          action={
-            <Link to="/maintenance" className="text-xs font-medium text-brand-500 hover:underline">
-              Open Maintenance
-            </Link>
-          }
-        >
-          <div className="grid grid-cols-3 gap-2 text-center text-xs">
-            <div className="rounded-lg bg-[var(--surface-2)] p-2">
-              <p className="font-bold text-[var(--text)]">{stats.maintenanceCount ?? 0}</p>
-              <p className="text-[var(--text-muted)]">Jobs</p>
-            </div>
-            <div className="rounded-lg bg-[var(--surface-2)] p-2">
-              <p className="font-bold text-rose-600">{formatCurrency(stats.maintenanceSpent || 0)}</p>
-              <p className="text-[var(--text-muted)]">Spent</p>
-            </div>
-            <div className="rounded-lg bg-[var(--surface-2)] p-2">
-              <p className="font-bold text-rose-600">{formatCurrency(stats.maintenanceThisMonth || 0)}</p>
-              <p className="text-[var(--text-muted)]">This month</p>
-            </div>
-          </div>
-          <p className="mt-3 text-xs text-[var(--text-muted)]">
-            Net revenue after maintenance:{' '}
-            <span className="font-semibold text-emerald-600">
-              {formatCurrency(
-                stats.netRevenue ??
-                  (stats.totalRentalIncome || stats.monthlyRevenue || 0) - (stats.maintenanceSpent || 0),
-              )}
-            </span>
-          </p>
-        </Card>
-        <Card
-          title="Money movements"
-          action={
-            <Link to="/expenses" className="text-xs font-medium text-brand-500 hover:underline">
-              View all
-            </Link>
-          }
-        >
-          <p className="text-2xl font-bold text-[var(--text)]">{formatCurrency(stats.totalExpenses || 0)}</p>
-          <p className="mt-1 text-xs text-[var(--text-muted)]">
-            This month: {formatCurrency(stats.expensesThisMonth || 0)} · Includes maintenance linked as
-            finance spend
-          </p>
-        </Card>
-      </div>
-
-      <div className="grid gap-4 lg:grid-cols-3">
-        <Card
-          title="Working Progress"
-          className="lg:col-span-1"
-          action={
-            <Link to="/work-progress" className="text-xs font-medium text-brand-500 hover:underline">
-              View all
-            </Link>
-          }
-        >
-          {(workSummary?.recent || []).length === 0 && !(stats.activeWork || []).length ? (
-            <p className="text-sm text-[var(--text-muted)]">No projects yet. Open Working Progress to create one.</p>
-          ) : (
-            <ul className="space-y-3">
-              {(workSummary?.recent || []).length
-                ? workSummary.recent.map((w) => (
-                    <li key={w.id} className="flex items-center justify-between gap-2 text-sm">
-                      <Link to={`/work-progress/${w.id}`} className="font-medium text-[var(--text)] hover:text-brand-500">
-                        {w.name}
-                      </Link>
-                      <Badge status={w.status}>{String(w.status || '').replace(/_/g, ' ')}</Badge>
-                    </li>
-                  ))
-                : (stats.activeWork || []).map((w) => (
-                    <li key={w.id}>
-                      <div className="flex items-center justify-between gap-2 text-sm">
-                        <span className="font-medium text-[var(--text)]">
-                          {w.unit ? `Unit ${w.unit}` : w.building} — {w.title}
-                        </span>
-                        <span className="text-[var(--text-muted)]">{w.progressPercent || 0}%</span>
-                      </div>
-                      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[var(--primary-light)]">
-                        <div
-                          className="h-full rounded-full bg-[var(--primary)]"
-                          style={{ width: `${Math.min(100, Number(w.progressPercent) || 0)}%` }}
-                        />
-                      </div>
-                    </li>
-                  ))}
-            </ul>
-          )}
-          <div className="mt-4 grid grid-cols-3 gap-2 text-center text-xs">
-            <div className="rounded-lg bg-[var(--surface-2)] p-2">
-              <p className="font-bold text-[var(--text)]">{workSummary?.inProgress ?? stats.workActive ?? 0}</p>
-              <p className="text-[var(--text-muted)]">Active</p>
-            </div>
-            <div className="rounded-lg bg-[var(--surface-2)] p-2">
-              <p className="font-bold text-[var(--text)]">{workSummary?.completed ?? stats.workCompleted ?? 0}</p>
-              <p className="text-[var(--text-muted)]">Done</p>
-            </div>
-            <div className="rounded-lg bg-[var(--surface-2)] p-2">
-              <p className="font-bold text-[var(--text)]">{workSummary?.planning ?? stats.workPending ?? 0}</p>
-              <p className="text-[var(--text-muted)]">Planning</p>
-            </div>
-          </div>
-        </Card>
-
-        <Card title="Unit Status" className="lg:col-span-2">
-          <div className="h-56">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={statusBarData}>
-                <XAxis dataKey="name" tick={{ fontSize: 12 }} />
-                <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
-                <Tooltip contentStyle={tooltipStyle} />
-                <Bar dataKey="total" fill={BRAND} radius={[6, 6, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </Card>
-      </div>
-
-      <div className="grid gap-4 xl:grid-cols-12">
-        <Card className="xl:col-span-4" title="Occupancy">
-          <div className="flex flex-col items-center gap-4 sm:flex-row">
-            <div className="relative h-44 w-44">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={occupancyData.length ? occupancyData : [{ name: 'Empty', value: 1 }]}
-                    innerRadius={52}
-                    outerRadius={72}
-                    paddingAngle={3}
-                    dataKey="value"
-                  >
-                    {(occupancyData.length ? occupancyData : [{ name: 'Empty', value: 1 }]).map((_, i) => (
-                      <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip contentStyle={tooltipStyle} />
-                </PieChart>
-              </ResponsiveContainer>
-              <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-                <span className="text-2xl font-bold text-[var(--text)]">{occupancyRate}%</span>
-                <span className="text-xs text-[var(--text-muted)]">Occupied</span>
-              </div>
-            </div>
-            <div className="flex-1 space-y-3 text-sm">
-              <div className="flex items-center justify-between rounded-md bg-[var(--surface-2)] px-3 py-2">
-                <span className="text-[var(--text-muted)]">Total Rooms</span>
-                <span className="font-semibold">{stats.totalRooms}</span>
-              </div>
-              <div className="flex items-center justify-between rounded-md bg-[var(--surface-2)] px-3 py-2">
-                <span className="text-[var(--text-muted)]">Occupied</span>
-                <span className="font-semibold text-brand-500">{stats.occupiedRooms}</span>
-              </div>
-              <div className="flex items-center justify-between rounded-md bg-[var(--surface-2)] px-3 py-2">
-                <span className="text-[var(--text-muted)]">Available</span>
-                <span className="font-semibold text-emerald-600">{stats.availableRooms}</span>
-              </div>
-            </div>
-          </div>
-        </Card>
-
-        <Card className="xl:col-span-4" title="Room Statistics">
-          <div className="h-52">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={statusBarData} barSize={28}>
-                <XAxis dataKey="name" tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
-                <YAxis allowDecimals={false} tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
-                <Tooltip contentStyle={tooltipStyle} />
-                <Bar dataKey="total" radius={[4, 4, 0, 0]}>
-                  {statusBarData.map((_, i) => (
-                    <Cell key={i} fill={i === 0 ? '#10b981' : i === 1 ? BRAND : '#3b82f6'} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-          <div className="mt-3 grid grid-cols-2 gap-3 border-t border-[var(--border)] pt-3 text-sm">
-            <div>
-              <p className="text-[var(--text-muted)]">Tenants</p>
-              <p className="font-semibold">{stats.currentTenants}</p>
-            </div>
-            <div>
-              <p className="text-[var(--text-muted)]">Guest stays</p>
-              <p className="font-semibold">{stats.currentGuests}</p>
-            </div>
-          </div>
-        </Card>
-
-        <Card className="xl:col-span-4" title="Revenue Trend">
-          <div className="h-52">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={revenueTrend}>
-                <XAxis dataKey="month" tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fontSize: 11 }} axisLine={false} tickLine={false} width={48} />
-                <Tooltip contentStyle={tooltipStyle} formatter={(v) => formatCurrency(v)} />
-                <Line type="monotone" dataKey="revenue" stroke={BRAND} strokeWidth={2.5} dot={{ r: 3, fill: BRAND }} />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-          <div className="mt-3 grid grid-cols-2 gap-3 border-t border-[var(--border)] pt-3 text-sm">
-            <div>
-              <p className="text-[var(--text-muted)]">This month</p>
-              <p className="font-semibold text-brand-500">{formatCurrency(stats.monthlyRevenue)}</p>
-            </div>
-            <div>
-              <p className="text-[var(--text-muted)]">Shops</p>
-              <p className="font-semibold">{stats.commercialShops}</p>
-            </div>
-          </div>
-        </Card>
-      </div>
-
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Card
-          title="Recent Guest Stays"
-          action={
-            <Link to="/bookings" className="text-xs font-medium text-brand-500 hover:underline">
-              View all
-            </Link>
-          }
-        >
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-[var(--border)] text-left text-[var(--text-muted)]">
-                  <th className="pb-3 font-medium">Guest</th>
-                  <th className="pb-3 font-medium">Room</th>
-                  <th className="pb-3 font-medium">Status</th>
+      <div className="grid gap-4 xl:grid-cols-3">
+        <div className="space-y-4 xl:col-span-2">
+          <Panel
+            title="Available Units"
+            count={(board?.available || []).length}
+            action={
+              <Link to="/availability" className="text-xs font-semibold text-[var(--accent)] hover:underline">
+                View all
+              </Link>
+            }
+          >
+            <table className="dashboard-table min-w-full">
+              <thead className="bg-[var(--surface-2)]/80 text-left">
+                <tr>
+                  <th className="px-4 py-2.5">Unit</th>
+                  <th className="px-4 py-2.5">Type</th>
+                  <th className="px-4 py-2.5">Building</th>
+                  <th className="px-4 py-2.5">Status</th>
                 </tr>
               </thead>
-              <tbody>
-                {bookings.length === 0 ? (
-                  <tr>
-                    <td colSpan={3} className="py-6 text-center text-[var(--text-muted)]">
-                      No guest bookings yet.
-                    </td>
-                  </tr>
+              <tbody className="divide-y divide-[var(--border)]">
+                {(board?.available || []).length === 0 ? (
+                  <EmptyRow colSpan={4} message="No units available or freeing up for this day." />
                 ) : (
-                  bookings.map((b) => (
-                    <tr key={b.id} className="border-b border-[var(--border)] last:border-0">
-                      <td className="py-3">
-                        <p className="font-medium">{b.fullName}</p>
-                        <p className="text-xs text-[var(--text-muted)]">
-                          {b.checkIn} → {b.checkOut}
+                  (board.available || []).slice(0, 8).map((row) => (
+                    <tr key={`${row.availability}-${row.unitId}`} className="hover:bg-[var(--surface-2)]/50">
+                      <td className="px-4 py-2.5 font-medium text-[var(--text)]">
+                        {row.unitId ? (
+                          <Link to={`/units/${row.unitId}`} className="text-[var(--accent)] hover:underline">
+                            {row.roomNumber}
+                          </Link>
+                        ) : (
+                          row.roomNumber
+                        )}
+                      </td>
+                      <td className="px-4 py-2.5 text-[var(--text-muted)]">
+                        {labelUnitType(row.unitType) || row.unitType || '—'}
+                      </td>
+                      <td className="px-4 py-2.5 text-[var(--text)]">{row.building || '—'}</td>
+                      <td className="px-4 py-2.5">
+                        <Badge status={row.badge}>{row.badge}</Badge>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </Panel>
+
+          <div className="grid gap-4 lg:grid-cols-2">
+            <Panel
+              title="Check-ins Today"
+              count={(board?.checkIns || []).length}
+              action={
+                <Link to="/bookings" className="text-xs font-semibold text-[var(--accent)] hover:underline">
+                  Bookings
+                </Link>
+              }
+            >
+              <table className="dashboard-table min-w-full">
+                <thead className="bg-[var(--surface-2)]/80 text-left">
+                  <tr>
+                    <th className="px-4 py-2.5">Guest</th>
+                    <th className="px-4 py-2.5">Unit</th>
+                    <th className="px-4 py-2.5">Time</th>
+                    <th className="px-4 py-2.5">Payment</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[var(--border)]">
+                  {(board?.checkIns || []).length === 0 ? (
+                    <EmptyRow colSpan={4} message="No check-ins for this day." />
+                  ) : (
+                    (board.checkIns || []).slice(0, 6).map((row) => (
+                      <tr key={row.id} className="hover:bg-[var(--surface-2)]/50">
+                        <td className="px-4 py-2.5">
+                          <p className="font-medium text-[var(--text)]">{row.guest}</p>
+                          <p className="text-[11px] text-[var(--text-muted)]">{row.code || '—'}</p>
+                        </td>
+                        <td className="px-4 py-2.5">
+                          <p className="font-medium">{row.roomNumber}</p>
+                          <p className="text-[11px] text-[var(--text-muted)]">{row.building}</p>
+                        </td>
+                        <td className="px-4 py-2.5 text-[var(--text-muted)]">{formatTime(row.checkIn)}</td>
+                        <td className="px-4 py-2.5">
+                          <Badge status={row.paymentBadge}>{row.paymentBadge}</Badge>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </Panel>
+
+            <Panel title="Check-outs Today" count={(board?.checkOuts || []).length}>
+              <table className="dashboard-table min-w-full">
+                <thead className="bg-[var(--surface-2)]/80 text-left">
+                  <tr>
+                    <th className="px-4 py-2.5">Guest</th>
+                    <th className="px-4 py-2.5">Unit</th>
+                    <th className="px-4 py-2.5">Time</th>
+                    <th className="px-4 py-2.5">Balance</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[var(--border)]">
+                  {(board?.checkOuts || []).length === 0 ? (
+                    <EmptyRow colSpan={4} message="No check-outs for this day." />
+                  ) : (
+                    (board.checkOuts || []).slice(0, 6).map((row) => (
+                      <tr key={row.id} className="hover:bg-[var(--surface-2)]/50">
+                        <td className="px-4 py-2.5">
+                          <p className="font-medium text-[var(--text)]">{row.guest}</p>
+                          <p className="text-[11px] text-[var(--text-muted)]">{row.code || '—'}</p>
+                        </td>
+                        <td className="px-4 py-2.5">
+                          <p className="font-medium">{row.roomNumber}</p>
+                          <p className="text-[11px] text-[var(--text-muted)]">{row.building}</p>
+                        </td>
+                        <td className="px-4 py-2.5 text-[var(--text-muted)]">{formatTime(row.checkOut)}</td>
+                        <td className="px-4 py-2.5">
+                          {row.balance > 0 ? (
+                            <span className="text-xs font-semibold text-rose-600 dark:text-rose-400">
+                              {formatCurrency(row.balance)}
+                            </span>
+                          ) : (
+                            <Badge status="Paid">Paid</Badge>
+                          )}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </Panel>
+          </div>
+
+          <Panel
+            title="Due Today"
+            count={(board?.due || []).length}
+            action={
+              <Link to="/outstanding" className="text-xs font-semibold text-[var(--accent)] hover:underline">
+                Outstanding
+              </Link>
+            }
+          >
+            <table className="dashboard-table min-w-full">
+              <thead className="bg-[var(--surface-2)]/80 text-left">
+                <tr>
+                  <th className="px-4 py-2.5">Who</th>
+                  <th className="px-4 py-2.5">Unit</th>
+                  <th className="px-4 py-2.5">Type</th>
+                  <th className="px-4 py-2.5 text-right">Balance</th>
+                  <th className="px-4 py-2.5">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[var(--border)]">
+                {(board?.due || []).length === 0 ? (
+                  <EmptyRow colSpan={5} message="Nothing due for this day." />
+                ) : (
+                  (board.due || []).slice(0, 8).map((row) => (
+                    <tr key={`${row.kind}-${row.id}`} className="hover:bg-[var(--surface-2)]/50">
+                      <td className="px-4 py-2.5">
+                        <p className="font-medium text-[var(--text)]">{row.name}</p>
+                        <p className="text-[11px] text-[var(--text-muted)]">{row.description || '—'}</p>
+                      </td>
+                      <td className="px-4 py-2.5">
+                        {row.unitId ? (
+                          <Link to={`/units/${row.unitId}`} className="text-[var(--accent)] hover:underline">
+                            {row.roomNumber}
+                          </Link>
+                        ) : (
+                          row.roomNumber || '—'
+                        )}
+                      </td>
+                      <td className="px-4 py-2.5">
+                        <Badge status={DUE_KIND_LABEL[row.kind] || row.kind}>
+                          {DUE_KIND_LABEL[row.kind] || row.kind}
+                        </Badge>
+                      </td>
+                      <td className="px-4 py-2.5 text-right font-semibold tabular-nums text-rose-600 dark:text-rose-400">
+                        {formatCurrency(row.balance)}
+                      </td>
+                      <td className="px-4 py-2.5">
+                        <Badge status={row.paymentBadge}>{row.paymentBadge}</Badge>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </Panel>
+        </div>
+
+        <div className="space-y-4">
+          <section className="dashboard-panel p-4 sm:p-5">
+            <div className="mb-4 flex items-center justify-between gap-2">
+              <div>
+                <h2 className="text-sm font-semibold text-[var(--text)]">Occupancy overview</h2>
+                <p className="mt-0.5 text-xs text-[var(--text-muted)]">
+                  {stats?.totalBuildings ?? 0} buildings · {stats?.totalRooms ?? occupancyBreakdown.total} units
+                </p>
+              </div>
+              <span className="inline-flex items-center gap-1 rounded-lg bg-[var(--accent-soft)] px-2.5 py-1 text-xs font-semibold text-[var(--accent)]">
+                <MdTrendingUp className="h-3.5 w-3.5" />
+                {occupancyRate}%
+              </span>
+            </div>
+
+            <div className="space-y-3.5">
+              <OccupancyBar
+                label="Occupied"
+                value={occupancyBreakdown.counts.Occupied || stats?.occupiedRooms || 0}
+                total={occupancyBreakdown.total || stats?.totalRooms || 1}
+                color="var(--primary)"
+              />
+              <OccupancyBar
+                label="Available"
+                value={occupancyBreakdown.counts.Available || stats?.availableRooms || 0}
+                total={occupancyBreakdown.total || stats?.totalRooms || 1}
+                color="#0f9f6e"
+              />
+              <OccupancyBar
+                label="Reserved"
+                value={occupancyBreakdown.counts.Reserved || stats?.reservedUnits || 0}
+                total={occupancyBreakdown.total || stats?.totalRooms || 1}
+                color="#d97706"
+              />
+              <OccupancyBar
+                label="Maintenance"
+                value={occupancyBreakdown.counts.Maintenance || stats?.maintenanceUnits || 0}
+                total={occupancyBreakdown.total || stats?.totalRooms || 1}
+                color="#ea580c"
+              />
+            </div>
+
+            <div className="mt-5 grid grid-cols-2 gap-2">
+              <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-2)]/60 px-3 py-2.5">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">For rent</p>
+                <p className="mt-1 text-lg font-bold text-[var(--text)]">{stats?.forRent ?? 0}</p>
+              </div>
+              <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-2)]/60 px-3 py-2.5">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">For sale</p>
+                <p className="mt-1 text-lg font-bold text-[var(--text)]">{stats?.forSale ?? 0}</p>
+              </div>
+              <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-2)]/60 px-3 py-2.5">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">Guests</p>
+                <p className="mt-1 text-lg font-bold text-[var(--text)]">{stats?.currentGuests ?? 0}</p>
+              </div>
+              <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-2)]/60 px-3 py-2.5">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">Bookings</p>
+                <p className="mt-1 text-lg font-bold text-[var(--text)]">{stats?.activeBookings ?? 0}</p>
+              </div>
+            </div>
+          </section>
+
+          <Panel
+            title="Recent Payments"
+            count={recentPayments.length}
+            action={
+              <Link to="/payments" className="text-xs font-semibold text-[var(--accent)] hover:underline">
+                All payments
+              </Link>
+            }
+          >
+            <table className="dashboard-table min-w-full">
+              <thead className="bg-[var(--surface-2)]/80 text-left">
+                <tr>
+                  <th className="px-4 py-2.5">Tenant</th>
+                  <th className="px-4 py-2.5 text-right">Paid</th>
+                  <th className="px-4 py-2.5">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[var(--border)]">
+                {recentPayments.length === 0 ? (
+                  <EmptyRow colSpan={3} message="No recent payments." />
+                ) : (
+                  recentPayments.map((p) => (
+                    <tr key={p.id} className="hover:bg-[var(--surface-2)]/50">
+                      <td className="px-4 py-2.5">
+                        <p className="font-medium text-[var(--text)]">{p.name || '—'}</p>
+                        <p className="text-[11px] text-[var(--text-muted)]">
+                          {p.roomNumber || '—'}
+                          {p.month ? ` · ${p.month}` : ''}
+                          {p.paymentDate ? ` · ${formatDate(p.paymentDate)}` : ''}
                         </p>
                       </td>
-                      <td className="py-3 text-[var(--text-muted)]">
-                        {b.building} · {b.roomNumber}
+                      <td className="px-4 py-2.5 text-right font-semibold tabular-nums text-[var(--text)]">
+                        {formatCurrency(p.amountPaid)}
                       </td>
-                      <td className="py-3">
-                        <Badge status={b.status === 'CheckedIn' ? 'Occupied' : b.status}>{b.status}</Badge>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </Card>
-
-        <Card
-          title="Outstanding Payments"
-          action={
-            <Link to="/outstanding" className="text-xs font-medium text-brand-500 hover:underline">
-              View all
-            </Link>
-          }
-        >
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-[var(--border)] text-left text-[var(--text-muted)]">
-                  <th className="pb-3 font-medium">Tenant</th>
-                  <th className="pb-3 font-medium">Room</th>
-                  <th className="pb-3 font-medium text-right">Balance</th>
-                </tr>
-              </thead>
-              <tbody>
-                {outstanding.length === 0 ? (
-                  <tr>
-                    <td colSpan={3} className="py-6 text-center text-[var(--text-muted)]">
-                      All clear.
-                    </td>
-                  </tr>
-                ) : (
-                  outstanding.map((p) => (
-                    <tr key={p.id} className="border-b border-[var(--border)] last:border-0">
-                      <td className="py-3">
-                        <p className="font-medium">{p.name}</p>
-                        <p className="text-xs text-[var(--text-muted)]">{p.month}</p>
-                      </td>
-                      <td className="py-3 text-[var(--text-muted)]">{p.roomNumber}</td>
-                      <td className="py-3 text-right">
+                      <td className="px-4 py-2.5">
                         <Badge status={p.status}>{p.status}</Badge>
-                        <p className="mt-1 font-semibold">{formatCurrency(p.amountDue - p.amountPaid)}</p>
                       </td>
                     </tr>
                   ))
                 )}
               </tbody>
             </table>
-          </div>
-        </Card>
-      </div>
+          </Panel>
 
-      <div className="flex flex-wrap gap-2">
-        <Link to="/bookings?tab=new">
-          <Button>New Booking</Button>
-        </Link>
-        <Link to="/buildings">
-          <Button variant="secondary">
-            <MdLayers className="h-4 w-4" /> Buildings
-          </Button>
-        </Link>
-        <Link to="/apartments">
-          <Button variant="secondary">
-            <MdApartment className="h-4 w-4" /> Apartments
-          </Button>
-        </Link>
-        <Link to="/shops">
-          <Button variant="secondary">
-            <MdLocalMall className="h-4 w-4" /> Shops
-          </Button>
-        </Link>
+          <section className="dashboard-panel overflow-hidden">
+            <div className="relative min-h-[140px] bg-gradient-to-br from-[var(--primary-dark)] via-[var(--primary)] to-[var(--accent)] p-5 text-white">
+              <div
+                className="pointer-events-none absolute inset-0 opacity-30"
+                style={{
+                  backgroundImage:
+                    'radial-gradient(circle at 20% 20%, rgba(125,211,192,0.45), transparent 45%), radial-gradient(circle at 80% 70%, rgba(255,255,255,0.18), transparent 40%)',
+                }}
+              />
+              <div className="relative">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-white/70">Portfolio</p>
+                <p className="mt-2 text-lg font-bold tracking-tight">RJK REALTY</p>
+                <p className="mt-1 max-w-[220px] text-xs leading-relaxed text-white/75">
+                  {stats?.totalBuildings ?? 0} properties · {formatCurrency(stats?.monthlyRevenue || 0)} monthly collections
+                </p>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <Link
+                    to="/buildings"
+                    className="rounded-lg bg-white/15 px-3 py-1.5 text-xs font-semibold text-white backdrop-blur hover:bg-white/25"
+                  >
+                    Buildings
+                  </Link>
+                  <Link
+                    to="/reports"
+                    className="rounded-lg bg-[var(--sidebar-active)] px-3 py-1.5 text-xs font-semibold text-[var(--primary-dark)] hover:brightness-105"
+                  >
+                    Reports
+                  </Link>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
       </div>
     </div>
   );

@@ -6,10 +6,11 @@ import { asyncHandler } from '../../utils/asyncHandler.js';
 import { success } from '../../utils/apiResponse.js';
 import { AppError } from '../../utils/AppError.js';
 import {
-  assertBuildingAccess,
   assertUnitBuildingAccess,
   paymentBuildingFilter,
 } from '../../services/access.service.js';
+import { normalizePaymentMethod, pickPaymentDetails } from '../../utils/paymentMethod.js';
+import { nextDocumentNumber } from '../../services/documentNumber.service.js';
 
 const router = Router();
 router.use(authenticate);
@@ -73,10 +74,7 @@ function resolveStatus(amountDue, amountPaid) {
 
 function normalizeMethod(method) {
   if (!method) return null;
-  const m = String(method).toUpperCase().replace(/-/g, '_');
-  if (m === 'E_BESA' || m === 'EBESA') return 'E_BESA';
-  if (m === 'CASH') return 'CASH';
-  return null;
+  return normalizePaymentMethod(method, { fallback: 'CASH' });
 }
 
 router.get(
@@ -158,26 +156,38 @@ router.post(
       throw new AppError('month must be YYYY-MM', 400);
     }
     const resolved = resolveStatus(due, paid);
-    const methodValue = normalizeMethod(method);
-    if (method && !methodValue) {
-      throw new AppError('method must be CASH or E_BESA', 400);
-    }
+    const details =
+      method || paid > 0
+        ? pickPaymentDetails(req.body || {}, method || 'CASH')
+        : { method: null };
 
-    const payment = await prisma.monthlyPayment.create({
-      data: {
-        tenantId: tenantId || null,
-        businessId: businessId || null,
-        month: String(month),
-        amountDue: due,
-        amountPaid: paid,
-        rentDue: rent,
-        otherCharges: other,
-        status: resolved,
-        paymentDate: paymentDate ? new Date(paymentDate) : paid > 0 ? new Date() : null,
-        method: methodValue,
-        notes: notes || null,
-      },
-      include: paymentInclude,
+    const payment = await prisma.$transaction(async (tx) => {
+      let receiptNumber = null;
+      if (paid > 0) {
+        receiptNumber = await nextDocumentNumber(tx, 'RECEIPT');
+      }
+      return tx.monthlyPayment.create({
+        data: {
+          tenantId: tenantId || null,
+          businessId: businessId || null,
+          month: String(month),
+          amountDue: due,
+          amountPaid: paid,
+          rentDue: rent,
+          otherCharges: other,
+          status: resolved,
+          paymentDate: paymentDate ? new Date(paymentDate) : paid > 0 ? new Date() : null,
+          method: details.method,
+          reference: details.reference || null,
+          receivedByName: details.receivedByName || null,
+          agentName: details.agentName || null,
+          officeMpesaNumber: details.officeMpesaNumber || null,
+          receiptNumber,
+          recordedById: req.user.id,
+          notes: notes || null,
+        },
+        include: paymentInclude,
+      });
     });
 
     return success(res, serialize(payment), 201);
@@ -224,25 +234,45 @@ router.patch(
         : Math.round((nextRent + nextOther) * 100) / 100;
     const nextPaid = amountPaid !== undefined ? Number(amountPaid) : Number(existing.amountPaid);
     const nextStatus = resolveStatus(nextDue, nextPaid);
+    const details =
+      method !== undefined
+        ? pickPaymentDetails(req.body || {}, method)
+        : null;
 
-    const payment = await prisma.monthlyPayment.update({
-      where: { id: existing.id },
-      data: {
-        amountDue: nextDue,
-        amountPaid: nextPaid,
-        rentDue: nextRent,
-        otherCharges: nextOther,
-        status: nextStatus,
-        ...(method !== undefined && { method: normalizeMethod(method) }),
-        ...(paymentDate !== undefined && {
-          paymentDate: paymentDate ? new Date(paymentDate) : null,
-        }),
-        ...(notes !== undefined && { notes }),
-        ...(amountPaid !== undefined && nextPaid > 0 && paymentDate === undefined
-          ? { paymentDate: existing.paymentDate || new Date() }
-          : {}),
-      },
-      include: paymentInclude,
+    const payment = await prisma.$transaction(async (tx) => {
+      let receiptNumber = existing.receiptNumber;
+      if (nextPaid > Number(existing.amountPaid) && !receiptNumber) {
+        receiptNumber = await nextDocumentNumber(tx, 'RECEIPT');
+      }
+      return tx.monthlyPayment.update({
+        where: { id: existing.id },
+        data: {
+          amountDue: nextDue,
+          amountPaid: nextPaid,
+          rentDue: nextRent,
+          otherCharges: nextOther,
+          status: nextStatus,
+          ...(details
+            ? {
+                method: details.method,
+                reference: details.reference,
+                receivedByName: details.receivedByName,
+                agentName: details.agentName,
+                officeMpesaNumber: details.officeMpesaNumber,
+              }
+            : {}),
+          ...(paymentDate !== undefined && {
+            paymentDate: paymentDate ? new Date(paymentDate) : null,
+          }),
+          ...(notes !== undefined && { notes }),
+          ...(amountPaid !== undefined && nextPaid > 0 && paymentDate === undefined
+            ? { paymentDate: existing.paymentDate || new Date() }
+            : {}),
+          ...(receiptNumber ? { receiptNumber } : {}),
+          recordedById: req.user.id,
+        },
+        include: paymentInclude,
+      });
     });
 
     return success(res, serialize(payment));

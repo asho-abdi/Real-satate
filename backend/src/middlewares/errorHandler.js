@@ -27,21 +27,21 @@ export function errorHandler(err, req, res, _next) {
     code = code || 'VALIDATION_ERROR';
   }
 
-  // Prisma known request errors
+  // Prisma known request errors — never leak column/constraint meta in production
   if (err.code === 'P2002') {
     statusCode = 409;
     message = 'A record with this unique value already exists';
     code = 'UNIQUE_CONSTRAINT';
-    details = err.meta ?? details;
+    details = env.isProduction ? null : err.meta ?? details;
   } else if (err.code === 'P2025') {
     statusCode = 404;
     message = 'Record not found';
     code = 'NOT_FOUND';
-    details = err.meta ?? details;
+    details = env.isProduction ? null : err.meta ?? details;
   } else if (typeof err.code === 'string' && err.code.startsWith('P') && !err.isOperational) {
     statusCode = 400;
     message = env.isProduction ? 'Database request failed' : err.message;
-    code = err.code;
+    code = env.isProduction ? 'DB_ERROR' : err.code;
   }
 
   if (statusCode >= 500 && env.isProduction) {

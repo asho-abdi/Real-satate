@@ -1,4 +1,13 @@
 import { body } from 'express-validator';
+import { validatePasswordStrength } from '../utils/passwordPolicy.js';
+
+function strongPassword(field = 'password') {
+  return body(field).custom((value) => {
+    const result = validatePasswordStrength(value);
+    if (!result.ok) throw new Error(result.message);
+    return true;
+  });
+}
 
 export const loginValidators = [
   body('email').isEmail().withMessage('Valid email is required').normalizeEmail(),
@@ -19,16 +28,12 @@ export const forgotPasswordValidators = [
 
 export const resetPasswordValidators = [
   body('token').notEmpty().withMessage('Reset token is required'),
-  body('password')
-    .isLength({ min: 8 })
-    .withMessage('Password must be at least 8 characters'),
+  strongPassword('password'),
 ];
 
 export const changePasswordValidators = [
   body('currentPassword').notEmpty().withMessage('Current password is required'),
-  body('newPassword')
-    .isLength({ min: 8 })
-    .withMessage('New password must be at least 8 characters'),
+  strongPassword('newPassword'),
 ];
 
 export default {

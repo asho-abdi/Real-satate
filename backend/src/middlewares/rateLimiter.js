@@ -20,7 +20,7 @@ export const apiRateLimiter = rateLimit({
 /** Stricter limiter for login / password reset (always on). */
 export const authRateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: env.isProduction ? 20 : 100,
+  max: env.isProduction ? 10 : 100,
   standardHeaders: true,
   legacyHeaders: false,
   message: {
@@ -28,6 +28,21 @@ export const authRateLimiter = rateLimit({
     error: {
       message: 'Too many auth attempts, please try again later',
       code: 'AUTH_RATE_LIMIT_EXCEEDED',
+    },
+  },
+});
+
+/** Extra-tight limiter for password reset request (email flooding). */
+export const passwordResetRateLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: env.isProduction ? 5 : 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    error: {
+      message: 'Too many reset requests, please try again later',
+      code: 'RESET_RATE_LIMIT_EXCEEDED',
     },
   },
 });

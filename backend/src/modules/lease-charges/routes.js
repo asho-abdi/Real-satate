@@ -5,7 +5,10 @@ import { authorize } from '../../middlewares/authorize.js';
 import { asyncHandler } from '../../utils/asyncHandler.js';
 import { success } from '../../utils/apiResponse.js';
 import { AppError } from '../../utils/AppError.js';
-import { assertUnitBuildingAccess } from '../../services/access.service.js';
+import {
+  assertUnitBuildingAccess,
+  unitBuildingFilter,
+} from '../../services/access.service.js';
 import { logActivity } from '../../services/activity.service.js';
 import { currentMonthKey } from '../../utils/rent.js';
 import {
@@ -45,9 +48,13 @@ router.get(
   authorize('payments:read'),
   asyncHandler(async (req, res) => {
     const { businessId, tenantId, unitId, status } = req.query;
+    if (unitId) {
+      await assertUnitBuildingAccess(req.user, String(unitId), req.user.buildingIds);
+    }
     const rows = await prisma.leaseCharge.findMany({
       where: {
         deletedAt: null,
+        ...unitBuildingFilter(req.user.buildingIds),
         ...(businessId ? { businessId: String(businessId) } : {}),
         ...(tenantId ? { tenantId: String(tenantId) } : {}),
         ...(unitId ? { unitId: String(unitId) } : {}),

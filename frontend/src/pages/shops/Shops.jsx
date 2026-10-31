@@ -318,24 +318,7 @@ export default function Shops() {
 
   return (
     <div>
-      <PageHeader title="Shops" subtitle="Purchased commercial units and rental shops stay in separate records." />
-
-      <div className="mb-6 grid gap-4 md:grid-cols-2">
-        <div className="rounded-[1.5rem] border border-[var(--border)] bg-[var(--primary-light)] p-5">
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--primary)]">Purchased commercial</p>
-          <h2 className="mt-2 text-lg font-semibold text-[var(--text)]">One-time purchase</h2>
-          <p className="mt-2 text-sm leading-relaxed text-[var(--text-muted)]">
-            The buyer purchases the shop once. The company then bills a monthly charge through Other Charges. Sale balance and monthly charges stay separate under Purchased.
-          </p>
-        </div>
-        <div className="rounded-[1.5rem] border border-[var(--border)] bg-white p-5">
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--primary)]">Rental shops</p>
-          <h2 className="mt-2 text-lg font-semibold text-[var(--text)]">Still owned by the company</h2>
-          <p className="mt-2 text-sm leading-relaxed text-[var(--text-muted)]">
-            The shop stays with the owner. The tenant pays monthly rent. Those leases live under Rental shops, with their own payment history.
-          </p>
-        </div>
-      </div>
+      <PageHeader title="Shops" subtitle="Rental shops and purchased commercial units." />
 
       {/* tab strip */}
       <div className="mb-6 flex flex-wrap gap-2">

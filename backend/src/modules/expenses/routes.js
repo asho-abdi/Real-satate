@@ -8,6 +8,7 @@ import { AppError } from '../../utils/AppError.js';
 import {
   assertBuildingAccess,
   assertUnitBuildingAccess,
+  isAdminUser,
 } from '../../services/access.service.js';
 
 const router = Router();
@@ -30,11 +31,22 @@ function serialize(e) {
   };
 }
 
+/** Non-admins never see/mutate unscoped (null buildingId) expenses. */
 function buildingScopeFilter(buildingIds) {
   if (buildingIds === null) return {};
-  return {
-    OR: [{ buildingId: null }, { buildingId: { in: buildingIds } }],
-  };
+  return { buildingId: { in: buildingIds } };
+}
+
+async function assertExpenseAccess(user, expense) {
+  if (!expense) throw new AppError('Transaction not found', 404);
+  if (isAdminUser(user)) return expense;
+  if (!expense.buildingId) {
+    throw new AppError('You do not have access to this transaction', 403, {
+      code: 'BUILDING_FORBIDDEN',
+    });
+  }
+  await assertBuildingAccess(user, expense.buildingId, user.buildingIds);
+  return expense;
 }
 
 async function nextExpenseCode(tx = prisma) {
@@ -155,6 +167,9 @@ router.post(
       throw new AppError('amount, expenseDate, and comment/reference are required', 400);
     }
 
+    if (!isAdminUser(req.user) && !buildingId) {
+      throw new AppError('Building is required for this transaction', 400);
+    }
     if (buildingId) {
       await assertBuildingAccess(req.user, buildingId, req.user.buildingIds);
     }
@@ -202,10 +217,7 @@ router.patch(
     const existing = await prisma.expense.findFirst({
       where: { id: req.params.id, deletedAt: null },
     });
-    if (!existing) throw new AppError('Transaction not found', 404);
-    if (existing.buildingId) {
-      await assertBuildingAccess(req.user, existing.buildingId, req.user.buildingIds);
-    }
+    await assertExpenseAccess(req.user, existing);
 
     const {
       category,
@@ -222,6 +234,18 @@ router.patch(
       unitId,
       buildingId,
     } = req.body || {};
+
+    if (buildingId !== undefined) {
+      if (!isAdminUser(req.user) && !buildingId) {
+        throw new AppError('Building is required for this transaction', 400);
+      }
+      if (buildingId) {
+        await assertBuildingAccess(req.user, buildingId, req.user.buildingIds);
+      }
+    }
+    if (unitId) {
+      await assertUnitBuildingAccess(req.user, unitId, req.user.buildingIds);
+    }
 
     const method =
       paymentMethod !== undefined
@@ -265,10 +289,7 @@ router.delete(
     const existing = await prisma.expense.findFirst({
       where: { id: req.params.id, deletedAt: null },
     });
-    if (!existing) throw new AppError('Transaction not found', 404);
-    if (existing.buildingId) {
-      await assertBuildingAccess(req.user, existing.buildingId, req.user.buildingIds);
-    }
+    await assertExpenseAccess(req.user, existing);
 
     await prisma.expense.update({
       where: { id: existing.id },

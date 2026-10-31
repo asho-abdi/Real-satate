@@ -218,7 +218,11 @@ export default function BuildingDetail() {
 
   const openCreateFloor = () => {
     setEditingFloorId(null);
-    setFloorForm({ name: '', level: 0 });
+    const nextLevel =
+      floors.length === 0
+        ? 0
+        : Math.max(...floors.map((f) => Number(f.level) || 0)) + 1;
+    setFloorForm({ name: '', level: nextLevel });
     setFloorOpen(true);
   };
 
@@ -457,8 +461,8 @@ export default function BuildingDetail() {
         }
       />
 
-      <div className="mb-5 -mx-1 overflow-x-auto px-1 pb-1">
-        <div className="flex min-w-min items-center gap-2">
+      <div className="mb-5">
+        <div className="flex flex-wrap items-center gap-2">
           {floors.map((f) => {
             const isSelected = selectedFloorId === f.id;
             const menuOpen = floorMenuId === f.id;
@@ -469,7 +473,7 @@ export default function BuildingDetail() {
                     'inline-flex h-10 items-stretch overflow-hidden rounded-xl border transition-all duration-150',
                     isSelected
                       ? 'border-[#F05A28] bg-[#F05A28] text-white shadow-sm shadow-[#F05A28]/20'
-                      : 'border-[#E2E8F0] bg-white text-[#172033] hover:border-[#F05A28]/35 hover:shadow-sm',
+                      : 'border-[var(--border)] bg-[var(--surface)] text-[var(--text)] hover:border-[#F05A28]/35 hover:shadow-sm',
                   )}
                 >
                   <button
@@ -477,7 +481,7 @@ export default function BuildingDetail() {
                     onClick={() => selectFloor(f.id)}
                     className={cn(
                       'px-4 text-sm font-medium transition-colors',
-                      isSelected ? 'text-white' : 'text-[#172033]',
+                      isSelected ? 'text-white' : 'text-[var(--text)]',
                     )}
                   >
                     {f.name}
@@ -496,8 +500,12 @@ export default function BuildingDetail() {
           })}
         </div>
         {floors.length === 0 ? (
-          <p className="text-sm text-[var(--text-muted)]">No floors yet — add the first floor.</p>
-        ) : null}
+          <p className="mt-2 text-sm text-[var(--text-muted)]">No floors yet — add the first floor.</p>
+        ) : (
+          <p className="mt-2 text-xs text-[var(--text-muted)]">
+            {floors.length} floor{floors.length === 1 ? '' : 's'} registered
+          </p>
+        )}
       </div>
 
       <Card title={selectedFloor ? `${selectedFloor.name} · Units` : 'Units'}>
@@ -595,7 +603,7 @@ export default function BuildingDetail() {
                           <div className="flex flex-wrap gap-2">
                             <Link
                               to={`/units/${r.id}`}
-                              className="inline-flex h-9 items-center justify-center rounded-xl bg-brand-500 px-3 text-xs font-semibold text-white shadow-sm shadow-brand-500/30 transition hover:bg-brand-600 dark:bg-brand-500 dark:text-white dark:hover:bg-brand-400"
+                              className="inline-flex h-9 items-center justify-center rounded-xl bg-brand-500 px-3 text-xs font-semibold !text-white shadow-sm shadow-brand-500/30 transition hover:bg-brand-600 dark:bg-brand-500 dark:!text-white dark:hover:bg-brand-400"
                             >
                               Open profile
                             </Link>
@@ -700,13 +708,14 @@ export default function BuildingDetail() {
             label="Name"
             value={floorForm.name}
             onChange={(e) => setFloorForm({ ...floorForm, name: e.target.value })}
-            placeholder="Ground Floor"
+            placeholder="7TH FLOOR"
           />
           <Input
-            label="Level"
+            label="Level (sort order)"
             type="number"
             value={floorForm.level}
             onChange={(e) => setFloorForm({ ...floorForm, level: e.target.value })}
+            hint="Basement can be -1. Each level must be unique."
           />
         </div>
       </Modal>

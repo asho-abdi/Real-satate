@@ -4,13 +4,13 @@ import { useLocalStorage } from '../hooks/useLocalStorage.js';
 const LayoutContext = createContext(null);
 
 export const NAV_LAYOUTS = [
-  { value: 'topbar', label: 'Topbar' },
   { value: 'sidebar', label: 'Sidebar' },
+  { value: 'topbar', label: 'Topbar' },
 ];
 
 export function LayoutProvider({ children }) {
-  // Topbar is the default; Sidebar is the alternate option.
-  const [navLayout, setNavLayout] = useLocalStorage('rjk-nav-layout-v2', 'topbar');
+  // Sidebar is the default chrome for the property-management UI.
+  const [navLayout, setNavLayout] = useLocalStorage('rjk-nav-layout-v3', 'sidebar');
 
   const value = useMemo(
     () => ({

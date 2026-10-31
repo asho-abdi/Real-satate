@@ -8,6 +8,7 @@ import Button from '../components/ui/Button.jsx';
 import Spinner from '../components/ui/Spinner.jsx';
 import { useSettings } from '../context/SettingsContext.jsx';
 import { NAV_LAYOUTS, useLayout } from '../context/LayoutContext.jsx';
+import { settingsService } from '../services/settingsService.js';
 
 export default function Settings() {
   const { settings, loading, saveSettings } = useSettings();
@@ -15,6 +16,7 @@ export default function Settings() {
   const [companyName, setCompanyName] = useState(settings.companyName);
   const [currency, setCurrency] = useState(settings.currency);
   const [nightsNote, setNightsNote] = useState(settings.nightsNote);
+  const [officeMpesa, setOfficeMpesa] = useState('');
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -23,10 +25,26 @@ export default function Settings() {
     setNightsNote(settings.nightsNote);
   }, [settings]);
 
+  useEffect(() => {
+    let alive = true;
+    settingsService
+      .fetchSettings()
+      .then((map) => {
+        if (!alive) return;
+        const raw = map['payments.officeMpesaNumber'];
+        setOfficeMpesa(typeof raw === 'string' ? raw : raw != null ? String(raw) : '');
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
+
   const save = async () => {
     setSaving(true);
     try {
       await saveSettings({ companyName, currency, nightsNote });
+      await settingsService.updateSetting('payments.officeMpesaNumber', officeMpesa.trim());
       toast.success('Settings saved');
     } catch (error) {
       toast.error(error.message || 'Could not save settings');
@@ -61,7 +79,7 @@ export default function Settings() {
             ))}
           </Select>
           <p className="mt-2 text-xs text-[var(--text-muted)]">
-            Choose Sidebar or Topbar. Saved on this device.
+            Sidebar is the default. Switch to Topbar anytime — saved on this device.
           </p>
         </Card>
 
@@ -90,6 +108,12 @@ export default function Settings() {
                 className="w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm text-[var(--text)] outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20"
               />
             </label>
+            <Input
+              label="Office MPESA number"
+              value={officeMpesa}
+              onChange={(e) => setOfficeMpesa(e.target.value)}
+              hint="Used as the default when recording MPESA – Office Number payments."
+            />
             <Button className="h-12 px-6 text-base" onClick={save} loading={saving}>
               Save Settings
             </Button>

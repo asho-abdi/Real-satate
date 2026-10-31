@@ -650,10 +650,33 @@ export const rentalApi = {
 
   listPayments: (params) =>
     get('/payments', params).then((rows) => (rows || []).map(mapPayment)),
+  listDeposits: (params) => get('/deposits', params),
+  getDepositSummary: () => get('/deposits/summary'),
+  getDeposit: (id) => get(`/deposits/${id}`),
+  createDeposit: (payload) => post('/deposits', payload),
+  settleDeposit: (id, payload) => post(`/deposits/${id}/settle`, payload),
+
+  getStatement: (params) => get('/finance/statements', params),
+  downloadStatementPdf: async (params) => {
+    const res = await api.get('/finance/statements/pdf', { params, responseType: 'blob' });
+    return res.data;
+  },
+  createFinanceDocument: (payload) => post('/finance/documents', payload),
+  listFinanceDocuments: (params) => get('/finance/documents', params),
+  getFinanceDocument: (id) => get(`/finance/documents/${id}`),
+  downloadFinanceDocumentPdf: async (id) => {
+    const res = await api.get(`/finance/documents/${id}/pdf`, { responseType: 'blob' });
+    return res.data;
+  },
+
   createPayment: (payload) =>
     post('/payments', {
       tenantId: payload.tenantId || null,
       businessId: payload.businessId || null,
+      reference: payload.reference || null,
+      receivedByName: payload.receivedByName || null,
+      agentName: payload.agentName || null,
+      officeMpesaNumber: payload.officeMpesaNumber || null,
       month: payload.month,
       amountDue: Number(payload.amountDue),
       amountPaid: Number(payload.amountPaid) || 0,
@@ -676,6 +699,12 @@ export const rentalApi = {
       ...(payload.paymentDate !== undefined && { paymentDate: payload.paymentDate }),
       ...(payload.method !== undefined && {
         method: METHOD_VALUES[payload.method] || payload.method,
+      }),
+      ...(payload.reference !== undefined && { reference: payload.reference }),
+      ...(payload.receivedByName !== undefined && { receivedByName: payload.receivedByName }),
+      ...(payload.agentName !== undefined && { agentName: payload.agentName }),
+      ...(payload.officeMpesaNumber !== undefined && {
+        officeMpesaNumber: payload.officeMpesaNumber,
       }),
       ...(payload.notes !== undefined && { notes: payload.notes }),
     }).then(mapPayment),

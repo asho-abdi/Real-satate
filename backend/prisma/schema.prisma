@@ -13,6 +13,7 @@ datasource db {
 
 enum UnitType {
   COMMERCIAL_SHOP
+  COMMERCIAL_OFFICE
   APARTMENT
   STUDIO_APARTMENT
   ONE_BEDROOM
@@ -22,6 +23,7 @@ enum UnitType {
 
 enum UnitUsage {
   SHOP
+  OFFICE
   APARTMENT
   GUEST
 }
@@ -67,7 +69,29 @@ enum PaymentStatus {
 
 enum PaymentMethod {
   CASH
+  /// Legacy — treated as MPESA in UI/API normalization
   E_BESA
+  MPESA
+  AGENT
+}
+
+enum DepositStatus {
+  HELD
+  PARTIALLY_RETURNED
+  FULLY_RETURNED
+  DEDUCTED
+}
+
+enum DepositTxnType {
+  RECEIVED
+  RETURN
+  DEDUCTION
+  ADJUSTMENT
+}
+
+enum FinanceDocType {
+  INVOICE
+  RECEIPT
 }
 
 enum Gender {
@@ -204,6 +228,8 @@ model User {
   /// Denormalized role code for JWT (ADMIN | BUILDING_MANAGER). Kept in sync with Role.code via roleId.
   role                 String    @default("BUILDING_MANAGER")
   roleId               String?   @db.Uuid
+  /// Staff page keys this user may open (e.g. ["maintenance","payments"]). Ignored for Admin.
+  allowedPages         Json?
   resetPasswordToken   String?
   resetPasswordExpires DateTime?
   lastLoginAt          DateTime?
@@ -225,6 +251,11 @@ model User {
   leaseCharges         LeaseCharge[]         @relation("LeaseChargeCreatedBy")
   maintenanceRecords   MaintenanceRecord[]   @relation("MaintenanceCreatedBy")
   maintenanceFieldDefs MaintenanceFieldDef[] @relation("MaintenanceFieldCreatedBy")
+  securityDepositsCreated SecurityDeposit[]  @relation("DepositCreatedBy")
+  securityDepositsUpdated SecurityDeposit[]  @relation("DepositUpdatedBy")
+  depositTransactions     SecurityDepositTxn[] @relation("DepositTxnCreatedBy")
+  financeDocuments        FinanceDocument[]    @relation("FinanceDocCreatedBy")
+  monthlyPaymentsRecorded MonthlyPayment[]     @relation("MonthlyPaymentRecordedBy")
 
   @@index([roleId])
 }
@@ -276,7 +307,8 @@ model Floor {
   building Building @relation(fields: [buildingId], references: [id])
   units    Unit[]
 
-  @@unique([buildingId, level])
+  /// Active floors only — partial unique index in migration 3_floor_level_active_unique
+  @@index([buildingId, level])
   @@index([buildingId])
 }
 
@@ -318,6 +350,8 @@ model Unit {
   workProgress       WorkProgress[]
   leaseCharges       LeaseCharge[]
   maintenanceRecords MaintenanceRecord[]
+  securityDeposits   SecurityDeposit[]
+  financeDocuments   FinanceDocument[]
 
   @@unique([buildingId, roomNumber])
   @@index([floorId])
@@ -411,6 +445,10 @@ model BookingPayment {
   method       PaymentMethod @default(CASH)
   paymentDate  DateTime      @default(now())
   reference    String?
+  receivedByName String?
+  agentName    String?
+  officeMpesaNumber String?
+  receiptNumber String?
   comment      String?
   recordedById String?       @db.Uuid
   createdAt    DateTime      @default(now())
@@ -421,6 +459,7 @@ model BookingPayment {
 
   @@index([bookingId])
   @@index([paymentDate])
+  @@index([receiptNumber])
 }
 
 model Tenant {
@@ -452,6 +491,8 @@ model Tenant {
   unit     Unit             @relation(fields: [unitId], references: [id])
   payments MonthlyPayment[]
   charges  LeaseCharge[]
+  deposits SecurityDeposit[]
+  financeDocuments FinanceDocument[]
 
   @@index([unitId])
   @@index([phone])
@@ -485,6 +526,8 @@ model Business {
   unit     Unit             @relation(fields: [unitId], references: [id])
   payments MonthlyPayment[]
   charges  LeaseCharge[]
+  deposits SecurityDeposit[]
+  financeDocuments FinanceDocument[]
 
   @@index([unitId])
   @@index([phone])
@@ -504,17 +547,26 @@ model MonthlyPayment {
   status      PaymentStatus  @default(UNPAID)
   paymentDate DateTime?
   method      PaymentMethod?
+  /// Controlled payment detail fields (method-specific)
+  reference          String?
+  receivedByName     String?
+  agentName          String?
+  officeMpesaNumber  String?
+  receiptNumber      String?
+  recordedById       String?  @db.Uuid
   notes       String?
   createdAt   DateTime       @default(now())
   updatedAt   DateTime       @updatedAt
 
-  tenant   Tenant?   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  business Business? @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  tenant     Tenant?   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  business   Business? @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  recordedBy User?     @relation("MonthlyPaymentRecordedBy", fields: [recordedById], references: [id])
 
   @@unique([tenantId, month])
   @@unique([businessId, month])
   @@index([status])
   @@index([month])
+  @@index([receiptNumber])
 }
 
 /// Extra billable charges on a lease (utilities, late fees, parking, etc.)
@@ -531,6 +583,12 @@ model LeaseCharge {
   chargeDate  DateTime       @default(now())
   dueDate     DateTime?
   month       String?
+  method      PaymentMethod?
+  reference   String?
+  receivedByName String?
+  agentName   String?
+  officeMpesaNumber String?
+  receiptNumber String?
   notes       String?
   createdById String?        @db.Uuid
   deletedAt   DateTime?
@@ -547,6 +605,7 @@ model LeaseCharge {
   @@index([unitId])
   @@index([status])
   @@index([month])
+  @@index([receiptNumber])
 }
 
 model Expense {
@@ -612,6 +671,8 @@ model ShopSale {
   unit                 Unit                      @relation(fields: [unitId], references: [id])
   salePayments         ShopSalePayment[]
   maintenancePayments  ShopMaintenancePayment[]
+  deposits             SecurityDeposit[]
+  financeDocuments     FinanceDocument[]
 
   @@index([unitId])
   @@index([ownershipStatus])
@@ -625,6 +686,10 @@ model ShopSalePayment {
   method       PaymentMethod @default(CASH)
   paymentDate  DateTime      @default(now())
   reference    String?
+  receivedByName String?
+  agentName    String?
+  officeMpesaNumber String?
+  receiptNumber String?
   comment      String?
   recordedById String?       @db.Uuid
   createdAt    DateTime      @default(now())
@@ -633,6 +698,7 @@ model ShopSalePayment {
   recordedBy User?    @relation("ShopSalePaymentBy", fields: [recordedById], references: [id])
 
   @@index([saleId])
+  @@index([receiptNumber])
 }
 
 model ShopMaintenancePayment {
@@ -807,6 +873,122 @@ model Setting {
   value     Json
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+/// Liability: security deposits held for tenants / shop rentals / buyers — NOT revenue.
+model SecurityDeposit {
+  id              String        @id @default(uuid()) @db.Uuid
+  tenantId        String?       @db.Uuid
+  businessId      String?       @db.Uuid
+  shopSaleId      String?       @db.Uuid
+  unitId          String        @db.Uuid
+  amount          Decimal       @db.Decimal(12, 2)
+  dateReceived    DateTime      @default(now())
+  method          PaymentMethod @default(CASH)
+  reference       String?
+  receivedByName  String?
+  agentName       String?
+  officeMpesaNumber String?
+  status          DepositStatus @default(HELD)
+  returnedAmount  Decimal       @default(0) @db.Decimal(12, 2)
+  deductedAmount  Decimal       @default(0) @db.Decimal(12, 2)
+  remainingAmount Decimal       @db.Decimal(12, 2)
+  returnDate      DateTime?
+  returnMethod    PaymentMethod?
+  notes           String?
+  createdById     String?       @db.Uuid
+  updatedById     String?       @db.Uuid
+  deletedAt       DateTime?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  tenant     Tenant?   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  business   Business? @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  shopSale   ShopSale? @relation(fields: [shopSaleId], references: [id], onDelete: Cascade)
+  unit       Unit      @relation(fields: [unitId], references: [id])
+  createdBy  User?     @relation("DepositCreatedBy", fields: [createdById], references: [id])
+  updatedBy  User?     @relation("DepositUpdatedBy", fields: [updatedById], references: [id])
+  transactions SecurityDepositTxn[]
+
+  @@index([tenantId])
+  @@index([businessId])
+  @@index([shopSaleId])
+  @@index([unitId])
+  @@index([status])
+}
+
+model SecurityDepositTxn {
+  id          String         @id @default(uuid()) @db.Uuid
+  depositId   String         @db.Uuid
+  type        DepositTxnType
+  amount      Decimal        @db.Decimal(12, 2)
+  method      PaymentMethod?
+  reference   String?
+  notes       String?
+  createdById String?        @db.Uuid
+  createdAt   DateTime       @default(now())
+
+  deposit   SecurityDeposit @relation(fields: [depositId], references: [id], onDelete: Cascade)
+  createdBy User?           @relation("DepositTxnCreatedBy", fields: [createdById], references: [id])
+
+  @@index([depositId])
+  @@index([type])
+  @@index([createdAt])
+}
+
+/// Sequential invoice / receipt numbers
+model DocumentSequence {
+  id         String @id @default(uuid()) @db.Uuid
+  key        String
+  year       Int
+  lastNumber Int    @default(0)
+
+  @@unique([key, year])
+}
+
+/// Issued invoices and receipts (metadata; PDF generated on demand)
+model FinanceDocument {
+  id               String         @id @default(uuid()) @db.Uuid
+  type             FinanceDocType
+  number           String         @unique
+  tenantId         String?        @db.Uuid
+  businessId       String?        @db.Uuid
+  shopSaleId       String?        @db.Uuid
+  unitId           String?        @db.Uuid
+  customerName     String
+  customerPhone    String?
+  description      String?
+  billingPeriod    String?
+  amount           Decimal        @db.Decimal(12, 2)
+  previousBalance  Decimal        @default(0) @db.Decimal(12, 2)
+  currentCharges   Decimal        @default(0) @db.Decimal(12, 2)
+  amountPaid       Decimal        @default(0) @db.Decimal(12, 2)
+  remainingBalance Decimal        @default(0) @db.Decimal(12, 2)
+  method           PaymentMethod?
+  reference        String?
+  dueDate          DateTime?
+  paymentDate      DateTime?
+  notes            String?
+  /// Source entity for audit: MONTHLY_PAYMENT | LEASE_CHARGE | BOOKING_PAYMENT | SHOP_SALE_PAYMENT | DEPOSIT
+  sourceType       String?
+  sourceId         String?        @db.Uuid
+  meta             Json?
+  createdById      String?        @db.Uuid
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  tenant    Tenant?   @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  business  Business? @relation(fields: [businessId], references: [id], onDelete: SetNull)
+  shopSale  ShopSale? @relation(fields: [shopSaleId], references: [id], onDelete: SetNull)
+  unit      Unit?     @relation(fields: [unitId], references: [id], onDelete: SetNull)
+  createdBy User?     @relation("FinanceDocCreatedBy", fields: [createdById], references: [id])
+
+  @@index([type])
+  @@index([tenantId])
+  @@index([businessId])
+  @@index([unitId])
+  @@index([createdAt])
+  @@index([sourceType, sourceId])
 }
 
 /// Audit / activity timeline for unit profiles (and related entities)

@@ -2,16 +2,16 @@ import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { authService } from '../services/authService.js';
-import { STORAGE_KEY } from '../services/api.js';
+import { readSession, writeSession } from '../services/api.js';
 
 const AuthContext = createContext(null);
 
 function readStoredSession() {
   try {
-    const session = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
+    const session = readSession();
     if (!session?.token) return null;
     if (String(session.token).startsWith('mock-')) {
-      localStorage.removeItem(STORAGE_KEY);
+      writeSession(null);
       return null;
     }
     return session;
@@ -27,8 +27,7 @@ export function AuthProvider({ children }) {
 
   const persist = (nextUser) => {
     setUser(nextUser);
-    if (nextUser) localStorage.setItem(STORAGE_KEY, JSON.stringify(nextUser));
-    else localStorage.removeItem(STORAGE_KEY);
+    writeSession(nextUser);
   };
 
   useEffect(() => {

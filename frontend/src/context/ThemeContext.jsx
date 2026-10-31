@@ -1,14 +1,16 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 
+const THEME_KEY = 'rjk-theme';
+
 const ThemeContext = createContext(null);
 
 export function ThemeProvider({ children }) {
-  const [theme, setTheme] = useState(() => localStorage.getItem('estateops-theme') || 'light');
+  const [theme, setTheme] = useState(() => localStorage.getItem(THEME_KEY) || 'light');
 
   useEffect(() => {
     const root = document.documentElement;
     root.classList.toggle('dark', theme === 'dark');
-    localStorage.setItem('estateops-theme', theme);
+    localStorage.setItem(THEME_KEY, theme);
   }, [theme]);
 
   const value = useMemo(

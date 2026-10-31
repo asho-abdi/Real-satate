@@ -1,14 +1,6 @@
-/** Static notifications only — all rental data comes from the API. */
+/** Empty defaults — all rental data comes from the API. */
 
-export const simpleNotifications = [
-  {
-    id: 'n1',
-    title: 'Welcome',
-    message: 'Add your buildings under Setup, then register rooms with the usage you need.',
-    time: new Date().toISOString(),
-    read: false,
-  },
-];
+export const simpleNotifications = [];
 
 export function getSimpleDashboardStats() {
   return {

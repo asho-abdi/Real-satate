@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const STORAGE_KEY = 'estateops-auth';
+const STORAGE_KEY = 'rjk-auth';
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL || 'http://localhost:5000/api/v1',
@@ -50,6 +50,18 @@ async function refreshAccessToken() {
     name: data.user?.name || session.name,
     email: data.user?.email || session.email,
     role: data.user?.role || data.user?.roleName || session.role,
+    isAdmin: Boolean(
+      data.user?.isAdmin || data.user?.role === 'ADMIN' || session.isAdmin,
+    ),
+    permissions: data.user?.permissions || session.permissions || [],
+    allowedPages: Array.isArray(data.user?.allowedPages)
+      ? data.user.allowedPages
+      : session.allowedPages || [],
+    buildingIds:
+      data.user?.buildingIds === null
+        ? null
+        : data.user?.buildingIds || session.buildingIds || [],
+    buildings: data.user?.buildings || session.buildings || [],
     token: data.accessToken,
     refreshToken: data.refreshToken,
   };
