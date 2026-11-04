@@ -399,7 +399,9 @@ router.get(
 function buildActions(mode, lease, unit) {
   const actions = ['EDIT_UNIT', 'UPLOAD_DOCUMENT'];
   if (mode === 'AVAILABLE' || mode === 'VACANT') {
-    if (unit.usage === 'SHOP') actions.push('CREATE_LEASE', 'RECORD_SALE');
+    if (unit.usage === 'SHOP' || unit.usage === 'OFFICE') {
+      actions.push('CREATE_LEASE', 'RECORD_SALE');
+    }
     if (unit.usage === 'APARTMENT') actions.push('CREATE_LEASE');
     if (unit.usage === 'GUEST') actions.push('CREATE_BOOKING');
   }

@@ -75,6 +75,7 @@ export default function Reports() {
   const [to, setTo] = useState('');
   const [buildingId, setBuildingId] = useState('');
   const [floorId, setFloorId] = useState('');
+  const [propertyType, setPropertyType] = useState('ALL');
   const [exporting, setExporting] = useState(false);
 
   const filterParams = useMemo(() => {
@@ -85,8 +86,9 @@ export default function Reports() {
     }
     if (buildingId) params.buildingId = buildingId;
     if (floorId) params.floorId = floorId;
+    if (propertyType && propertyType !== 'ALL') params.propertyType = propertyType;
     return params;
-  }, [period, from, to, buildingId, floorId]);
+  }, [period, from, to, buildingId, floorId, propertyType]);
 
   const buildingFloors = useMemo(
     () => floors.filter((f) => !buildingId || f.buildingId === buildingId),
@@ -330,6 +332,17 @@ export default function Reports() {
                 {!buildingId && f.building?.name ? ` · ${f.building.name}` : ''}
               </option>
             ))}
+          </Select>
+          <Select
+            label="Property type"
+            value={propertyType}
+            onChange={(e) => setPropertyType(e.target.value)}
+          >
+            <option value="ALL">All properties</option>
+            <option value="SHOP">Shops</option>
+            <option value="OFFICE">Offices</option>
+            <option value="APARTMENT">Apartments</option>
+            <option value="GUEST">Guest</option>
           </Select>
         </div>
 

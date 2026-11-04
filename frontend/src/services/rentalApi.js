@@ -222,6 +222,8 @@ function mapBusiness(b) {
     roomId: b.unitId,
     unitId: b.unitId,
     roomNumber: b.unit?.roomNumber,
+    usage: labelUsage(b.unit?.usage),
+    usageRaw: b.unit?.usage || null,
     buildingId: b.unit?.building?.id,
     floorId: b.unit?.floor?.id,
     building: b.unit?.building?.name,
@@ -236,8 +238,14 @@ function mapBusiness(b) {
 
 function mapPayment(p) {
   if (!p) return p;
-  const isShop = Boolean(p.businessId || p.business);
-  const name = isShop
+  const isBusiness = Boolean(p.businessId || p.business);
+  const unitUsage = String(p.business?.unit?.usage || '').toUpperCase();
+  const tenantType = isBusiness
+    ? unitUsage === 'OFFICE'
+      ? 'office'
+      : 'shop'
+    : 'apartment';
+  const name = isBusiness
     ? p.business?.businessName || p.name
     : p.tenant?.fullName || p.name;
   const roomNumber =
@@ -253,7 +261,7 @@ function mapPayment(p) {
     null;
   return {
     id: p.id,
-    tenantType: isShop ? 'shop' : 'apartment',
+    tenantType,
     tenantId: p.tenantId || null,
     businessId: p.businessId || null,
     name,
@@ -386,7 +394,7 @@ export const rentalApi = {
   setPrimaryUnitImage: (unitId, imageId) =>
     patch(`/units/${unitId}/images/${imageId}/primary`),
 
-  listShopSales: (params) => get('/shop-sales', params),
+  listShopSales: (params) => get('/shop-sales', params || undefined),
   getShopSale: (id) => get(`/shop-sales/${id}`),
   createShopSale: (payload) =>
     post('/shop-sales', {
@@ -570,7 +578,8 @@ export const rentalApi = {
       ...(payload.leaseEnd !== undefined && { leaseEnd: payload.leaseEnd || null }),
     }).then(mapTenant),
 
-  listBusinesses: () => get('/businesses').then((rows) => (rows || []).map(mapBusiness)),
+  listBusinesses: (params) =>
+    get('/businesses', params).then((rows) => (rows || []).map(mapBusiness)),
   getBusiness: (id) => get(`/businesses/${id}`).then(mapBusiness),
   createBusiness: (payload) =>
     post('/businesses', {
@@ -583,6 +592,9 @@ export const rentalApi = {
         identityDocumentName: payload.identityDocumentName || null,
       }),
       unitId: payload.unitId || payload.roomId,
+      ...(payload.expectedUsage
+        ? { expectedUsage: String(payload.expectedUsage).toUpperCase() }
+        : {}),
       monthlyRent: Number(payload.monthlyRent),
       discount: Number(payload.discount) || 0,
       securityDeposit: Number(payload.securityDeposit) || 0,

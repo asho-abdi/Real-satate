@@ -11,7 +11,8 @@ export const STAFF_PAGES = [
   { key: 'buildings', label: 'Buildings', description: 'Property buildings setup' },
   { key: 'units', label: 'Units', description: 'Rooms, shops, availability' },
   { key: 'apartments', label: 'Apartments', description: 'Apartment tenants' },
-  { key: 'shops', label: 'Shops', description: 'Shop businesses' },
+  { key: 'shops', label: 'Shops', description: 'Shop businesses and sales' },
+  { key: 'offices', label: 'Offices', description: 'Office businesses and sales' },
   { key: 'bookings', label: 'Guest Bookings', description: 'Guest stays and bookings' },
   { key: 'expenses', label: 'Money Movements', description: 'Expenses and cash movements' },
   { key: 'payments', label: 'Payments', description: 'Collect and record payments' },
@@ -50,6 +51,14 @@ export const PAGE_PERMISSIONS = Object.freeze({
     'buildings:read',
   ],
   shops: [
+    'businesses:read',
+    'businesses:create',
+    'businesses:update',
+    'businesses:delete',
+    'units:read',
+    'buildings:read',
+  ],
+  offices: [
     'businesses:read',
     'businesses:create',
     'businesses:update',
@@ -112,6 +121,7 @@ export const ROUTE_PAGE_KEY = Object.freeze({
   '/availability': 'units',
   '/apartments': 'apartments',
   '/shops': 'shops',
+  '/offices': 'offices',
   '/bookings': 'bookings',
   '/expenses': 'expenses',
   '/payments': 'payments',
@@ -126,7 +136,12 @@ export const ROUTE_PAGE_KEY = Object.freeze({
 export function normalizeAllowedPages(value) {
   if (!Array.isArray(value)) return [];
   const known = new Set(Object.keys(PAGE_PERMISSIONS));
-  return [...new Set(value.map(String).filter((k) => known.has(k)))];
+  const pages = [...new Set(value.map(String).filter((k) => known.has(k)))];
+  // Legacy: shops grant also covered offices before the split — keep both when shops present
+  if (pages.includes('shops') && !pages.includes('offices') && known.has('offices')) {
+    pages.push('offices');
+  }
+  return pages;
 }
 
 export function permissionsFromPages(pages) {

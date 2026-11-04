@@ -35,7 +35,12 @@ export default function Payments() {
         ...monthly.map((p) => ({
           id: p.id,
           recordType: 'monthly',
-          source: p.tenantType === 'shop' ? 'Shop' : 'Apartment',
+          source:
+            p.tenantType === 'office'
+              ? 'Office'
+              : p.tenantType === 'shop'
+                ? 'Shop'
+                : 'Apartment',
           name: p.name,
           room: p.roomNumber,
           building: p.building,
@@ -161,6 +166,7 @@ export default function Payments() {
             <option value="">All</option>
             <option value="Apartment">Apartment</option>
             <option value="Shop">Shop</option>
+            <option value="Office">Office</option>
             <option value="Guest">Guest</option>
           </Select>
           <Select label="Status" value={status} onChange={(e) => setStatus(e.target.value)}>

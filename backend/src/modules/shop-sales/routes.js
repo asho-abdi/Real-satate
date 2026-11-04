@@ -95,14 +95,27 @@ router.get(
   '/',
   authorize('businesses:read'),
   asyncHandler(async (req, res) => {
-    const { buildingId, status } = req.query;
+    const { buildingId, status, usage: usageQ } = req.query;
+    const usage =
+      String(usageQ || '').toUpperCase() === 'SHOP' ||
+      String(usageQ || '').toUpperCase() === 'OFFICE'
+        ? String(usageQ).toUpperCase()
+        : null;
+    const buildingFilter = buildingId
+      ? { unit: { buildingId: String(buildingId), deletedAt: null } }
+      : unitBuildingFilter(req.user.buildingIds);
     const where = {
       deletedAt: null,
       ...(status ? { ownershipStatus: String(status).toUpperCase() } : {}),
-      ...(buildingId
-        ? { unit: { buildingId: String(buildingId), deletedAt: null } }
-        : unitBuildingFilter(req.user.buildingIds)),
+      ...buildingFilter,
     };
+    if (usage) {
+      where.unit = {
+        ...(buildingFilter.unit || {}),
+        usage,
+        deletedAt: null,
+      };
+    }
     const rows = await prisma.shopSale.findMany({
       where,
       include: saleInclude,
@@ -161,7 +174,20 @@ router.post(
     });
     if (!unit) throw new AppError('Unit not found', 404);
     await assertUnitBuildingAccess(req.user, unit.id, req.user.buildingIds);
-    if (unit.usage !== 'SHOP') throw new AppError('Only shop units can be sold', 400);
+    if (unit.usage !== 'SHOP' && unit.usage !== 'OFFICE') {
+      throw new AppError('Only shop or office units can be sold', 400);
+    }
+    const expectedUsage = req.body?.expectedUsage
+      ? String(req.body.expectedUsage).toUpperCase()
+      : null;
+    if (expectedUsage === 'SHOP' || expectedUsage === 'OFFICE') {
+      if (unit.usage !== expectedUsage) {
+        throw new AppError(
+          `This unit is a ${unit.usage.toLowerCase()} and cannot be sold as a ${expectedUsage.toLowerCase()}`,
+          400,
+        );
+      }
+    }
     if (!['AVAILABLE', 'RESERVED'].includes(unit.status)) {
       throw new AppError(`Unit is ${unit.status.toLowerCase()} and cannot be sold`, 400);
     }

@@ -111,6 +111,10 @@ async function buildSummaryReport(query, user) {
   const period = resolvePeriod(query);
   const buildingId = query.buildingId ? String(query.buildingId) : null;
   const floorId = query.floorId ? String(query.floorId) : null;
+  const propertyTypeRaw = String(query.propertyType || query.usage || 'ALL').toUpperCase();
+  const propertyType = ['SHOP', 'OFFICE', 'APARTMENT', 'GUEST'].includes(propertyTypeRaw)
+    ? propertyTypeRaw
+    : 'ALL';
 
   if (buildingId) {
     await assertBuildingAccess(user, buildingId, user.buildingIds);
@@ -152,6 +156,7 @@ async function buildSummaryReport(query, user) {
       ? { buildingId }
       : resourceBuildingFilter(user.buildingIds)),
     ...(floorId ? { floorId } : {}),
+    ...(propertyType !== 'ALL' ? { usage: propertyType } : {}),
   };
 
   const units = await prisma.unit.findMany({
@@ -200,12 +205,17 @@ async function buildSummaryReport(query, user) {
     if (u.status === 'RESERVED') byFloorMap[key].reserved += 1;
   }
 
-  const scopedUnits = Boolean(buildingId || floorId);
+  const scopedUnits = Boolean(buildingId || floorId || propertyType !== 'ALL');
+  const includeGuests = propertyType === 'ALL' || propertyType === 'GUEST';
   const bookingWhere = {
     deletedAt: null,
     status: { not: 'CANCELLED' },
     checkIn: { gte: period.from, lte: period.to },
-    ...(scopedUnits ? { unitId: { in: unitIds } } : {}),
+    ...(includeGuests
+      ? scopedUnits
+        ? { unitId: { in: unitIds } }
+        : {}
+      : { id: { in: [] } }),
   };
 
   const bookings = await prisma.booking.findMany({
@@ -247,7 +257,7 @@ async function buildSummaryReport(query, user) {
       }
     : {};
 
-  const payments = await prisma.monthlyPayment.findMany({
+  const paymentsRaw = await prisma.monthlyPayment.findMany({
     where: {
       AND: [
         paymentUnitFilter,
@@ -273,6 +283,7 @@ async function buildSummaryReport(query, user) {
           unit: {
             select: {
               roomNumber: true,
+              usage: true,
               building: { select: { name: true } },
               floor: { select: { name: true } },
             },
@@ -285,6 +296,7 @@ async function buildSummaryReport(query, user) {
           unit: {
             select: {
               roomNumber: true,
+              usage: true,
               building: { select: { name: true } },
               floor: { select: { name: true } },
             },
@@ -295,7 +307,7 @@ async function buildSummaryReport(query, user) {
     orderBy: [{ month: 'desc' }, { paymentDate: 'desc' }],
   });
 
-  const outstandingPayments = await prisma.monthlyPayment.findMany({
+  const outstandingPaymentsRaw = await prisma.monthlyPayment.findMany({
     where: {
       status: { in: ['UNPAID', 'PARTIAL'] },
       ...paymentUnitFilter,
@@ -304,18 +316,42 @@ async function buildSummaryReport(query, user) {
       tenant: {
         select: {
           fullName: true,
-          unit: { select: { roomNumber: true, building: { select: { name: true } } } },
+          unit: {
+            select: {
+              roomNumber: true,
+              usage: true,
+              building: { select: { name: true } },
+            },
+          },
         },
       },
       business: {
         select: {
           businessName: true,
-          unit: { select: { roomNumber: true, building: { select: { name: true } } } },
+          unit: {
+            select: {
+              roomNumber: true,
+              usage: true,
+              building: { select: { name: true } },
+            },
+          },
         },
       },
     },
     orderBy: { month: 'asc' },
   });
+
+  function paymentMatchesPropertyType(p) {
+    if (propertyType === 'ALL') return true;
+    if (propertyType === 'GUEST') return false;
+    const usage = String(
+      p.business?.unit?.usage || p.tenant?.unit?.usage || '',
+    ).toUpperCase();
+    return usage === propertyType;
+  }
+
+  const payments = paymentsRaw.filter(paymentMatchesPropertyType);
+  const outstandingPayments = outstandingPaymentsRaw.filter(paymentMatchesPropertyType);
 
   // Guest revenue = amount actually paid, not booking total
   const guestCollected = bookings.reduce((s, b) => s + Number(b.amountPaid || 0), 0);
@@ -344,29 +380,44 @@ async function buildSummaryReport(query, user) {
   const netRevenue = grossRevenue - maintenanceCost;
 
   const checkIns = bookings.length;
-  const checkOuts = await prisma.booking.count({
-    where: {
-      deletedAt: null,
-      status: { not: 'CANCELLED' },
-      checkOut: { gte: period.from, lte: period.to },
-      ...(scopedUnits ? { unitId: { in: unitIds } } : {}),
-    },
-  });
+  const checkOuts = includeGuests
+    ? await prisma.booking.count({
+        where: {
+          deletedAt: null,
+          status: { not: 'CANCELLED' },
+          checkOut: { gte: period.from, lte: period.to },
+          ...(scopedUnits ? { unitId: { in: unitIds } } : {}),
+        },
+      })
+    : 0;
 
   const revenueLines = [
-    ...payments.map((p) => ({
-      type: 'rent',
-      name: p.tenant?.fullName || p.business?.businessName || '—',
-      roomNumber: p.tenant?.unit?.roomNumber || p.business?.unit?.roomNumber || '—',
-      building:
-        p.tenant?.unit?.building?.name || p.business?.unit?.building?.name || '—',
-      floor: p.tenant?.unit?.floor?.name || p.business?.unit?.floor?.name || '—',
-      period: p.month,
-      date: p.paymentDate ? dayKey(p.paymentDate) : null,
-      amount: money(p.amountPaid),
-      method: p.method || null,
-      status: p.status,
-    })),
+    ...payments.map((p) => {
+      const usage = String(
+        p.business?.unit?.usage || p.tenant?.unit?.usage || '',
+      ).toUpperCase();
+      const type =
+        usage === 'OFFICE'
+          ? 'office'
+          : usage === 'SHOP'
+            ? 'shop'
+            : p.businessId
+              ? 'shop'
+              : 'rent';
+      return {
+        type,
+        name: p.tenant?.fullName || p.business?.businessName || '—',
+        roomNumber: p.tenant?.unit?.roomNumber || p.business?.unit?.roomNumber || '—',
+        building:
+          p.tenant?.unit?.building?.name || p.business?.unit?.building?.name || '—',
+        floor: p.tenant?.unit?.floor?.name || p.business?.unit?.floor?.name || '—',
+        period: p.month,
+        date: p.paymentDate ? dayKey(p.paymentDate) : null,
+        amount: money(p.amountPaid),
+        method: p.method || null,
+        status: p.status,
+      };
+    }),
     ...bookings.map((b) => ({
       type: 'guest',
       name: b.fullName,
@@ -395,11 +446,25 @@ async function buildSummaryReport(query, user) {
       buildingCode: building?.code || null,
       floorId: floor?.id || null,
       floorName: floor?.name || null,
-      label: floor
-        ? `${building?.name || 'Building'} · ${floor.name}`
-        : building
-          ? building.name
-          : 'All buildings',
+      propertyType,
+      label: [
+        floor
+          ? `${building?.name || 'Building'} · ${floor.name}`
+          : building
+            ? building.name
+            : 'All buildings',
+        propertyType === 'ALL'
+          ? null
+          : propertyType === 'SHOP'
+            ? 'Shops'
+            : propertyType === 'OFFICE'
+              ? 'Offices'
+              : propertyType === 'APARTMENT'
+                ? 'Apartments'
+                : 'Guest',
+      ]
+        .filter(Boolean)
+        .join(' · '),
     },
     summary: {
       totalRooms,
@@ -578,6 +643,7 @@ router.get(
       currentGuests,
       currentTenants,
       commercialShops,
+      commercialOffices,
       payments,
       bookingRevenue,
       todayCheckIns,
@@ -595,6 +661,7 @@ router.get(
       prisma.booking.count({ where: { deletedAt: null, status: 'CHECKED_IN', ...nestedScope } }),
       prisma.tenant.count({ where: { deletedAt: null, status: 'ACTIVE', ...nestedScope } }),
       prisma.unit.count({ where: { deletedAt: null, usage: 'SHOP', ...buildingScope } }),
+      prisma.unit.count({ where: { deletedAt: null, usage: 'OFFICE', ...buildingScope } }),
       prisma.monthlyPayment.findMany({
         where: { month, ...paymentScope },
         select: { amountPaid: true, amountDue: true, status: true },
@@ -822,6 +889,7 @@ router.get(
       currentGuests,
       currentTenants,
       commercialShops,
+      commercialOffices,
       monthlyRevenue: Math.round((paymentRevenue + guestRevenue) * 100) / 100,
       outstandingPayments: Math.round((outstandingPayments + guestOutstanding) * 100) / 100,
       todayCheckIns,
@@ -988,9 +1056,12 @@ router.get(
     const unitSelect = {
       id: true,
       roomNumber: true,
+      usage: true,
       building: { select: { name: true, code: true } },
       floor: { select: { name: true, level: true } },
     };
+    const usageLabel = (usage) =>
+      String(usage || '').toUpperCase() === 'OFFICE' ? 'Office' : 'Shop';
 
     const [rentRows, chargeRows, sales, bookings] = await Promise.all([
       prisma.monthlyPayment.findMany({
@@ -1090,7 +1161,7 @@ router.get(
           name:
             c.business?.businessName ||
             c.tenant?.fullName ||
-            (isOwner ? 'Shop owner' : '—'),
+            (isOwner ? `${usageLabel(c.unit?.usage)} owner` : '—'),
           phone: c.business?.phone || c.tenant?.phone || null,
           unitId: c.unitId,
           roomNumber: c.unit?.roomNumber || '—',
@@ -1098,6 +1169,7 @@ router.get(
           floor: c.unit?.floor?.name || '',
           month: c.month,
           description: c.description,
+          usage: c.unit?.usage || null,
           category: c.category,
           amountDue,
           amountPaid,
@@ -1122,7 +1194,8 @@ router.get(
           building: s.unit?.building?.name || '',
           floor: s.unit?.floor?.name || '',
           month: null,
-          description: 'Shop sale balance',
+          description: `${usageLabel(s.unit?.usage)} sale balance`,
+          usage: s.unit?.usage || null,
           amountDue,
           amountPaid,
           balance: remaining(amountDue, amountPaid),
@@ -1233,7 +1306,10 @@ router.get(
         where: { deletedAt: null },
         include: {
           unit: {
-            include: {
+            select: {
+              id: true,
+              roomNumber: true,
+              usage: true,
               building: { select: { id: true, code: true, name: true } },
             },
           },
@@ -1242,6 +1318,20 @@ router.get(
         orderBy: { businessName: 'asc' },
       }),
     ]);
+
+    const mapBiz = (b) => ({
+      ...b,
+      usage: b.unit?.usage || null,
+      monthlyRent: Number(b.monthlyRent),
+      discount: Number(b.discount),
+      payments: b.payments.map((p) => ({
+        ...p,
+        amountDue: Number(p.amountDue),
+        amountPaid: Number(p.amountPaid),
+      })),
+    });
+    const shopBiz = businesses.filter((b) => b.unit?.usage === 'SHOP');
+    const officeBiz = businesses.filter((b) => b.unit?.usage === 'OFFICE');
 
     return success(res, {
       apartments: {
@@ -1258,17 +1348,12 @@ router.get(
         })),
       },
       shops: {
-        active: businesses.filter((b) => b.status === 'ACTIVE').length,
-        items: businesses.map((b) => ({
-          ...b,
-          monthlyRent: Number(b.monthlyRent),
-          discount: Number(b.discount),
-          payments: b.payments.map((p) => ({
-            ...p,
-            amountDue: Number(p.amountDue),
-            amountPaid: Number(p.amountPaid),
-          })),
-        })),
+        active: shopBiz.filter((b) => b.status === 'ACTIVE').length,
+        items: shopBiz.map(mapBiz),
+      },
+      offices: {
+        active: officeBiz.filter((b) => b.status === 'ACTIVE').length,
+        items: officeBiz.map(mapBiz),
       },
     });
   }),

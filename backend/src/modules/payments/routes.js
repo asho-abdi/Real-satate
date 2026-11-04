@@ -39,6 +39,7 @@ const paymentInclude = {
       unit: {
         select: {
           roomNumber: true,
+          usage: true,
           building: { select: { name: true, code: true } },
           floor: { select: { name: true, level: true } },
         },

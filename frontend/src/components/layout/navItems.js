@@ -5,6 +5,7 @@ import { userCanAccessRoute } from '../../utils/pageAccess.js';
 export const TOPBAR_SECTION_LABELS = {
   Overview: 'Overview',
   Portfolio: 'Portfolio',
+  'Business Units': 'Business Units',
   Finance: 'Finance',
   Operations: 'Operations',
   System: 'System',

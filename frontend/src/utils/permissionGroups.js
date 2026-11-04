@@ -53,8 +53,8 @@ export const PERMISSION_GROUPS = [
   },
   {
     id: 'shops',
-    title: 'Shops',
-    description: 'Commercial shops and businesses',
+    title: 'Business Units',
+    description: 'Commercial shop and office businesses (shared API permissions)',
     resources: ['businesses'],
   },
   {

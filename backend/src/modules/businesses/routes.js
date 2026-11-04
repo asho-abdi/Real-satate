@@ -50,11 +50,23 @@ router.get(
   '/',
   authorize('businesses:read'),
   asyncHandler(async (req, res) => {
-    const data = await prisma.business.findMany({
-      where: {
+    const usageRaw = req.query.usage ? String(req.query.usage).toUpperCase() : null;
+    const usage =
+      usageRaw === 'SHOP' || usageRaw === 'OFFICE' ? usageRaw : null;
+    const buildingFilter = unitBuildingFilter(req.user.buildingIds);
+    const where = {
+      deletedAt: null,
+      ...buildingFilter,
+    };
+    if (usage) {
+      where.unit = {
+        ...(buildingFilter.unit || {}),
+        usage,
         deletedAt: null,
-        ...unitBuildingFilter(req.user.buildingIds),
-      },
+      };
+    }
+    const data = await prisma.business.findMany({
+      where,
       include: businessInclude,
       orderBy: { createdAt: 'desc' },
     });
@@ -113,6 +125,17 @@ router.post(
     if (unit.usage !== 'SHOP' && unit.usage !== 'OFFICE') {
       throw new AppError('Businesses can only be assigned to shop or office units', 400);
     }
+    const expectedUsage = req.body?.expectedUsage
+      ? String(req.body.expectedUsage).toUpperCase()
+      : null;
+    if (expectedUsage === 'SHOP' || expectedUsage === 'OFFICE') {
+      if (unit.usage !== expectedUsage) {
+        throw new AppError(
+          `This unit is a ${unit.usage.toLowerCase()} and cannot be registered as a ${expectedUsage.toLowerCase()}`,
+          400,
+        );
+      }
+    }
     if (unit.status !== 'AVAILABLE') {
       throw new AppError(`Unit is ${unit.status.toLowerCase()} and cannot be rented`, 400);
     }
@@ -120,7 +143,12 @@ router.post(
     const active = await prisma.business.findFirst({
       where: { unitId, status: 'ACTIVE', deletedAt: null },
     });
-    if (active) throw new AppError('This shop already has an active lease', 409);
+    if (active) {
+      throw new AppError(
+        `This ${unit.usage.toLowerCase()} already has an active lease`,
+        409,
+      );
+    }
 
     const rent = monthlyRent !== undefined ? monthlyRent : unit.monthlyRent;
     const disc = discount !== undefined ? discount : unit.discount;

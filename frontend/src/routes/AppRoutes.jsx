@@ -18,6 +18,7 @@ const Rooms = lazy(() => import('../pages/setup/Rooms.jsx'));
 const Bookings = lazy(() => import('../pages/bookings/Bookings.jsx'));
 const Apartments = lazy(() => import('../pages/apartments/Apartments.jsx'));
 const Shops = lazy(() => import('../pages/shops/Shops.jsx'));
+const Offices = lazy(() => import('../pages/offices/Offices.jsx'));
 const Payments = lazy(() => import('../pages/payments/Payments.jsx'));
 const Outstanding = lazy(() => import('../pages/payments/Outstanding.jsx'));
 const Reports = lazy(() => import('../pages/reports/Reports.jsx'));
@@ -65,6 +66,7 @@ export default function AppRoutes() {
 
             <Route path="/apartments" element={<Apartments />} />
             <Route path="/shops" element={<Shops />} />
+            <Route path="/offices" element={<Offices />} />
 
             <Route path="/payments" element={<Payments />} />
             <Route path="/outstanding" element={<Outstanding />} />

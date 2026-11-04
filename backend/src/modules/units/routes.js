@@ -307,7 +307,9 @@ router.post(
         description: description ? String(description).trim() : null,
         notes: notes ? String(notes).trim() : null,
         areaSqm:
-          usageUpper === 'SHOP' && areaSqm !== undefined && areaSqm !== ''
+          (usageUpper === 'SHOP' || usageUpper === 'OFFICE') &&
+          areaSqm !== undefined &&
+          areaSqm !== ''
             ? Number(areaSqm)
             : null,
         roomsCount:

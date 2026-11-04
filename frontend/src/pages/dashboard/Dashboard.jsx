@@ -542,6 +542,14 @@ export default function Dashboard() {
 
             <div className="mt-5 grid grid-cols-2 gap-2">
               <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-2)]/60 px-3 py-2.5">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">Shops</p>
+                <p className="mt-1 text-lg font-bold text-[var(--text)]">{stats?.commercialShops ?? 0}</p>
+              </div>
+              <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-2)]/60 px-3 py-2.5">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">Offices</p>
+                <p className="mt-1 text-lg font-bold text-[var(--text)]">{stats?.commercialOffices ?? 0}</p>
+              </div>
+              <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-2)]/60 px-3 py-2.5">
                 <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">For rent</p>
                 <p className="mt-1 text-lg font-bold text-[var(--text)]">{stats?.forRent ?? 0}</p>
               </div>

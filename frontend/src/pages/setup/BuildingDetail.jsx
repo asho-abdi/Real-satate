@@ -161,7 +161,7 @@ export default function BuildingDetail() {
     [rooms, selectedFloorId],
   );
   const floorHasShops = useMemo(
-    () => floorRooms.some((r) => r.usage === 'shop'),
+    () => floorRooms.some((r) => r.usage === 'shop' || r.usage === 'office'),
     [floorRooms],
   );
   const floorRoomGroups = useMemo(() => {
@@ -333,8 +333,8 @@ export default function BuildingDetail() {
       toast.error('Monthly rent is required');
       return;
     }
-    if (usage === 'SHOP' && !roomForm.areaSqm) {
-      toast.error('Shop meter (sqm) is required');
+    if ((usage === 'SHOP' || usage === 'OFFICE') && !roomForm.areaSqm) {
+      toast.error('Floor area (m²) is required for shops and offices');
       return;
     }
     if (usage === 'APARTMENT' && (!roomForm.roomsCount || !roomForm.bathroomsCount)) {
@@ -358,7 +358,7 @@ export default function BuildingDetail() {
         salePrice: roomForm.salePrice === '' ? null : Number(roomForm.salePrice),
         discount: Number(roomForm.discount) || 0,
         status: roomForm.status,
-        areaSqm: usage === 'SHOP' ? Number(roomForm.areaSqm) : null,
+        areaSqm: usage === 'SHOP' || usage === 'OFFICE' ? Number(roomForm.areaSqm) : null,
         roomsCount: usage === 'APARTMENT' ? Number(roomForm.roomsCount) : null,
         bathroomsCount: usage === 'APARTMENT' ? Number(roomForm.bathroomsCount) : null,
       };
@@ -817,7 +817,7 @@ export default function BuildingDetail() {
                 ))}
               </Select>
 
-              {roomForm.usage === 'shop' ? (
+              {roomForm.usage === 'shop' || roomForm.usage === 'office' ? (
                 <Input
                   label="Floor area (m²)"
                   type="number"
@@ -826,7 +826,7 @@ export default function BuildingDetail() {
                   value={roomForm.areaSqm}
                   onChange={(e) => setRoomForm({ ...roomForm, areaSqm: e.target.value })}
                   placeholder="45"
-                  hint="Shop size in square metres."
+                  hint="Unit size in square metres."
                 />
               ) : null}
 
@@ -859,7 +859,7 @@ export default function BuildingDetail() {
             description={
               roomForm.usage === 'guest'
                 ? 'Guests can book by the night, week, or month — each price can be different.'
-                : roomForm.usage === 'shop'
+                : roomForm.usage === 'shop' || roomForm.usage === 'office'
                   ? 'Monthly rent for tenants, or an optional sale price if you sell the unit.'
                   : 'What the tenant pays each month.'
             }
@@ -879,14 +879,14 @@ export default function BuildingDetail() {
             ) : (
               <div className="space-y-4">
                 <LeasePricingFields form={roomForm} onChange={setRoomForm} />
-                {roomForm.usage === 'shop' ? (
+                {roomForm.usage === 'shop' || roomForm.usage === 'office' ? (
                   <Input
                     label="Sale price (optional)"
                     type="number"
                     min={0}
                     value={roomForm.salePrice}
                     onChange={(e) => setRoomForm({ ...roomForm, salePrice: e.target.value })}
-                    hint="Only if this shop is for sale, not just rent."
+                    hint="Only if this unit is for sale, not just rent."
                   />
                 ) : null}
                 <Input

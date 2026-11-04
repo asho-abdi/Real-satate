@@ -11,6 +11,7 @@ export function getSimpleDashboardStats() {
     currentGuests: 0,
     currentTenants: 0,
     commercialShops: 0,
+    commercialOffices: 0,
     monthlyRevenue: 0,
     outstandingPayments: 0,
     todayCheckIns: 0,

@@ -6,7 +6,8 @@ export const STAFF_PAGES = [
   { key: 'buildings', label: 'Buildings', description: 'Property buildings setup' },
   { key: 'units', label: 'Availability', description: 'Rooms, shops, availability' },
   { key: 'apartments', label: 'Apartments', description: 'Apartment tenants' },
-  { key: 'shops', label: 'Shops', description: 'Shop businesses' },
+  { key: 'shops', label: 'Shops', description: 'Shop businesses and sales' },
+  { key: 'offices', label: 'Offices', description: 'Office businesses and sales' },
   { key: 'bookings', label: 'Guest Bookings', description: 'Guest stays and bookings' },
   { key: 'expenses', label: 'Money Movements', description: 'Expenses and cash movements' },
   { key: 'payments', label: 'Payments', description: 'Collect and record payments' },
@@ -26,6 +27,7 @@ export const ROUTE_PAGE_KEY = {
   '/availability': 'units',
   '/apartments': 'apartments',
   '/shops': 'shops',
+  '/offices': 'offices',
   '/bookings': 'bookings',
   '/expenses': 'expenses',
   '/payments': 'payments',
@@ -61,6 +63,7 @@ export function userCanAccessRoute(user, to) {
       units: ['units:read'],
       apartments: ['tenants:read'],
       shops: ['businesses:read'],
+      offices: ['businesses:read'],
       bookings: ['bookings:read'],
       expenses: ['expenses:read'],
       payments: ['payments:read'],
@@ -72,6 +75,10 @@ export function userCanAccessRoute(user, to) {
     }[pageKey];
     if (!need) return true;
     return need.some((p) => perms.includes(p));
+  }
+  // Legacy: users granted "shops" before offices split also get offices access
+  if (pageKey === 'offices' && pages.includes('shops') && !pages.includes('offices')) {
+    return true;
   }
   return pages.includes(pageKey);
 }

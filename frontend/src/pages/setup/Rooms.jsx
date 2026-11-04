@@ -118,7 +118,7 @@ function StatCard({ label, value, icon: Icon, iconClass, barBg, total }) {
 
 function detailLabel(r) {
   const usage = String(r.usageRaw || r.usage || '').toLowerCase();
-  if (usage === 'shop') {
+  if (usage === 'shop' || usage === 'office') {
     return r.areaSqm != null ? `${r.areaSqm} m²` : '—';
   }
   if (usage === 'apartment') {
@@ -133,7 +133,8 @@ function detailLabel(r) {
 const STATUS_GROUP_ORDER = ['Available', 'Rented', 'Sold', 'Reserved', 'Maintenance'];
 
 function isShopUnit(r) {
-  return String(r.usageRaw || r.usage || '').toLowerCase() === 'shop';
+  const usage = String(r.usageRaw || r.usage || '').toLowerCase();
+  return usage === 'shop' || usage === 'office';
 }
 
 function statusKey(status) {
@@ -306,7 +307,11 @@ function FloorSection({ building, floor, rooms, onStatusChange, onEditRoom, onVi
                           STATUS_STYLE[group.status]?.badgeBg || 'bg-[var(--surface)] text-[var(--text)]',
                         )}
                       >
-                        {group.status === 'Rented' ? 'Rented shops' : group.status === 'Sold' ? 'Sold shops' : group.status}
+                        {group.status === 'Rented'
+                          ? 'Rented shops & offices'
+                          : group.status === 'Sold'
+                            ? 'Sold shops & offices'
+                            : group.status}
                         <span className="font-semibold opacity-70">({group.rooms.length})</span>
                       </span>
                     </td>
@@ -469,8 +474,8 @@ export default function Rooms() {
   const saveRoom = async () => {
     if (!editRoom) return;
     const usageApi = usageToApi(roomForm.usage);
-    if (usageApi === 'SHOP' && !roomForm.areaSqm) {
-      toast.error('Shop meter (sqm) is required');
+    if ((usageApi === 'SHOP' || usageApi === 'OFFICE') && !roomForm.areaSqm) {
+      toast.error('Floor area (m²) is required for shops and offices');
       return;
     }
     if (usageApi === 'APARTMENT' && (!roomForm.roomsCount || !roomForm.bathroomsCount)) {
@@ -505,7 +510,8 @@ export default function Rooms() {
         salePrice: roomForm.salePrice === '' ? null : Number(roomForm.salePrice),
         discount: Number(roomForm.discount) || 0,
         status: roomForm.status,
-        areaSqm: usageApi === 'SHOP' ? Number(roomForm.areaSqm) : null,
+        areaSqm:
+          usageApi === 'SHOP' || usageApi === 'OFFICE' ? Number(roomForm.areaSqm) : null,
         roomsCount: usageApi === 'APARTMENT' ? Number(roomForm.roomsCount) : null,
         bathroomsCount: usageApi === 'APARTMENT' ? Number(roomForm.bathroomsCount) : null,
       });
@@ -726,7 +732,7 @@ export default function Rooms() {
                   <option key={t} value={t}>{t}</option>
                 ))}
               </Select>
-              {roomForm.usage === 'shop' ? (
+              {roomForm.usage === 'shop' || roomForm.usage === 'office' ? (
                 <Input
                   label="Floor area (m²)"
                   type="number"
@@ -758,7 +764,7 @@ export default function Rooms() {
             ) : (
               <LeasePricingFields form={roomForm} onChange={setRoomForm} />
             )}
-            {roomForm.usage === 'shop' ? (
+            {roomForm.usage === 'shop' || roomForm.usage === 'office' ? (
               <Input className="mt-4" label="Sale price (optional)" type="number" value={roomForm.salePrice} onChange={(e) => setRoomForm({ ...roomForm, salePrice: e.target.value })} />
             ) : null}
             <Input className="mt-4 max-w-xs" label="Standing discount (optional)" type="number" value={roomForm.discount} onChange={(e) => setRoomForm({ ...roomForm, discount: e.target.value })} />

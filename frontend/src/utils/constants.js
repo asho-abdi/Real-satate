@@ -138,6 +138,11 @@ export const SHOP_DEAL_TYPES = [
   { label: 'Rental shop', value: 'RENTAL' },
 ];
 
+export const OFFICE_DEAL_TYPES = [
+  { label: 'Sold office', value: 'SALE' },
+  { label: 'Rental office', value: 'RENTAL' },
+];
+
 export const NAV_SECTIONS = [
   {
     title: 'Overview',
@@ -152,8 +157,14 @@ export const NAV_SECTIONS = [
       { label: 'Buildings', to: '/buildings', icon: 'MdBusiness' },
       { label: 'Availability', to: '/availability', icon: 'MdDoorFront' },
       { label: 'Apartments', to: '/apartments', icon: 'MdApartment' },
-      { label: 'Shops', to: '/shops', icon: 'MdStorefront' },
       { label: 'Guest Bookings', to: '/bookings', icon: 'MdHotel' },
+    ],
+  },
+  {
+    title: 'Business Units',
+    items: [
+      { label: 'Shops', to: '/shops', icon: 'MdStorefront' },
+      { label: 'Offices', to: '/offices', icon: 'MdBusinessCenter' },
     ],
   },
   {
