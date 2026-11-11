@@ -2,6 +2,7 @@ import { Prisma } from '@prisma/client';
 import prisma from '../config/database.js';
 import { AppError } from '../utils/AppError.js';
 import { asNumber, normalizePaymentMethod, pickPaymentDetails } from '../utils/paymentMethod.js';
+import { ensurePaymentReceipt } from './financeReceipt.service.js';
 
 function money(n) {
   return new Prisma.Decimal(String(Number(n).toFixed(2)));
@@ -56,7 +57,7 @@ export async function createDeposit(payload, userId) {
       },
     });
 
-    await tx.securityDepositTxn.create({
+    const txn = await tx.securityDepositTxn.create({
       data: {
         depositId: deposit.id,
         type: 'RECEIVED',
@@ -66,6 +67,31 @@ export async function createDeposit(payload, userId) {
         notes: payload.notes || 'Security deposit received',
         createdById: userId || null,
       },
+    });
+
+    const customerName =
+      deposit.tenant?.fullName || deposit.business?.businessName || 'Customer';
+    const customerPhone = deposit.tenant?.phone || deposit.business?.phone || null;
+    await ensurePaymentReceipt(tx, {
+      sourceType: 'SECURITY_DEPOSIT_TXN',
+      sourceId: txn.id,
+      tenantId: deposit.tenantId,
+      businessId: deposit.businessId,
+      shopSaleId: deposit.shopSaleId,
+      unitId: deposit.unitId,
+      customerName,
+      customerPhone,
+      amount,
+      amountPaid: amount,
+      remainingBalance: 0,
+      currentCharges: amount,
+      previousBalance: 0,
+      method: details.method,
+      reference: details.reference,
+      paymentDate: deposit.dateReceived,
+      description: 'Security deposit received (held — not revenue)',
+      createdById: userId || null,
+      meta: { depositLiability: true },
     });
 
     // Keep legacy static field in sync when linked to a lease

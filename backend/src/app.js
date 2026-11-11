@@ -3,6 +3,7 @@ import helmet from 'helmet';
 import compression from 'compression';
 import cors from 'cors';
 import morgan from 'morgan';
+import cookieParser from 'cookie-parser';
 
 import env from './config/env.js';
 import { requestContext } from './middlewares/requestContext.js';
@@ -82,6 +83,7 @@ export function createExpressApp() {
   );
   app.use(morgan(env.isProduction ? 'combined' : 'dev'));
   app.use(requestContext);
+  app.use(cookieParser());
   app.use(express.json({ limit: '1mb' }));
   app.use(express.urlencoded({ extended: false, limit: '1mb' }));
   app.use(apiRateLimiter);

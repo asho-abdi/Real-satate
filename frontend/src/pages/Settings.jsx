@@ -17,6 +17,8 @@ export default function Settings() {
   const [currency, setCurrency] = useState(settings.currency);
   const [nightsNote, setNightsNote] = useState(settings.nightsNote);
   const [officeMpesa, setOfficeMpesa] = useState('');
+  const [agentAccountName, setAgentAccountName] = useState('');
+  const [agentAccountReference, setAgentAccountReference] = useState('');
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -31,8 +33,14 @@ export default function Settings() {
       .fetchSettings()
       .then((map) => {
         if (!alive) return;
-        const raw = map['payments.officeMpesaNumber'];
-        setOfficeMpesa(typeof raw === 'string' ? raw : raw != null ? String(raw) : '');
+        const rawMpesa = map['payments.officeMpesaNumber'];
+        setOfficeMpesa(typeof rawMpesa === 'string' ? rawMpesa : rawMpesa != null ? String(rawMpesa) : '');
+        const rawAgent = map['payments.agentAccountName'];
+        setAgentAccountName(typeof rawAgent === 'string' ? rawAgent : rawAgent != null ? String(rawAgent) : '');
+        const rawAgentRef = map['payments.agentAccountReference'];
+        setAgentAccountReference(
+          typeof rawAgentRef === 'string' ? rawAgentRef : rawAgentRef != null ? String(rawAgentRef) : '',
+        );
       })
       .catch(() => {});
     return () => {
@@ -45,6 +53,8 @@ export default function Settings() {
     try {
       await saveSettings({ companyName, currency, nightsNote });
       await settingsService.updateSetting('payments.officeMpesaNumber', officeMpesa.trim());
+      await settingsService.updateSetting('payments.agentAccountName', agentAccountName.trim());
+      await settingsService.updateSetting('payments.agentAccountReference', agentAccountReference.trim());
       toast.success('Settings saved');
     } catch (error) {
       toast.error(error.message || 'Could not save settings');
@@ -113,6 +123,18 @@ export default function Settings() {
               value={officeMpesa}
               onChange={(e) => setOfficeMpesa(e.target.value)}
               hint="Used as the default when recording MPESA – Office Number payments."
+            />
+            <Input
+              label="Default agent account name"
+              value={agentAccountName}
+              onChange={(e) => setAgentAccountName(e.target.value)}
+              hint="Prefilled when payment method is Agent."
+            />
+            <Input
+              label="Default agent reference"
+              value={agentAccountReference}
+              onChange={(e) => setAgentAccountReference(e.target.value)}
+              hint="Optional default reference for agent payments."
             />
             <Button onClick={save} loading={saving}>
               Save Settings

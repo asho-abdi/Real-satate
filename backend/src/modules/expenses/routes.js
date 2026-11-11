@@ -10,6 +10,7 @@ import {
   assertUnitBuildingAccess,
   isAdminUser,
 } from '../../services/access.service.js';
+import { normalizePaymentMethod } from '../../utils/paymentMethod.js';
 
 const router = Router();
 router.use(authenticate);
@@ -177,8 +178,7 @@ router.post(
       await assertUnitBuildingAccess(req.user, unitId, req.user.buildingIds);
     }
 
-    const method = String(paymentMethod).toUpperCase().replace(/-/g, '_');
-    const paymentMethodValue = method === 'E_BESA' || method === 'EBESA' ? 'E_BESA' : 'CASH';
+    const paymentMethodValue = normalizePaymentMethod(paymentMethod, { fallback: 'CASH' });
     const type = String(txnType || 'OTHER').toUpperCase();
     const cat = category || type.replace(/_/g, ' ');
 
@@ -249,7 +249,7 @@ router.patch(
 
     const method =
       paymentMethod !== undefined
-        ? String(paymentMethod).toUpperCase().replace(/-/g, '_')
+        ? normalizePaymentMethod(paymentMethod, { fallback: 'CASH' })
         : null;
 
     const updated = await prisma.expense.update({
@@ -259,9 +259,7 @@ router.patch(
         ...(txnType !== undefined && { txnType: String(txnType).toUpperCase() }),
         ...(amount !== undefined && { amount: Number(amount) }),
         ...(expenseDate !== undefined && { expenseDate: new Date(expenseDate) }),
-        ...(method && {
-          paymentMethod: method === 'E_BESA' || method === 'EBESA' ? 'E_BESA' : 'CASH',
-        }),
+        ...(method && { paymentMethod: method }),
         ...(source !== undefined && { source: source ? String(source).trim() : null }),
         ...(destination !== undefined && {
           destination: destination ? String(destination).trim() : null,

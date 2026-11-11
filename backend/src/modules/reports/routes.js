@@ -605,7 +605,27 @@ router.get(
       ]
         .filter(Boolean)
         .join(' · ');
-      return exportPdf(res, filename, 'Property Report', pdfColumns, rows, { subtitle });
+      const settingRows = await prisma.setting.findMany({ where: { key: { in: ['app.name', 'currency'] } } });
+      const settings = Object.fromEntries(settingRows.map((r) => [r.key, r.value]));
+      const currency = settings.currency || 'KES';
+      const sm = report.summary || {};
+      const amt = (v) => `${currency} ${Number(v || 0).toLocaleString('en-KE', { maximumFractionDigits: 0 })}`;
+      const kpis = [
+        { label: 'Gross revenue', value: amt(sm.revenueTotal), accent: true },
+        { label: 'Net revenue', value: amt(sm.netRevenue) },
+        { label: 'Outstanding', value: amt(sm.outstanding), color: Number(sm.outstanding) > 0 ? '#b4232f' : undefined },
+        {
+          label: 'Occupancy',
+          value: `${Math.round(Number(sm.occupancyRate) || 0)}% · ${sm.occupied ?? 0}/${sm.totalRooms ?? 0} units`,
+        },
+        { label: 'Maintenance cost', value: amt(sm.maintenanceCost) },
+      ];
+      return exportPdf(res, filename, 'Property Report', pdfColumns, rows, {
+        subtitle,
+        kpis,
+        currency,
+        companyName: settings['app.name'],
+      });
     }
     return exportExcel(res, filename, columns, rows);
   }),

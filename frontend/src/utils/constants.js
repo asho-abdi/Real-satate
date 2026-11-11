@@ -69,6 +69,10 @@ export const PAYMENT_METHOD_OPTIONS = [
 export const PAYMENT_STATUSES = ['Paid', 'Unpaid', 'Partial'];
 
 export const STATUS_COLORS = {
+  Held: 'bg-[#eaf0f7] text-[#002b50] ring-[#002b50]/12 dark:bg-[#6b9bd0]/15 dark:text-[#b7cbe2] dark:ring-[#6b9bd0]/25',
+  Returned: 'bg-emerald-50 text-emerald-700 ring-emerald-600/15 dark:bg-emerald-500/12 dark:text-emerald-300 dark:ring-emerald-400/20',
+  Deducted: 'bg-orange-50 text-orange-700 ring-orange-600/15 dark:bg-orange-500/12 dark:text-orange-300 dark:ring-orange-400/20',
+  Void: 'bg-slate-100 text-slate-700 ring-slate-500/15 dark:bg-slate-500/15 dark:text-slate-300 dark:ring-slate-400/20',
   Available: 'bg-emerald-50 text-emerald-700 ring-emerald-600/15 dark:bg-emerald-500/12 dark:text-emerald-300 dark:ring-emerald-400/20',
   Occupied: 'bg-[#eaf0f7] text-[#002b50] ring-[#002b50]/12 dark:bg-[#6b9bd0]/15 dark:text-[#b7cbe2] dark:ring-[#6b9bd0]/25',
   Rented: 'bg-[#eaf0f7] text-[#002b50] ring-[#002b50]/12 dark:bg-[#6b9bd0]/15 dark:text-[#b7cbe2] dark:ring-[#6b9bd0]/25',
@@ -112,6 +116,8 @@ export const STATUS_COLORS = {
   Open: 'bg-sky-50 text-sky-700 ring-sky-600/15 dark:bg-sky-500/12 dark:text-sky-300 dark:ring-sky-400/20',
   Closed: 'bg-slate-100 text-slate-700 ring-slate-500/15 dark:bg-slate-500/15 dark:text-slate-300 dark:ring-slate-400/20',
   Admin: 'bg-[#eaf0f7] text-[#002b50] ring-[#002b50]/12 dark:bg-[#6b9bd0]/15 dark:text-[#b7cbe2] dark:ring-[#6b9bd0]/25',
+  Shop: 'bg-emerald-50 text-emerald-700 ring-emerald-600/15 dark:bg-emerald-500/12 dark:text-emerald-300 dark:ring-emerald-400/20',
+  Office: 'bg-slate-100 text-slate-700 ring-slate-500/15 dark:bg-slate-500/15 dark:text-slate-300 dark:ring-slate-400/20',
 };
 
 export const MONEY_TXN_TYPES = [
@@ -174,10 +180,9 @@ export const NAV_SECTIONS = [
     ],
   },
   {
-    title: 'Business Units',
+    title: 'Commercial Spaces',
     items: [
-      { label: 'Shops', to: '/shops', icon: 'MdStorefront' },
-      { label: 'Offices', to: '/offices', icon: 'MdBusinessCenter' },
+      { label: 'Commercial Spaces', to: '/commercial-spaces', icon: 'MdStorefront' },
     ],
   },
   {
@@ -186,6 +191,8 @@ export const NAV_SECTIONS = [
       { label: 'Money Movements', to: '/expenses', icon: 'MdSwapHoriz' },
       { label: 'Payments', to: '/payments', icon: 'MdPayments' },
       { label: 'Outstanding', to: '/outstanding', icon: 'MdWarningAmber' },
+      { label: 'Security Deposits', to: '/deposits', icon: 'MdAccountBalanceWallet' },
+      { label: 'Statements', to: '/statements', icon: 'MdDescription' },
       { label: 'Reports', to: '/reports', icon: 'MdAnalytics' },
     ],
   },

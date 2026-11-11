@@ -6,12 +6,17 @@ export const STAFF_PAGES = [
   { key: 'buildings', label: 'Buildings', description: 'Property buildings setup' },
   { key: 'units', label: 'Availability', description: 'Rooms, shops, availability' },
   { key: 'apartments', label: 'Apartments', description: 'Apartment tenants' },
-  { key: 'shops', label: 'Shops', description: 'Shop businesses and sales' },
-  { key: 'offices', label: 'Offices', description: 'Office businesses and sales' },
+  {
+    key: 'commercial-spaces',
+    label: 'Commercial Spaces',
+    description: 'Shop and office rentals and sales',
+  },
   { key: 'bookings', label: 'Guest Bookings', description: 'Guest stays and bookings' },
   { key: 'expenses', label: 'Money Movements', description: 'Expenses and cash movements' },
   { key: 'payments', label: 'Payments', description: 'Collect and record payments' },
   { key: 'outstanding', label: 'Outstanding', description: 'Unpaid balances due' },
+  { key: 'deposits', label: 'Security Deposits', description: 'Held deposits and settlements' },
+  { key: 'statements', label: 'Statements', description: 'Tenant and customer statements' },
   { key: 'reports', label: 'Reports', description: 'Reports and exports' },
   { key: 'maintenance', label: 'Maintenance', description: 'Repairs and maintenance' },
   { key: 'work-progress', label: 'Working Progress', description: 'Construction / work tracking' },
@@ -26,12 +31,15 @@ export const ROUTE_PAGE_KEY = {
   '/buildings': 'buildings',
   '/availability': 'units',
   '/apartments': 'apartments',
-  '/shops': 'shops',
-  '/offices': 'offices',
+  '/commercial-spaces': 'commercial-spaces',
+  '/shops': 'commercial-spaces',
+  '/offices': 'commercial-spaces',
   '/bookings': 'bookings',
   '/expenses': 'expenses',
   '/payments': 'payments',
   '/outstanding': 'outstanding',
+  '/deposits': 'deposits',
+  '/statements': 'statements',
   '/reports': 'reports',
   '/maintenance': 'maintenance',
   '/work-progress': 'work-progress',
@@ -62,12 +70,13 @@ export function userCanAccessRoute(user, to) {
       buildings: ['buildings:read'],
       units: ['units:read'],
       apartments: ['tenants:read'],
-      shops: ['businesses:read'],
-      offices: ['businesses:read'],
+      'commercial-spaces': ['businesses:read'],
       bookings: ['bookings:read'],
       expenses: ['expenses:read'],
       payments: ['payments:read'],
       outstanding: ['payments:read'],
+      deposits: ['payments:read'],
+      statements: ['payments:read'],
       reports: ['reports:read'],
       maintenance: ['maintenance:read'],
       'work-progress': ['work:read'],
@@ -76,9 +85,15 @@ export function userCanAccessRoute(user, to) {
     if (!need) return true;
     return need.some((p) => perms.includes(p));
   }
-  // Legacy: users granted "shops" before offices split also get offices access
-  if (pageKey === 'offices' && pages.includes('shops') && !pages.includes('offices')) {
+  // Legacy page keys shops/offices → commercial-spaces
+  if (
+    pageKey === 'commercial-spaces' &&
+    (pages.includes('commercial-spaces') ||
+      pages.includes('shops') ||
+      pages.includes('offices'))
+  ) {
     return true;
   }
+  if (pageKey === 'deposits' && pages.includes('payments')) return true;
   return pages.includes(pageKey);
 }

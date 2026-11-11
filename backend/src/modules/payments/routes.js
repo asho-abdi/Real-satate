@@ -7,10 +7,12 @@ import { success } from '../../utils/apiResponse.js';
 import { AppError } from '../../utils/AppError.js';
 import {
   assertUnitBuildingAccess,
+  isAdminUser,
   paymentBuildingFilter,
 } from '../../services/access.service.js';
 import { normalizePaymentMethod, pickPaymentDetails } from '../../utils/paymentMethod.js';
-import { nextDocumentNumber } from '../../services/documentNumber.service.js';
+import { ensurePaymentReceipt } from '../../services/financeReceipt.service.js';
+import { logActivity } from '../../services/activity.service.js';
 
 const router = Router();
 router.use(authenticate);
@@ -23,6 +25,7 @@ const paymentInclude = {
       phone: true,
       unit: {
         select: {
+          id: true,
           roomNumber: true,
           building: { select: { name: true, code: true } },
           floor: { select: { name: true, level: true } },
@@ -38,6 +41,7 @@ const paymentInclude = {
       phone: true,
       unit: {
         select: {
+          id: true,
           roomNumber: true,
           usage: true,
           building: { select: { name: true, code: true } },
@@ -47,6 +51,87 @@ const paymentInclude = {
     },
   },
 };
+
+const partyInclude = {
+  tenant: {
+    select: {
+      id: true,
+      fullName: true,
+      phone: true,
+      unit: {
+        select: {
+          id: true,
+          roomNumber: true,
+          building: { select: { name: true } },
+          floor: { select: { name: true } },
+        },
+      },
+    },
+  },
+  business: {
+    select: {
+      id: true,
+      businessName: true,
+      phone: true,
+      unit: {
+        select: {
+          id: true,
+          roomNumber: true,
+          building: { select: { name: true } },
+          floor: { select: { name: true } },
+        },
+      },
+    },
+  },
+};
+
+async function syncMonthlyPaymentReceipt(tx, payment, createdById) {
+  const paid = Number(payment.amountPaid);
+  if (paid <= 0) return payment;
+
+  const tenant = payment.tenant;
+  const business = payment.business;
+  const unit = tenant?.unit || business?.unit;
+  const customerName = tenant?.fullName || business?.businessName || 'Customer';
+  const customerPhone = tenant?.phone || business?.phone || null;
+  const due = Number(payment.amountDue);
+
+  const doc = await ensurePaymentReceipt(tx, {
+    sourceType: 'MONTHLY_PAYMENT',
+    sourceId: payment.id,
+    tenantId: payment.tenantId,
+    businessId: payment.businessId,
+    unitId: unit?.id || null,
+    customerName,
+    customerPhone,
+    amount: paid,
+    amountPaid: paid,
+    remainingBalance: Math.max(0, Math.round((due - paid) * 100) / 100),
+    currentCharges: Number(payment.rentDue ?? due),
+    previousBalance: 0,
+    method: payment.method,
+    reference: payment.reference,
+    paymentDate: payment.paymentDate,
+    billingPeriod: payment.month,
+    description: `Payment received (${payment.month})`,
+    createdById,
+    meta: {
+      buildingName: unit?.building?.name || null,
+      floorName: unit?.floor?.name || null,
+      unitNumber: unit?.roomNumber || null,
+      receivedBy: payment.receivedByName || null,
+    },
+  });
+
+  if (doc.number && payment.receiptNumber !== doc.number) {
+    return tx.monthlyPayment.update({
+      where: { id: payment.id },
+      data: { receiptNumber: doc.number },
+      include: paymentInclude,
+    });
+  }
+  return payment;
+}
 
 function serialize(p) {
   if (!p) return p;
@@ -163,11 +248,7 @@ router.post(
         : { method: null };
 
     const payment = await prisma.$transaction(async (tx) => {
-      let receiptNumber = null;
-      if (paid > 0) {
-        receiptNumber = await nextDocumentNumber(tx, 'RECEIPT');
-      }
-      return tx.monthlyPayment.create({
+      const created = await tx.monthlyPayment.create({
         data: {
           tenantId: tenantId || null,
           businessId: businessId || null,
@@ -183,15 +264,107 @@ router.post(
           receivedByName: details.receivedByName || null,
           agentName: details.agentName || null,
           officeMpesaNumber: details.officeMpesaNumber || null,
-          receiptNumber,
           recordedById: req.user.id,
           notes: notes || null,
         },
-        include: paymentInclude,
+        include: { ...paymentInclude, ...partyInclude },
       });
+      if (paid > 0) {
+        return syncMonthlyPaymentReceipt(tx, created, req.user.id);
+      }
+      return created;
     });
 
     return success(res, serialize(payment), 201);
+  }),
+);
+
+function authorizePaymentVoid(req, res, next) {
+  const permissions = req.user?.permissions || [];
+  if (
+    isAdminUser(req.user) ||
+    permissions.includes('*') ||
+    permissions.includes('payments:update') ||
+    permissions.includes('payments:delete')
+  ) {
+    return next();
+  }
+  return next(new AppError('Insufficient permissions', 403, { code: 'FORBIDDEN' }));
+}
+
+function appendVoidNote(existingNotes, reason, user) {
+  const actor =
+    [user?.firstName, user?.lastName].filter(Boolean).join(' ') ||
+    user?.email ||
+    user?.id ||
+    'Unknown';
+  const stamp = new Date().toISOString();
+  const line = `[VOID ${stamp}] ${String(reason).trim()} — by ${actor}`;
+  const base = existingNotes ? String(existingNotes).trim() : '';
+  return base ? `${base}\n${line}` : line;
+}
+
+router.patch(
+  '/:id/void',
+  authorizePaymentVoid,
+  asyncHandler(async (req, res) => {
+    const reason = String(req.body?.reason || '').trim();
+    if (!reason) throw new AppError('reason is required', 400);
+
+    const existing = await prisma.monthlyPayment.findUnique({
+      where: { id: req.params.id },
+      include: {
+        tenant: { select: { id: true, fullName: true, unitId: true } },
+        business: { select: { id: true, businessName: true, unitId: true } },
+      },
+    });
+    if (!existing) throw new AppError('Payment not found', 404);
+
+    const unitId = existing.tenant?.unitId || existing.business?.unitId;
+    if (unitId) {
+      await assertUnitBuildingAccess(req.user, unitId, req.user.buildingIds);
+    }
+
+    const prevPaid = Number(existing.amountPaid);
+    if (prevPaid <= 0) {
+      throw new AppError('Payment has no recorded amount to void', 400);
+    }
+
+    const notes = appendVoidNote(existing.notes, reason, req.user);
+
+    const payment = await prisma.monthlyPayment.update({
+      where: { id: existing.id },
+      data: {
+        amountPaid: 0,
+        status: 'UNPAID',
+        paymentDate: null,
+        method: null,
+        reference: null,
+        receivedByName: null,
+        agentName: null,
+        officeMpesaNumber: null,
+        notes,
+        recordedById: req.user.id,
+      },
+      include: { ...paymentInclude, ...partyInclude },
+    });
+
+    await logActivity({
+      entityType: existing.tenantId ? 'TENANT' : 'BUSINESS',
+      entityId: existing.tenantId || existing.businessId,
+      unitId: unitId || null,
+      action: 'PAYMENT_VOIDED',
+      summary: `Monthly payment voided (${existing.month}): ${reason}`,
+      meta: {
+        paymentId: existing.id,
+        month: existing.month,
+        previousAmountPaid: prevPaid,
+        reason,
+      },
+      actorId: req.user.id,
+    });
+
+    return success(res, serialize(payment));
   }),
 );
 
@@ -241,11 +414,7 @@ router.patch(
         : null;
 
     const payment = await prisma.$transaction(async (tx) => {
-      let receiptNumber = existing.receiptNumber;
-      if (nextPaid > Number(existing.amountPaid) && !receiptNumber) {
-        receiptNumber = await nextDocumentNumber(tx, 'RECEIPT');
-      }
-      return tx.monthlyPayment.update({
+      const updated = await tx.monthlyPayment.update({
         where: { id: existing.id },
         data: {
           amountDue: nextDue,
@@ -269,11 +438,14 @@ router.patch(
           ...(amountPaid !== undefined && nextPaid > 0 && paymentDate === undefined
             ? { paymentDate: existing.paymentDate || new Date() }
             : {}),
-          ...(receiptNumber ? { receiptNumber } : {}),
           recordedById: req.user.id,
         },
-        include: paymentInclude,
+        include: { ...paymentInclude, ...partyInclude },
       });
+      if (nextPaid > 0) {
+        return syncMonthlyPaymentReceipt(tx, updated, req.user.id);
+      }
+      return updated;
     });
 
     return success(res, serialize(payment));

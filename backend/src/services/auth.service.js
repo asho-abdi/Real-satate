@@ -30,6 +30,8 @@ export async function sanitizeUser(user, extras = {}) {
     passwordHash,
     resetPasswordToken,
     resetPasswordExpires,
+    mfaSecretEnc,
+    mfaRecoveryHashes,
     roleRef,
     buildings,
     ...rest
@@ -45,6 +47,8 @@ export async function sanitizeUser(user, extras = {}) {
 
   return {
     ...rest,
+    mfaEnabled: Boolean(user.mfaEnabled),
+    mfaEnrolledAt: user.mfaEnrolledAt || null,
     role: roleCode,
     roleId: user.roleId || roleRef?.id || null,
     roleName: roleRef?.name || roleCode,
@@ -84,7 +88,7 @@ async function issueTokenPair(user) {
   return { accessToken, refreshToken };
 }
 
-export async function login({ email, password }, ctx = {}) {
+export async function login({ email, password, mfaCode, recoveryCode }, ctx = {}) {
   const user = await userRepo.findUserByEmail(email);
   if (!user || !user.isActive) {
     await logActivity({
@@ -110,6 +114,36 @@ export async function login({ email, password }, ctx = {}) {
     throw new AppError('Invalid email or password', 401, { code: 'INVALID_CREDENTIALS' });
   }
 
+  // Opt-in MFA: only enforced after an admin has enrolled
+  if (user.mfaEnabled) {
+    const { verifyUserMfa } = await import('./mfa.service.js');
+    if (!mfaCode && !recoveryCode) {
+      return {
+        mfaRequired: true,
+        mfaPending: true,
+        user: {
+          id: user.id,
+          email: user.email,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          name: `${user.firstName || ''} ${user.lastName || ''}`.trim(),
+        },
+      };
+    }
+    const mfaOk = await verifyUserMfa(user, { code: mfaCode, recoveryCode });
+    if (!mfaOk) {
+      await logActivity({
+        entityType: 'AUTH',
+        entityId: user.id,
+        action: 'LOGIN_FAILED',
+        summary: 'Failed MFA challenge',
+        meta: { reason: 'bad_mfa', ip: ctx.ip || null },
+        actorId: user.id,
+      });
+      throw new AppError('Invalid authenticator or recovery code', 401, { code: 'MFA_INVALID' });
+    }
+  }
+
   await userRepo.touchLastLogin(user.id);
   const tokens = await issueTokenPair(user);
   await logActivity({
@@ -117,7 +151,11 @@ export async function login({ email, password }, ctx = {}) {
     entityId: user.id,
     action: 'LOGIN_SUCCESS',
     summary: 'User signed in',
-    meta: { ip: ctx.ip || null, userAgent: ctx.userAgent ? String(ctx.userAgent).slice(0, 200) : null },
+    meta: {
+      ip: ctx.ip || null,
+      userAgent: ctx.userAgent ? String(ctx.userAgent).slice(0, 200) : null,
+      mfa: Boolean(user.mfaEnabled),
+    },
     actorId: user.id,
   });
 
@@ -129,16 +167,15 @@ export async function login({ email, password }, ctx = {}) {
 }
 
 export async function logout(refreshToken) {
-  if (!refreshToken) {
-    throw new AppError('Refresh token is required', 400);
+  if (refreshToken) {
+    await refreshTokenRepo.revokeRefreshToken(hashToken(refreshToken));
   }
-  await refreshTokenRepo.revokeRefreshToken(hashToken(refreshToken));
   return { success: true };
 }
 
 export async function refreshTokens(refreshToken) {
   if (!refreshToken) {
-    throw new AppError('Refresh token is required', 400);
+    throw new AppError('Refresh token is required', 401, { code: 'UNAUTHORIZED' });
   }
 
   let payload;

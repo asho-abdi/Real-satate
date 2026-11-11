@@ -16,6 +16,11 @@ import {
   OWNER_MONTHLY_CATEGORY,
 } from '../../services/ownerCharge.service.js';
 import { logActivity } from '../../services/activity.service.js';
+import {
+  normalizePaymentMethod,
+  pickPaymentDetails,
+} from '../../utils/paymentMethod.js';
+import { ensurePaymentReceipt } from '../../services/financeReceipt.service.js';
 
 const router = Router();
 router.use(authenticate);
@@ -41,8 +46,13 @@ function serialize(s, ownerCharges = []) {
     amountPaid: Number(c.amountPaid),
     balance: Math.max(0, Math.round((Number(c.amountDue) - Number(c.amountPaid)) * 100) / 100),
   }));
+  const usage = s.unit?.usage || null;
+  const commercialType =
+    s.unit?.commercialType ||
+    (usage === 'SHOP' || usage === 'OFFICE' ? usage : null);
   return {
     ...s,
+    commercialType,
     salePrice,
     amountPaid,
     balance: Math.max(0, Math.round((salePrice - amountPaid) * 100) / 100),
@@ -95,12 +105,16 @@ router.get(
   '/',
   authorize('businesses:read'),
   asyncHandler(async (req, res) => {
-    const { buildingId, status, usage: usageQ } = req.query;
-    const usage =
-      String(usageQ || '').toUpperCase() === 'SHOP' ||
-      String(usageQ || '').toUpperCase() === 'OFFICE'
-        ? String(usageQ).toUpperCase()
-        : null;
+    const { buildingId, status, usage: usageQ, commercialType: commercialQ } = req.query;
+    const commercialRaw = String(commercialQ || usageQ || '').toUpperCase();
+    const typeFilter =
+      commercialRaw === 'SHOP' || commercialRaw === 'OFFICE'
+        ? commercialRaw
+        : commercialRaw === 'ALL' ||
+            commercialRaw === 'COMMERCIAL' ||
+            commercialRaw === 'SHOP,OFFICE'
+          ? 'COMMERCIAL'
+          : null;
     const buildingFilter = buildingId
       ? { unit: { buildingId: String(buildingId), deletedAt: null } }
       : unitBuildingFilter(req.user.buildingIds);
@@ -109,10 +123,16 @@ router.get(
       ...(status ? { ownershipStatus: String(status).toUpperCase() } : {}),
       ...buildingFilter,
     };
-    if (usage) {
+    if (typeFilter === 'COMMERCIAL') {
       where.unit = {
         ...(buildingFilter.unit || {}),
-        usage,
+        usage: { in: ['SHOP', 'OFFICE'] },
+        deletedAt: null,
+      };
+    } else if (typeFilter) {
+      where.unit = {
+        ...(buildingFilter.unit || {}),
+        usage: typeFilter,
         deletedAt: null,
       };
     }
@@ -204,8 +224,9 @@ router.post(
 
     const price = Number(salePrice);
     const paid = Math.min(Math.max(0, Number(amountPaid) || 0), price);
-    const method = String(paymentMethod).toUpperCase().replace(/-/g, '_');
-    const paymentMethodValue = method === 'E_BESA' || method === 'EBESA' ? 'E_BESA' : 'CASH';
+    const paymentMethodValue = normalizePaymentMethod(paymentMethod, { fallback: 'CASH' });
+    const payDetails =
+      paid > 0 ? pickPaymentDetails(req.body || {}, paymentMethodValue) : { method: paymentMethodValue };
     const month = currentMonthKey(saleDate);
     const maint = Math.max(0, Number(monthlyMaintenance) || 0);
 
@@ -235,8 +256,12 @@ router.post(
           data: {
             saleId: sale.id,
             amount: paid,
-            method: paymentMethodValue,
+            method: payDetails.method,
             paymentDate: new Date(saleDate),
+            reference: payDetails.reference || null,
+            receivedByName: payDetails.receivedByName || null,
+            agentName: payDetails.agentName || null,
+            officeMpesaNumber: payDetails.officeMpesaNumber || null,
             comment: 'Initial sale payment',
             recordedById: req.user.id || null,
           },
@@ -281,11 +306,11 @@ router.post(
     if (!sale) throw new AppError('Shop sale not found', 404);
     await assertUnitBuildingAccess(req.user, sale.unitId, req.user.buildingIds);
 
-    const { amount, paymentMethod = 'CASH', paymentDate, reference, comment } = req.body || {};
+    const { amount, paymentMethod = 'CASH', paymentDate, comment } = req.body || {};
     if (!amount || Number(amount) <= 0) throw new AppError('Positive amount required', 400);
 
-    const method = String(paymentMethod).toUpperCase().replace(/-/g, '_');
-    const paymentMethodValue = method === 'E_BESA' || method === 'EBESA' ? 'E_BESA' : 'CASH';
+    const paymentMethodValue = normalizePaymentMethod(paymentMethod, { fallback: 'CASH' });
+    const payDetails = pickPaymentDetails(req.body || {}, paymentMethodValue);
     const price = Number(sale.salePrice);
     const current = Number(sale.amountPaid || 0);
     const next = Math.min(price, Math.round((current + Number(amount)) * 100) / 100);
@@ -293,17 +318,46 @@ router.post(
     if (applied <= 0) throw new AppError('Sale is already fully paid', 400);
 
     const updated = await prisma.$transaction(async (tx) => {
-      await tx.shopSalePayment.create({
+      const sp = await tx.shopSalePayment.create({
         data: {
           saleId: sale.id,
           amount: applied,
-          method: paymentMethodValue,
+          method: payDetails.method,
           paymentDate: paymentDate ? new Date(paymentDate) : new Date(),
-          reference: reference || null,
+          reference: payDetails.reference || null,
+          receivedByName: payDetails.receivedByName || null,
+          agentName: payDetails.agentName || null,
+          officeMpesaNumber: payDetails.officeMpesaNumber || null,
           comment: comment || null,
           recordedById: req.user.id || null,
         },
       });
+
+      const receipt = await ensurePaymentReceipt(tx, {
+        sourceType: 'SHOP_SALE_PAYMENT',
+        sourceId: sp.id,
+        shopSaleId: sale.id,
+        unitId: sale.unitId,
+        customerName: sale.buyerName,
+        customerPhone: sale.phone || null,
+        amount: applied,
+        amountPaid: applied,
+        remainingBalance: Math.max(0, Math.round((price - next) * 100) / 100),
+        currentCharges: price,
+        previousBalance: Math.max(0, Math.round((price - current) * 100) / 100),
+        method: payDetails.method,
+        reference: payDetails.reference,
+        paymentDate: paymentDate || new Date(),
+        description: 'Sale payment received',
+        createdById: req.user.id || null,
+      });
+      if (receipt?.number) {
+        await tx.shopSalePayment.update({
+          where: { id: sp.id },
+          data: { receiptNumber: receipt.number },
+        });
+      }
+
       return tx.shopSale.update({
         where: { id: sale.id },
         data: {
@@ -337,6 +391,7 @@ router.post(
       amountPaid,
       amountDue,
       notes,
+      paymentMethod = 'CASH',
     } = req.body || {};
 
     if (amountPaid === undefined) throw new AppError('amountPaid is required', 400);
@@ -346,6 +401,10 @@ router.post(
 
     const monthKey = String(month);
     const paid = Math.min(due, Math.max(0, Number(amountPaid)));
+    const payDetails =
+      paid > 0
+        ? pickPaymentDetails(req.body || {}, normalizePaymentMethod(paymentMethod, { fallback: 'CASH' }))
+        : null;
 
     const row = await prisma.$transaction(async (tx) => {
       let charge = await findOwnerMonthlyCharge(tx, sale.unitId, monthKey);
@@ -374,6 +433,15 @@ router.post(
           status: derivePaymentStatus(nextPaid, Number(charge.amountDue) || due),
           notes: notes || charge.notes || null,
           category: OWNER_MONTHLY_CATEGORY,
+          ...(payDetails
+            ? {
+                method: payDetails.method,
+                reference: payDetails.reference,
+                receivedByName: payDetails.receivedByName,
+                agentName: payDetails.agentName,
+                officeMpesaNumber: payDetails.officeMpesaNumber,
+              }
+            : {}),
         },
       });
 

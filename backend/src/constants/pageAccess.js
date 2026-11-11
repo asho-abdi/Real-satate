@@ -11,12 +11,17 @@ export const STAFF_PAGES = [
   { key: 'buildings', label: 'Buildings', description: 'Property buildings setup' },
   { key: 'units', label: 'Units', description: 'Rooms, shops, availability' },
   { key: 'apartments', label: 'Apartments', description: 'Apartment tenants' },
-  { key: 'shops', label: 'Shops', description: 'Shop businesses and sales' },
-  { key: 'offices', label: 'Offices', description: 'Office businesses and sales' },
+  {
+    key: 'commercial-spaces',
+    label: 'Commercial Spaces',
+    description: 'Shop and office rentals and sales',
+  },
   { key: 'bookings', label: 'Guest Bookings', description: 'Guest stays and bookings' },
   { key: 'expenses', label: 'Money Movements', description: 'Expenses and cash movements' },
   { key: 'payments', label: 'Payments', description: 'Collect and record payments' },
   { key: 'outstanding', label: 'Outstanding', description: 'Unpaid balances due' },
+  { key: 'deposits', label: 'Security Deposits', description: 'Held deposits and settlements' },
+  { key: 'statements', label: 'Statements', description: 'Tenant and customer statements' },
   { key: 'reports', label: 'Reports', description: 'Reports and exports' },
   { key: 'maintenance', label: 'Maintenance', description: 'Repairs and maintenance' },
   { key: 'work-progress', label: 'Working Progress', description: 'Construction / work tracking' },
@@ -50,15 +55,7 @@ export const PAGE_PERMISSIONS = Object.freeze({
     'units:read',
     'buildings:read',
   ],
-  shops: [
-    'businesses:read',
-    'businesses:create',
-    'businesses:update',
-    'businesses:delete',
-    'units:read',
-    'buildings:read',
-  ],
-  offices: [
+  'commercial-spaces': [
     'businesses:read',
     'businesses:create',
     'businesses:update',
@@ -85,6 +82,14 @@ export const PAGE_PERMISSIONS = Object.freeze({
     'buildings:read',
   ],
   outstanding: ['payments:read', 'payments:update', 'tenants:read', 'businesses:read', 'buildings:read'],
+  deposits: ['payments:read', 'payments:create', 'payments:update', 'tenants:read', 'businesses:read', 'buildings:read', 'units:read'],
+  statements: [
+    'payments:read',
+    'tenants:read',
+    'businesses:read',
+    'buildings:read',
+    'units:read',
+  ],
   reports: ['reports:read', 'reports:export', 'buildings:read'],
   maintenance: [
     'maintenance:read',
@@ -120,12 +125,15 @@ export const ROUTE_PAGE_KEY = Object.freeze({
   '/buildings': 'buildings',
   '/availability': 'units',
   '/apartments': 'apartments',
-  '/shops': 'shops',
-  '/offices': 'offices',
+  '/commercial-spaces': 'commercial-spaces',
+  '/shops': 'commercial-spaces',
+  '/offices': 'commercial-spaces',
   '/bookings': 'bookings',
   '/expenses': 'expenses',
   '/payments': 'payments',
   '/outstanding': 'outstanding',
+  '/deposits': 'deposits',
+  '/statements': 'statements',
   '/reports': 'reports',
   '/maintenance': 'maintenance',
   '/work-progress': 'work-progress',
@@ -136,10 +144,16 @@ export const ROUTE_PAGE_KEY = Object.freeze({
 export function normalizeAllowedPages(value) {
   if (!Array.isArray(value)) return [];
   const known = new Set(Object.keys(PAGE_PERMISSIONS));
-  const pages = [...new Set(value.map(String).filter((k) => known.has(k)))];
-  // Legacy: shops grant also covered offices before the split — keep both when shops present
-  if (pages.includes('shops') && !pages.includes('offices') && known.has('offices')) {
-    pages.push('offices');
+  const raw = [...new Set(value.map(String))];
+  const pages = [];
+  for (const key of raw) {
+    if (key === 'shops' || key === 'offices') {
+      if (known.has('commercial-spaces') && !pages.includes('commercial-spaces')) {
+        pages.push('commercial-spaces');
+      }
+      continue;
+    }
+    if (known.has(key)) pages.push(key);
   }
   return pages;
 }

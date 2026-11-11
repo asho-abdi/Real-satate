@@ -1,30 +1,17 @@
 import ExcelJS from 'exceljs';
 import PDFDocument from 'pdfkit';
-
-const BRAND = {
-  ink: '#0f172a',
-  muted: '#64748b',
-  border: '#e2e8f0',
-  headerBg: '#0f766e',
-  headerText: '#ffffff',
-  zebra: '#f0fdfa',
-  rowLine: '#e2e8f0',
-  surface: '#ffffff',
-  amount: '#134e4a',
-};
-
-const STATUS_COLORS = {
-  AVAILABLE: { bg: '#d1fae5', fg: '#065f46' },
-  OCCUPIED: { bg: '#cffafe', fg: '#155e75' },
-  CHECKED_IN: { bg: '#cffafe', fg: '#155e75' },
-  CHECKED_OUT: { bg: '#e2e8f0', fg: '#334155' },
-  CANCELLED: { bg: '#fee2e2', fg: '#991b1b' },
-  UNPAID: { bg: '#fee2e2', fg: '#991b1b' },
-  PARTIAL: { bg: '#ffedd5', fg: '#9a3412' },
-  PAID: { bg: '#d1fae5', fg: '#065f46' },
-  ACTIVE: { bg: '#d1fae5', fg: '#065f46' },
-  OVERDUE: { bg: '#fee2e2', fg: '#991b1b' },
-};
+import {
+  BRAND,
+  footers,
+  generatedStamp,
+  kpiBand,
+  label,
+  letterhead,
+  prettyCompany,
+  statusPill,
+  titleCase,
+  pdfText,
+} from './pdfBrand.js';
 
 /**
  * Stream an Excel workbook download.
@@ -62,16 +49,7 @@ export async function exportExcel(res, filename, columns, rows) {
 
 function cellText(value) {
   if (value == null) return '';
-  return String(value);
-}
-
-function formatStatusLabel(value) {
-  const raw = cellText(value);
-  if (!raw) return '';
-  return raw
-    .replace(/_/g, ' ')
-    .toLowerCase()
-    .replace(/\b\w/g, (c) => c.toUpperCase());
+  return pdfText(value);
 }
 
 function normalizeFloor(value) {
@@ -80,16 +58,16 @@ function normalizeFloor(value) {
   return raw.replace(/^(Floor)(\d+)/i, '$1 $2');
 }
 
-function columnWeights(columns) {
-  const weights = columns.map((col) => Math.max(col.width ?? 12, 8));
-  const total = weights.reduce((sum, w) => sum + w, 0) || 1;
-  return weights.map((w) => w / total);
-}
-
 function isAmountColumn(col) {
   const key = String(col.key || '').toLowerCase();
   const header = String(col.header || '').toLowerCase();
-  return key.includes('amount') || key.includes('balance') || key.includes('rent') || header.includes('amount');
+  return (
+    key.includes('amount') ||
+    key.includes('balance') ||
+    key.includes('rent') ||
+    key.includes('total') ||
+    header.includes('amount')
+  );
 }
 
 function isStatusColumn(col) {
@@ -97,211 +75,189 @@ function isStatusColumn(col) {
   return key === 'status' || key.endsWith('status');
 }
 
+function toNumber(value) {
+  if (typeof value === 'number') return value;
+  const n = Number(String(value ?? '').replace(/[^0-9.-]/g, ''));
+  return Number.isFinite(n) ? n : 0;
+}
+
+function formatAmount(value) {
+  if (value === '' || value == null || value === '—') return '—';
+  const n = toNumber(value);
+  return n.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
 /**
- * Stream a designed PDF table download.
+ * Stream a branded A4 PDF table.
  * @param {import('express').Response} res
  * @param {string} filename
  * @param {string} title
  * @param {{ header: string, key: string, width?: number }[]} columns
  * @param {Record<string, unknown>[]} rows
- * @param {{ subtitle?: string }=} options
+ * @param {{ subtitle?: string, companyName?: string, currency?: string,
+ *           kpis?: { label: string, value: string, accent?: boolean, color?: string }[],
+ *           groupBy?: string }=} options
+ *   Rows are grouped under headings when a `section` column exists (or `groupBy` is given).
  */
 export function exportPdf(res, filename, title, columns, rows, options = {}) {
   const safeName = filename.endsWith('.pdf') ? filename : `${filename}.pdf`;
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `attachment; filename="${safeName}"`);
 
-  const landscape = columns.length > 5;
-  const margin = 36;
+  const companyName = prettyCompany(options.companyName);
+  const currency = options.currency || 'KES';
+  const groupKey = options.groupBy || (columns.some((c) => c.key === 'section') ? 'section' : null);
+  const visible = columns.filter((c) => c.key !== groupKey);
+
+  const landscape = visible.length > 6;
+  const margin = 40;
   const doc = new PDFDocument({
     margin,
     size: 'A4',
     layout: landscape ? 'landscape' : 'portrait',
     bufferPages: true,
+    info: { Title: title, Author: companyName },
   });
   doc.pipe(res);
 
   const pageWidth = doc.page.width;
   const pageHeight = doc.page.height;
-  const contentWidth = pageWidth - margin * 2;
-  const startX = margin;
-  const weights = columnWeights(columns);
-  const colWidths = weights.map((w) => w * contentWidth);
+  const CW = pageWidth - margin * 2;
+  const bottomLimit = pageHeight - 56;
+
+  const weights = visible.map((c) => Math.max(c.width ?? 12, 8));
+  const totalW = weights.reduce((a, b) => a + b, 0) || 1;
+  const colW = weights.map((w) => (w / totalW) * CW);
   const padX = 6;
-  const padY = 5;
-  const minRowHeight = 22;
-  const fontSize = 8;
-  const headerFontSize = 8;
-  const tableTopGap = 14;
+  const fontSize = 8.5;
+  const amountCol = visible.find(isAmountColumn);
 
-  const drawPageChrome = () => {
-    doc.save();
-    doc.rect(0, 0, pageWidth, 56).fill(BRAND.headerBg);
-    doc.fillColor(BRAND.headerText).font('Helvetica-Bold').fontSize(14);
-    doc.text('RJK REALTY', margin, 16, { width: contentWidth, lineBreak: false });
-    doc.font('Helvetica').fontSize(8).fillColor('#ccfbf1');
-    doc.text('Operations report', margin, 36, { width: contentWidth, lineBreak: false });
-    doc.restore();
-  };
+  const subtitle = [options.subtitle, `${rows.length} record${rows.length === 1 ? '' : 's'}`].filter(Boolean).join(' · ');
 
-  const drawTableHeader = (y) => {
-    const headerHeight = 26;
-    doc.save();
-    doc.roundedRect(startX, y, contentWidth, headerHeight, 4).fill(BRAND.headerBg);
-    doc.font('Helvetica-Bold').fontSize(headerFontSize).fillColor(BRAND.headerText);
-
-    let x = startX;
-    columns.forEach((col, i) => {
-      const width = colWidths[i];
-      const align = isAmountColumn(col) ? 'right' : 'left';
-      doc.text(String(col.header), x + padX, y + 8, {
-        width: width - padX * 2,
-        align,
-        lineBreak: false,
+  const headerRow = (y) => {
+    let x = margin;
+    visible.forEach((col, i) => {
+      label(doc, col.header, x + padX, y, {
+        width: colW[i] - padX * 2,
+        align: isAmountColumn(col) ? 'right' : 'left',
         ellipsis: true,
       });
-      x += width;
+      x += colW[i];
     });
-    doc.restore();
-    return y + headerHeight;
+    doc.rect(margin, y + 13, CW, 1).fill(BRAND.ink);
+    return y + 19;
   };
 
-  const measureRowHeight = (row) => {
+  const rowHeight = (row) => {
     doc.font('Helvetica').fontSize(fontSize);
-    let max = minRowHeight;
-    columns.forEach((col, i) => {
-      let value = cellText(row[col.key]);
-      if (col.key === 'floor') value = normalizeFloor(value);
-      if (isStatusColumn(col)) value = formatStatusLabel(value);
-      const height = doc.heightOfString(value || ' ', {
-        width: Math.max(colWidths[i] - padX * 2, 10),
-      });
-      max = Math.max(max, height + padY * 2);
+    let h = 20;
+    visible.forEach((col, i) => {
+      if (isStatusColumn(col)) return;
+      let v = cellText(row[col.key]);
+      if (col.key === 'floor') v = normalizeFloor(v);
+      if (isAmountColumn(col)) v = formatAmount(v);
+      h = Math.max(h, doc.heightOfString(v || ' ', { width: Math.max(colW[i] - padX * 2, 10) }) + 10);
     });
-    return max;
-  };
-
-  const drawStatusPill = (label, x, y, width) => {
-    const key = String(label || '')
-      .trim()
-      .toUpperCase()
-      .replace(/\s+/g, '_');
-    const colors = STATUS_COLORS[key] || { bg: '#e2e8f0', fg: '#334155' };
-    const text = formatStatusLabel(label);
-    const pillHeight = 14;
-    doc.font('Helvetica-Bold').fontSize(7);
-    const textWidth = Math.min(doc.widthOfString(text) + 10, Math.max(width - 4, 24));
-    const pillX = x + 2;
-    const pillY = y + 2;
-
-    doc.save();
-    doc.roundedRect(pillX, pillY, textWidth, pillHeight, 3).fill(colors.bg);
-    doc.fillColor(colors.fg);
-    doc.text(text, pillX + 5, pillY + 3.5, {
-      width: textWidth - 8,
-      lineBreak: false,
-      ellipsis: true,
-    });
-    doc.restore();
+    return h;
   };
 
   const drawRow = (row, y, zebra) => {
-    const rowHeight = measureRowHeight(row);
-
-    doc.save();
-    if (zebra) {
-      doc.rect(startX, y, contentWidth, rowHeight).fill(BRAND.zebra);
-    } else {
-      doc.rect(startX, y, contentWidth, rowHeight).fill(BRAND.surface);
-    }
-    doc.restore();
-
-    let x = startX;
-    columns.forEach((col, i) => {
-      const width = colWidths[i];
-      let value = cellText(row[col.key]);
-      if (col.key === 'floor') value = normalizeFloor(value);
-
-      if (isStatusColumn(col) && value) {
-        drawStatusPill(value, x, y + (rowHeight - 18) / 2, width);
+    const h = rowHeight(row);
+    if (zebra) doc.rect(margin, y, CW, h).fill(BRAND.zebra);
+    let x = margin;
+    visible.forEach((col, i) => {
+      let v = cellText(row[col.key]);
+      if (col.key === 'floor') v = normalizeFloor(v);
+      if (isStatusColumn(col) && v) {
+        statusPill(doc, v, x + padX, y + (h - 13) / 2, colW[i] - padX * 2);
       } else {
-        const align = isAmountColumn(col) ? 'right' : 'left';
-        const isSection = col.key === 'section';
+        const amount = isAmountColumn(col);
+        const text = amount ? formatAmount(v) : col.key === 'type' ? titleCase(v) : v || '—';
         doc
-          .font(isSection ? 'Helvetica-Bold' : 'Helvetica')
+          .font(amount || i === 0 ? 'Helvetica-Bold' : 'Helvetica')
           .fontSize(fontSize)
-          .fillColor(isAmountColumn(col) ? BRAND.amount : BRAND.ink);
-        doc.text(value, x + padX, y + padY, {
-          width: width - padX * 2,
-          align,
-          height: rowHeight - padY * 2,
-          ellipsis: true,
-        });
+          .fillColor(amount || i === 0 ? BRAND.ink : '#334155')
+          .text(text, x + padX, y + 5, {
+            width: colW[i] - padX * 2,
+            align: amount ? 'right' : 'left',
+            height: h - 8,
+            ellipsis: true,
+          });
       }
-      x += width;
+      x += colW[i];
     });
-
-    doc
-      .strokeColor(BRAND.rowLine)
-      .lineWidth(0.5)
-      .moveTo(startX, y + rowHeight)
-      .lineTo(startX + contentWidth, y + rowHeight)
-      .stroke();
-
-    return y + rowHeight;
+    doc.rect(margin, y + h, CW, 0.5).fill(BRAND.line);
+    return y + h;
   };
 
-  drawPageChrome();
+  const newPage = () => {
+    doc.addPage();
+    return letterhead(doc, { margin, title, subtitle: options.subtitle, compact: true });
+  };
 
-  let y = 68;
-  doc.fillColor(BRAND.ink).font('Helvetica-Bold').fontSize(13);
-  doc.text(title, startX, y, { width: contentWidth });
-  y = doc.y + 4;
+  // ---------------------------------------------------------- page 1
+  let y = letterhead(doc, {
+    margin,
+    title,
+    subtitle,
+    metaLines: [generatedStamp(), currency ? `Amounts in ${currency}` : null],
+  });
 
-  if (options.subtitle) {
-    doc.font('Helvetica').fontSize(9).fillColor(BRAND.muted);
-    doc.text(options.subtitle, startX, y, { width: contentWidth });
-    y = doc.y + 2;
+  if (Array.isArray(options.kpis) && options.kpis.length) {
+    y = kpiBand(doc, { margin, y, items: options.kpis.slice(0, landscape ? 5 : 4) });
   }
 
-  doc.font('Helvetica').fontSize(8).fillColor(BRAND.muted);
-  doc.text(`Generated ${new Date().toLocaleString()} · ${rows.length} rows`, startX, y, {
-    width: contentWidth,
-  });
-  y = doc.y + tableTopGap;
-
-  y = drawTableHeader(y);
-
   if (!rows.length) {
-    doc.font('Helvetica').fontSize(10).fillColor(BRAND.muted);
-    doc.text('No data for this filter.', startX, y + 16, { width: contentWidth });
+    doc.roundedRect(margin, y, CW, 70, 6).lineWidth(0.7).strokeColor(BRAND.line).stroke();
+    doc.font('Helvetica-Bold').fontSize(10).fillColor(BRAND.ink).text('No records for this filter', margin, y + 22, { width: CW, align: 'center' });
+    doc.font('Helvetica').fontSize(8.5).fillColor(BRAND.muted).text('Try a different period, building or floor.', margin, doc.y + 3, { width: CW, align: 'center' });
   } else {
-    rows.forEach((row, index) => {
-      const needed = measureRowHeight(row);
-      if (y + needed > pageHeight - 48) {
-        doc.addPage();
-        drawPageChrome();
-        y = 68;
-        y = drawTableHeader(y);
+    const groups = [];
+    if (groupKey) {
+      for (const row of rows) {
+        const g = cellText(row[groupKey]) || 'Other';
+        let bucket = groups.find((b) => b.name === g);
+        if (!bucket) groups.push((bucket = { name: g, rows: [] }));
+        bucket.rows.push(row);
       }
-      y = drawRow(row, y, index % 2 === 1);
+    } else {
+      groups.push({ name: null, rows });
+    }
+
+    groups.forEach((group, gi) => {
+      // Keep a group heading together with its column header and first row.
+      const needed = (group.name ? 40 : 0) + 19 + rowHeight(group.rows[0]);
+      if (y + needed > bottomLimit) y = newPage();
+      else if (gi > 0) y += 14;
+
+      if (group.name) {
+        doc.rect(margin, y + 1, 3, 13).fill(BRAND.gold);
+        doc.font('Helvetica-Bold').fontSize(11).fillColor(BRAND.navy).text(group.name, margin + 10, y, { lineBreak: false });
+        const meta = [`${group.rows.length} record${group.rows.length === 1 ? '' : 's'}`];
+        if (amountCol) {
+          const sum = group.rows.reduce((s, r) => s + toNumber(r[amountCol.key]), 0);
+          meta.push(`Total ${currency} ${formatAmount(sum)}`);
+        }
+        doc.font('Helvetica').fontSize(8.5).fillColor(BRAND.muted).text(meta.join(' · '), margin, y + 2, { width: CW, align: 'right' });
+        y += 26;
+      }
+
+      y = headerRow(y);
+      group.rows.forEach((row, ri) => {
+        if (y + rowHeight(row) > bottomLimit) {
+          y = newPage();
+          if (group.name) {
+            doc.font('Helvetica-Bold').fontSize(9).fillColor(BRAND.navy).text(`${group.name} (continued)`, margin, y);
+            y += 18;
+          }
+          y = headerRow(y);
+        }
+        y = drawRow(row, y, ri % 2 === 1);
+      });
     });
   }
 
-  const pageCount = doc.bufferedPageRange().count;
-  for (let i = 0; i < pageCount; i += 1) {
-    doc.switchToPage(i);
-    doc
-      .font('Helvetica')
-      .fontSize(8)
-      .fillColor(BRAND.muted)
-      .text(`Page ${i + 1} of ${pageCount}`, margin, pageHeight - 28, {
-        width: contentWidth,
-        align: 'right',
-        lineBreak: false,
-      });
-  }
-
+  footers(doc, { margin, companyName });
   doc.end();
 }
 

@@ -27,8 +27,13 @@ const businessInclude = {
 
 function serialize(b) {
   if (!b) return b;
+  const usage = b.unit?.usage || null;
+  const commercialType =
+    b.unit?.commercialType ||
+    (usage === 'SHOP' || usage === 'OFFICE' ? usage : null);
   return {
     ...b,
+    commercialType,
     monthlyRent: Number(b.monthlyRent),
     discount: Number(b.discount || 0),
     securityDeposit: Number(b.securityDeposit || 0),
@@ -51,17 +56,31 @@ router.get(
   authorize('businesses:read'),
   asyncHandler(async (req, res) => {
     const usageRaw = req.query.usage ? String(req.query.usage).toUpperCase() : null;
-    const usage =
-      usageRaw === 'SHOP' || usageRaw === 'OFFICE' ? usageRaw : null;
+    const commercialRaw = req.query.commercialType
+      ? String(req.query.commercialType).toUpperCase()
+      : null;
+    const typeFilter = (() => {
+      if (commercialRaw === 'SHOP' || commercialRaw === 'OFFICE') return commercialRaw;
+      if (commercialRaw === 'ALL' || commercialRaw === 'COMMERCIAL') return 'COMMERCIAL';
+      if (usageRaw === 'SHOP' || usageRaw === 'OFFICE') return usageRaw;
+      if (usageRaw === 'SHOP,OFFICE' || usageRaw === 'COMMERCIAL') return 'COMMERCIAL';
+      return null;
+    })();
     const buildingFilter = unitBuildingFilter(req.user.buildingIds);
     const where = {
       deletedAt: null,
       ...buildingFilter,
     };
-    if (usage) {
+    if (typeFilter === 'COMMERCIAL') {
       where.unit = {
         ...(buildingFilter.unit || {}),
-        usage,
+        usage: { in: ['SHOP', 'OFFICE'] },
+        deletedAt: null,
+      };
+    } else if (typeFilter) {
+      where.unit = {
+        ...(buildingFilter.unit || {}),
+        usage: typeFilter,
         deletedAt: null,
       };
     }

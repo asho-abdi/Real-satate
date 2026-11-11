@@ -608,14 +608,70 @@ button:not(:disabled),
   transform: scale(1.04);
 }
 
+/* ---------------------------------------------------------------- Printing (A4) */
+
+.print-letterhead {
+  display: none;
+}
+
 @media print {
+  @page {
+    size: A4;
+    margin: 14mm 12mm;
+  }
+
+  html,
+  body {
+    background: #ffffff !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
   .app-sidebar,
   .app-topbar,
-  .no-print {
+  .no-print,
+  .route-progress,
+  [data-sonner-toaster],
+  div[style*='z-index: 9999'] {
     display: none !important;
   }
 
   .app-shell-content {
     padding-left: 0 !important;
+  }
+
+  .app-main {
+    max-width: none !important;
+    padding: 0 !important;
+  }
+
+  .print-letterhead {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 18px;
+    padding-bottom: 10px;
+    border-bottom: 1.2pt solid #002b50;
+  }
+
+  .print-letterhead img {
+    height: 46px;
+    width: auto;
+  }
+
+  .app-surface,
+  .dashboard-panel,
+  .dashboard-stat-card {
+    box-shadow: none !important;
+    break-inside: avoid;
+  }
+
+  .app-main table thead {
+    display: table-header-group;
+  }
+
+  .app-main tr {
+    break-inside: avoid;
   }
 }

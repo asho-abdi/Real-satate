@@ -13,6 +13,12 @@ const empty = {
   officeMpesaNumber: '',
 };
 
+function unwrapSetting(value) {
+  if (value == null) return '';
+  const s = typeof value === 'string' ? value : String(value);
+  return s.replace(/^"|"$/g, '');
+}
+
 /**
  * Controlled payment method + dynamic detail fields for Cash / MPESA / Agent.
  */
@@ -20,16 +26,26 @@ export default function PaymentMethodFields({ value, onChange, showReceivedBy = 
   const form = { ...empty, ...(value || {}) };
   const method = METHOD_VALUES[form.method] || form.method || 'CASH';
   const [defaultMpesa, setDefaultMpesa] = useState('');
+  const [defaultAgentName, setDefaultAgentName] = useState('');
+  const [defaultAgentRef, setDefaultAgentRef] = useState('');
 
   useEffect(() => {
     let alive = true;
     (async () => {
       try {
-        const res = await api.get('/finance/office-mpesa');
-        const n = res.data?.data?.officeMpesaNumber ?? res.data?.officeMpesaNumber;
-        if (alive && n) {
-          setDefaultMpesa(typeof n === 'string' ? n.replace(/^"|"$/g, '') : String(n));
+        let data;
+        try {
+          const res = await api.get('/finance/payment-defaults');
+          data = res.data?.data ?? res.data;
+        } catch {
+          const res = await api.get('/finance/office-mpesa');
+          data = res.data?.data ?? res.data;
         }
+        if (!alive || !data) return;
+        const mpesa = data.officeMpesaNumber;
+        if (mpesa) setDefaultMpesa(unwrapSetting(mpesa));
+        if (data.agentAccountName) setDefaultAgentName(unwrapSetting(data.agentAccountName));
+        if (data.agentAccountReference) setDefaultAgentRef(unwrapSetting(data.agentAccountReference));
       } catch {
         /* settings may be restricted — ignore */
       }
@@ -45,6 +61,20 @@ export default function PaymentMethodFields({ value, onChange, showReceivedBy = 
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [method, defaultMpesa]);
+
+  useEffect(() => {
+    if (method === 'AGENT' && !form.agentName && defaultAgentName) {
+      onChange?.({ ...form, method: 'AGENT', agentName: defaultAgentName });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [method, defaultAgentName]);
+
+  useEffect(() => {
+    if (method === 'AGENT' && !form.reference && defaultAgentRef) {
+      onChange?.({ ...form, method: 'AGENT', reference: defaultAgentRef });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [method, defaultAgentRef]);
 
   const set = (patch) => onChange?.({ ...form, method, ...patch });
 
@@ -92,7 +122,7 @@ export default function PaymentMethodFields({ value, onChange, showReceivedBy = 
         <>
           <Input
             label="Agent name"
-            value={form.agentName}
+            value={form.agentName || defaultAgentName}
             onChange={(e) => set({ agentName: e.target.value })}
             required
           />

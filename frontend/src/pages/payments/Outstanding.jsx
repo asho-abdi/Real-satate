@@ -7,11 +7,10 @@ import PageHeader from '../../components/ui/PageHeader.jsx';
 import Card from '../../components/ui/Card.jsx';
 import Button from '../../components/ui/Button.jsx';
 import Input from '../../components/ui/Input.jsx';
-import Select from '../../components/ui/Select.jsx';
 import Modal from '../../components/ui/Modal.jsx';
 import Badge from '../../components/ui/Badge.jsx';
 import Spinner from '../../components/ui/Spinner.jsx';
-import { PAYMENT_METHODS } from '../../utils/constants.js';
+import PaymentMethodFields from '../../components/payments/PaymentMethodFields.jsx';
 import { formatCurrency, formatDate } from '../../utils/format.js';
 import { rentalApi } from '../../services/rentalApi.js';
 
@@ -78,7 +77,11 @@ export default function Outstanding() {
     setModal({
       ...row,
       payAmount: String(row.balance || 0),
-      method: 'Cash',
+      method: 'CASH',
+      reference: '',
+      receivedByName: '',
+      agentName: '',
+      officeMpesaNumber: '',
       paymentDate: new Date().toISOString().slice(0, 10),
     });
   };
@@ -105,6 +108,10 @@ export default function Outstanding() {
           status,
           method: status === 'Unpaid' ? null : modal.method,
           paymentDate: status === 'Unpaid' ? null : modal.paymentDate,
+          reference: status === 'Unpaid' ? null : modal.reference || null,
+          receivedByName: status === 'Unpaid' ? null : modal.receivedByName || null,
+          agentName: status === 'Unpaid' ? null : modal.agentName || null,
+          officeMpesaNumber: status === 'Unpaid' ? null : modal.officeMpesaNumber || null,
         });
       }
       setModal(null);
@@ -245,17 +252,21 @@ export default function Outstanding() {
                   value={modal.paymentDate}
                   onChange={(e) => setModal({ ...modal, paymentDate: e.target.value })}
                 />
-                <Select
-                  label="Method"
-                  value={modal.method}
-                  onChange={(e) => setModal({ ...modal, method: e.target.value })}
-                >
-                  {PAYMENT_METHODS.map((m) => (
-                    <option key={m} value={m}>
-                      {m}
-                    </option>
-                  ))}
-                </Select>
+                <div className="sm:col-span-2">
+                  <PaymentMethodFields
+                    value={modal}
+                    onChange={(next) =>
+                      setModal({
+                        ...modal,
+                        method: next.method,
+                        reference: next.reference,
+                        receivedByName: next.receivedByName,
+                        agentName: next.agentName,
+                        officeMpesaNumber: next.officeMpesaNumber,
+                      })
+                    }
+                  />
+                </div>
               </>
             ) : null}
             <p className="sm:col-span-2 text-xs text-[var(--text-muted)]">

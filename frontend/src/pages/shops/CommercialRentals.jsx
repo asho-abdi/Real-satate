@@ -14,7 +14,8 @@ import PaymentCalendar from '../../components/rentals/PaymentCalendar.jsx';
 import { formatCurrency, formatDate, cn } from '../../utils/format.js';
 import { rentalApi, resolveIdentityAttachment } from '../../services/rentalApi.js';
 import IdentityDocumentField from '../../components/ui/IdentityDocumentField.jsx';
-import { PAYMENT_METHODS } from '../../utils/constants.js';
+import PaymentMethodFields from '../../components/payments/PaymentMethodFields.jsx';
+import StatementModal from '../../components/finance/StatementModal.jsx';
 
 const emptyForm = {
   dealType: 'RENTAL',
@@ -33,41 +34,87 @@ const emptyForm = {
 
 const today = () => new Date().toISOString().slice(0, 10);
 
-function moduleCopy(usage) {
-  const isOffice = String(usage).toUpperCase() === 'OFFICE';
+function typeLabel(commercialType) {
+  return String(commercialType || '').toUpperCase() === 'OFFICE' ? 'Office' : 'Shop';
+}
+
+function moduleCopy(filterType) {
+  const t = String(filterType || 'ALL').toUpperCase();
+  if (t === 'OFFICE') {
+    return {
+      filter: 'OFFICE',
+      kind: 'Office',
+      kindLower: 'office',
+      plural: 'Offices',
+      title: 'Commercial Spaces',
+      subtitle: 'Offices — rentals, sales, payments, and statements.',
+      unitLabel: 'Available office',
+      nameLabel: 'Office / business name',
+      registerTitle: 'Register office',
+      saveRental: 'Save Office',
+      emptyActive: 'No active office rentals match your filters.',
+      emptyPast: 'No past office rentals.',
+      emptySold: 'No sold offices yet. Use Register → Sold to record a sale.',
+      dealTypes: [
+        { label: 'Sold office', value: 'SALE' },
+        { label: 'Rental office', value: 'RENTAL' },
+      ],
+    };
+  }
+  if (t === 'SHOP') {
+    return {
+      filter: 'SHOP',
+      kind: 'Shop',
+      kindLower: 'shop',
+      plural: 'Shops',
+      title: 'Commercial Spaces',
+      subtitle: 'Shops — rentals, sales, payments, and statements.',
+      unitLabel: 'Available shop',
+      nameLabel: 'Shop / business name',
+      registerTitle: 'Register shop',
+      saveRental: 'Save Shop',
+      emptyActive: 'No active shop rentals match your filters.',
+      emptyPast: 'No past shop rentals.',
+      emptySold: 'No sold shops yet. Use Register → Sold to record a sale.',
+      dealTypes: [
+        { label: 'Sold shop', value: 'SALE' },
+        { label: 'Rental shop', value: 'RENTAL' },
+      ],
+    };
+  }
   return {
-    usage: isOffice ? 'OFFICE' : 'SHOP',
-    kind: isOffice ? 'Office' : 'Shop',
-    kindLower: isOffice ? 'office' : 'shop',
-    plural: isOffice ? 'Offices' : 'Shops',
-    title: isOffice ? 'Offices' : 'Shops',
-    subtitle: isOffice
-      ? 'Register and manage office rentals and sales.'
-      : 'Register and manage shop rentals and sales.',
-    unitLabel: isOffice ? 'Available office' : 'Available shop',
-    nameLabel: isOffice ? 'Office name' : 'Shop name',
-    registerTitle: isOffice ? 'Register office' : 'Register shop',
-    saveRental: isOffice ? 'Save Office' : 'Save Shop',
-    emptyActive: isOffice
-      ? 'No active office rentals match your filters.'
-      : 'No active shop rentals match your filters.',
-    emptyPast: isOffice ? 'No past office rentals.' : 'No past shop rentals.',
-    emptySold: isOffice
-      ? 'No sold offices yet. Use Register → Sold to record a sale.'
-      : 'No sold shops yet. Use Register → Sold to record a sale.',
+    filter: 'ALL',
+    kind: 'Commercial space',
+    kindLower: 'commercial space',
+    plural: 'Commercial spaces',
+    title: 'Commercial Spaces',
+    subtitle: 'Unified shops and offices — rentals, sales, payments, and statements.',
+    unitLabel: 'Available unit',
+    nameLabel: 'Business / tenant name',
+    registerTitle: 'Register commercial space',
+    saveRental: 'Save',
+    emptyActive: 'No active commercial rentals match your filters.',
+    emptyPast: 'No past commercial rentals.',
+    emptySold: 'No sold commercial spaces yet. Use Register → Sold to record a sale.',
     dealTypes: [
-      { label: isOffice ? 'Sold office' : 'Sold shop', value: 'SALE' },
-      { label: isOffice ? 'Rental office' : 'Rental shop', value: 'RENTAL' },
+      { label: 'Sold', value: 'SALE' },
+      { label: 'Rental', value: 'RENTAL' },
     ],
   };
 }
 
 /**
- * Shared commercial rentals UI. usage must be SHOP or OFFICE.
+ * Unified Commercial Spaces management (Shop + Office).
+ * Filter via commercialTypeFilter: ALL | SHOP | OFFICE.
  */
-export default function CommercialRentals({ usage = 'SHOP' }) {
-  const copy = useMemo(() => moduleCopy(usage), [usage]);
+export default function CommercialRentals({ initialFilter = 'ALL' }) {
   const { globalSearch = '' } = useOutletContext() || {};
+  const [typeFilter, setTypeFilter] = useState(
+    ['SHOP', 'OFFICE', 'ALL'].includes(String(initialFilter).toUpperCase())
+      ? String(initialFilter).toUpperCase()
+      : 'ALL',
+  );
+  const copy = useMemo(() => moduleCopy(typeFilter), [typeFilter]);
 
   // data
   const [buildings, setBuildings] = useState([]);
@@ -82,11 +129,13 @@ export default function CommercialRentals({ usage = 'SHOP' }) {
   const [tab, setTab] = useState('tenants');
 
   // registration form state
+  const [regType, setRegType] = useState('SHOP'); // commercialType for create
   const [regBuildingId, setRegBuildingId] = useState('');
   const [regFloorId, setRegFloorId] = useState('');
   const [roomId, setRoomId] = useState('');
   const [form, setForm] = useState(emptyForm);
   const [identityFile, setIdentityFile] = useState(null);
+  const [statementParty, setStatementParty] = useState(null);
 
   // filter state (business list)
   const [filterBuildingId, setFilterBuildingId] = useState('');
@@ -108,13 +157,19 @@ export default function CommercialRentals({ usage = 'SHOP' }) {
   const load = useCallback(async () => {
     setLoading(true);
     try {
+      const listParams =
+        typeFilter === 'ALL'
+          ? { commercialType: 'ALL' }
+          : { commercialType: typeFilter, usage: typeFilter };
       const [b, f, units, biz, p, sold] = await Promise.all([
         rentalApi.listBuildings(),
         rentalApi.listFloors(),
-        rentalApi.listUnits({ usage: copy.usage }),
-        rentalApi.listBusinesses({ usage: copy.usage }),
+        rentalApi.listUnits(
+          typeFilter === 'ALL' ? { usage: 'SHOP,OFFICE' } : { usage: typeFilter },
+        ),
+        rentalApi.listBusinesses(listParams),
         rentalApi.listPayments(),
-        rentalApi.listShopSales({ usage: copy.usage }),
+        rentalApi.listShopSales(listParams),
       ]);
       setBuildings(b);
       setFloors(f);
@@ -124,17 +179,18 @@ export default function CommercialRentals({ usage = 'SHOP' }) {
       setPayments(
         (p || []).filter(
           (x) =>
-            x.tenantType === copy.kindLower ||
+            x.tenantType === 'shop' ||
+            x.tenantType === 'office' ||
             (x.businessId && bizIds.has(x.businessId)),
         ),
       );
       setSales(sold || []);
     } catch (err) {
-      toast.error(err.message || `Failed to load ${copy.plural.toLowerCase()}`);
+      toast.error(err.message || 'Failed to load commercial spaces');
     } finally {
       setLoading(false);
     }
-  }, [copy.usage, copy.kindLower, copy.plural]);
+  }, [typeFilter]);
 
   useEffect(() => {
     load();
@@ -203,9 +259,10 @@ export default function CommercialRentals({ usage = 'SHOP' }) {
           r.buildingId === regBuildingId &&
           (!regFloorId || r.floorId === regFloorId) &&
           r.status === 'Available' &&
-          String(r.usageRaw || r.usage || '').toUpperCase() === copy.usage,
+          String(r.commercialType || r.usageRaw || r.usage || '').toUpperCase() ===
+            String(regType).toUpperCase(),
       ),
-    [rooms, regBuildingId, regFloorId, copy.usage],
+    [rooms, regBuildingId, regFloorId, regType],
   );
   const selectedRoom = rooms.find((r) => r.id === roomId);
 
@@ -216,13 +273,16 @@ export default function CommercialRentals({ usage = 'SHOP' }) {
   };
 
   const register = async () => {
+    const expectedUsage = String(regType).toUpperCase() === 'OFFICE' ? 'OFFICE' : 'SHOP';
     if (!selectedRoom) {
-      toast.error(`Select an available ${copy.kindLower}`);
+      toast.error(`Select an available ${typeLabel(expectedUsage).toLowerCase()}`);
       return;
     }
-    const unitUsage = String(selectedRoom.usageRaw || selectedRoom.usage || '').toUpperCase();
-    if (unitUsage !== copy.usage) {
-      toast.error(`Only ${copy.kindLower} units can be registered here`);
+    const unitUsage = String(
+      selectedRoom.commercialType || selectedRoom.usageRaw || selectedRoom.usage || '',
+    ).toUpperCase();
+    if (unitUsage !== expectedUsage) {
+      toast.error(`Selected unit must be a ${typeLabel(expectedUsage).toLowerCase()}`);
       return;
     }
 
@@ -235,7 +295,8 @@ export default function CommercialRentals({ usage = 'SHOP' }) {
         const identity = await resolveIdentityAttachment(identityFile);
         await rentalApi.createShopSale({
           unitId: selectedRoom.id,
-          expectedUsage: copy.usage,
+          expectedUsage,
+          commercialType: expectedUsage,
           buyerName: form.businessName.trim(),
           contactName: form.contactName.trim() || null,
           phone: form.phone.trim(),
@@ -246,7 +307,7 @@ export default function CommercialRentals({ usage = 'SHOP' }) {
           monthlyMaintenance: Number(form.monthlyMaintenance) || 0,
           ...identity,
         });
-        toast.success(`${copy.kind} sale recorded`);
+        toast.success(`${typeLabel(expectedUsage)} sale recorded`);
         setTab('sold');
         setRegBuildingId('');
         setRegFloorId('');
@@ -266,7 +327,7 @@ export default function CommercialRentals({ usage = 'SHOP' }) {
       !form.phone.trim() ||
       !form.leaseStart
     ) {
-      toast.error(`Fill ${copy.kindLower} name, contact, phone, and lease start`);
+      toast.error('Fill business name, contact, phone, and lease start');
       return;
     }
     try {
@@ -278,12 +339,13 @@ export default function CommercialRentals({ usage = 'SHOP' }) {
         phone: form.phone.trim(),
         idNumber: form.idNumber.trim(),
         roomId: selectedRoom.id,
-        expectedUsage: copy.usage,
+        expectedUsage,
+        commercialType: expectedUsage,
         monthlyRent: Number(form.monthlyRent) || selectedRoom.monthlyRent,
         discount: Number(form.discount) || 0,
         ...identity,
       });
-      toast.success(`${copy.kind} rental registered`);
+      toast.success(`${typeLabel(expectedUsage)} rental registered`);
       setTab('tenants');
       setRegBuildingId('');
       setRegFloorId('');
@@ -292,7 +354,7 @@ export default function CommercialRentals({ usage = 'SHOP' }) {
       setIdentityFile(null);
       await load();
     } catch (err) {
-      toast.error(err.message || `Could not register ${copy.kindLower}`);
+      toast.error(err.message || 'Could not register commercial space');
     }
   };
 
@@ -376,13 +438,35 @@ export default function CommercialRentals({ usage = 'SHOP' }) {
     <div>
       <PageHeader title={copy.title} subtitle={copy.subtitle} />
 
+      <div className="mb-4 flex flex-wrap gap-2">
+        {[
+          { id: 'ALL', label: 'All' },
+          { id: 'SHOP', label: 'Shops' },
+          { id: 'OFFICE', label: 'Offices' },
+        ].map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            onClick={() => setTypeFilter(t.id)}
+            className={cn(
+              'h-10 rounded-xl px-4 text-sm font-semibold transition',
+              typeFilter === t.id
+                ? 'bg-brand-500 text-white shadow-sm shadow-brand-500/30'
+                : 'bg-[var(--surface)] text-[var(--text-muted)] ring-1 ring-[var(--border)]',
+            )}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
       {/* tab strip */}
       <div className="mb-6 flex flex-wrap gap-2">
         {[
           { id: 'tenants', label: `Rentals (${activeBusinesses.length})` },
           { id: 'sold', label: `Purchased (${sales.length})` },
           { id: 'past', label: `Past rentals (${pastBusinesses.length})` },
-          { id: 'register', label: `Register ${copy.kind}` },
+          { id: 'register', label: 'Register' },
         ].map((t) => (
           <button
             key={t.id}
@@ -404,6 +488,17 @@ export default function CommercialRentals({ usage = 'SHOP' }) {
       {tab === 'register' ? (
         <Card title={copy.registerTitle}>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <Select
+              label="Commercial type"
+              value={regType}
+              onChange={(e) => {
+                setRegType(e.target.value);
+                setRoomId('');
+              }}
+            >
+              <option value="SHOP">Shop</option>
+              <option value="OFFICE">Office</option>
+            </Select>
             <Select
               label="Business model"
               value={form.dealType}
@@ -613,6 +708,9 @@ export default function CommercialRentals({ usage = 'SHOP' }) {
                   title={`${b.businessName} · ${b.roomNumber}`}
                   action={
                     <div className="flex flex-wrap items-center gap-2">
+                      <Badge status={typeLabel(b.commercialType || b.usageRaw || b.usage)}>
+                        {typeLabel(b.commercialType || b.usageRaw || b.usage)}
+                      </Badge>
                       {b.unitId || b.roomId ? (
                         <Link
                           to={`/units/${b.unitId || b.roomId}`}
@@ -622,6 +720,13 @@ export default function CommercialRentals({ usage = 'SHOP' }) {
                         </Link>
                       ) : null}
                       <Badge status={b.status}>{b.status}</Badge>
+                      <button
+                        type="button"
+                        onClick={() => setStatementParty({ businessId: b.id })}
+                        className="inline-flex h-10 items-center rounded-xl border border-[var(--border)] px-3 text-sm font-medium text-[var(--text-muted)] transition hover:bg-[var(--surface-2)]"
+                      >
+                        Statement
+                      </button>
                       <button
                         type="button"
                         onClick={() => openEdit(b)}
@@ -642,7 +747,7 @@ export default function CommercialRentals({ usage = 'SHOP' }) {
                   }
                 >
                   <p className="mb-1 text-sm text-[var(--text-muted)]">
-                    {b.building}
+                    {typeLabel(b.commercialType || b.usageRaw || b.usage)} · {b.building}
                     {b.floor ? ` · ${b.floor}` : ''} · {b.contactName} · {b.phone} · Rent{' '}
                     {formatCurrency(b.monthlyRent)}
                     {b.discount ? ` (−${formatCurrency(b.discount)})` : ''} · Since{' '}
@@ -759,7 +864,7 @@ export default function CommercialRentals({ usage = 'SHOP' }) {
               type="button"
               disabled={terminating}
               onClick={confirmTerminate}
-              className="h-10 rounded-xl bg-rose-600 px-6 text-base font-medium text-white transition hover:bg-rose-700 disabled:opacity-60"
+              className="h-10 rounded-lg bg-[var(--danger)] px-4 text-sm font-semibold text-white shadow-xs transition hover:brightness-95 disabled:opacity-60"
             >
               {terminating ? 'Terminating…' : 'Confirm Termination'}
             </button>
@@ -800,6 +905,12 @@ export default function CommercialRentals({ usage = 'SHOP' }) {
           </div>
         ) : null}
       </Modal>
+
+      <StatementModal
+        open={Boolean(statementParty)}
+        onClose={() => setStatementParty(null)}
+        party={statementParty}
+      />
     </div>
   );
 }
@@ -807,13 +918,26 @@ export default function CommercialRentals({ usage = 'SHOP' }) {
 function SoldShopsPanel({ sales, onRefresh, emptyMessage, kind = 'Shop' }) {
   const [payModal, setPayModal] = useState(null);
   const [maintModal, setMaintModal] = useState(null);
-  const [payForm, setPayForm] = useState({ amount: '', paymentDate: today(), paymentMethod: 'Cash', notes: '' });
+  const [payForm, setPayForm] = useState({
+    amount: '',
+    paymentDate: today(),
+    method: 'CASH',
+    reference: '',
+    receivedByName: '',
+    agentName: '',
+    officeMpesaNumber: '',
+    notes: '',
+  });
   const [maintForm, setMaintForm] = useState({
     month: new Date().toISOString().slice(0, 7),
     amountDue: '',
     amountPaid: '',
     paymentDate: today(),
-    paymentMethod: 'Cash',
+    method: 'CASH',
+    reference: '',
+    receivedByName: '',
+    agentName: '',
+    officeMpesaNumber: '',
     notes: '',
   });
   const [saving, setSaving] = useState(false);
@@ -823,7 +947,11 @@ function SoldShopsPanel({ sales, onRefresh, emptyMessage, kind = 'Shop' }) {
     setPayForm({
       amount: sale.balance > 0 ? String(sale.balance) : '',
       paymentDate: today(),
-      paymentMethod: 'Cash',
+      method: 'CASH',
+      reference: '',
+      receivedByName: '',
+      agentName: '',
+      officeMpesaNumber: '',
       notes: '',
     });
   };
@@ -835,7 +963,11 @@ function SoldShopsPanel({ sales, onRefresh, emptyMessage, kind = 'Shop' }) {
       amountDue: String(sale.monthlyMaintenance || 0),
       amountPaid: String(sale.monthlyMaintenance || 0),
       paymentDate: today(),
-      paymentMethod: 'Cash',
+      method: 'CASH',
+      reference: '',
+      receivedByName: '',
+      agentName: '',
+      officeMpesaNumber: '',
       notes: '',
     });
   };
@@ -852,7 +984,11 @@ function SoldShopsPanel({ sales, onRefresh, emptyMessage, kind = 'Shop' }) {
       await rentalApi.addShopSalePayment(payModal.id, {
         amount,
         paymentDate: payForm.paymentDate,
-        paymentMethod: payForm.paymentMethod,
+        paymentMethod: payForm.method,
+        reference: payForm.reference || null,
+        receivedByName: payForm.receivedByName || null,
+        agentName: payForm.agentName || null,
+        officeMpesaNumber: payForm.officeMpesaNumber || null,
         notes: payForm.notes || null,
       });
       toast.success('Sale payment recorded');
@@ -879,7 +1015,11 @@ function SoldShopsPanel({ sales, onRefresh, emptyMessage, kind = 'Shop' }) {
         amountDue: Number(maintForm.amountDue) || Number(maintModal.monthlyMaintenance) || amountPaid,
         amountPaid,
         paymentDate: maintForm.paymentDate,
-        paymentMethod: maintForm.paymentMethod,
+        paymentMethod: maintForm.method,
+        reference: maintForm.reference || null,
+        receivedByName: maintForm.receivedByName || null,
+        agentName: maintForm.agentName || null,
+        officeMpesaNumber: maintForm.officeMpesaNumber || null,
         notes: maintForm.notes || null,
       });
       toast.success('Monthly charge payment recorded');
@@ -1024,10 +1164,27 @@ function SoldShopsPanel({ sales, onRefresh, emptyMessage, kind = 'Shop' }) {
           <div className="grid gap-4 sm:grid-cols-2">
             <Input label="Amount" type="number" value={payForm.amount} onChange={(e) => setPayForm({ ...payForm, amount: e.target.value })} />
             <Input label="Date" type="date" value={payForm.paymentDate} onChange={(e) => setPayForm({ ...payForm, paymentDate: e.target.value })} />
-            <Select label="Method" value={payForm.paymentMethod} onChange={(e) => setPayForm({ ...payForm, paymentMethod: e.target.value })}>
-              {PAYMENT_METHODS.map((m) => <option key={m} value={m}>{m}</option>)}
-            </Select>
-            <Input label="Notes" value={payForm.notes} onChange={(e) => setPayForm({ ...payForm, notes: e.target.value })} />
+            <div className="sm:col-span-2">
+              <PaymentMethodFields
+                value={payForm}
+                onChange={(next) =>
+                  setPayForm({
+                    ...payForm,
+                    method: next.method,
+                    reference: next.reference,
+                    receivedByName: next.receivedByName,
+                    agentName: next.agentName,
+                    officeMpesaNumber: next.officeMpesaNumber,
+                  })
+                }
+              />
+            </div>
+            <Input
+              className="sm:col-span-2"
+              label="Notes"
+              value={payForm.notes}
+              onChange={(e) => setPayForm({ ...payForm, notes: e.target.value })}
+            />
           </div>
         ) : null}
       </Modal>
@@ -1049,10 +1206,27 @@ function SoldShopsPanel({ sales, onRefresh, emptyMessage, kind = 'Shop' }) {
             <Input label="Amount due" type="number" value={maintForm.amountDue} onChange={(e) => setMaintForm({ ...maintForm, amountDue: e.target.value })} />
             <Input label="Amount paid" type="number" value={maintForm.amountPaid} onChange={(e) => setMaintForm({ ...maintForm, amountPaid: e.target.value })} />
             <Input label="Date" type="date" value={maintForm.paymentDate} onChange={(e) => setMaintForm({ ...maintForm, paymentDate: e.target.value })} />
-            <Select label="Method" value={maintForm.paymentMethod} onChange={(e) => setMaintForm({ ...maintForm, paymentMethod: e.target.value })}>
-              {PAYMENT_METHODS.map((m) => <option key={m} value={m}>{m}</option>)}
-            </Select>
-            <Input label="Notes" value={maintForm.notes} onChange={(e) => setMaintForm({ ...maintForm, notes: e.target.value })} />
+            <div className="sm:col-span-2">
+              <PaymentMethodFields
+                value={maintForm}
+                onChange={(next) =>
+                  setMaintForm({
+                    ...maintForm,
+                    method: next.method,
+                    reference: next.reference,
+                    receivedByName: next.receivedByName,
+                    agentName: next.agentName,
+                    officeMpesaNumber: next.officeMpesaNumber,
+                  })
+                }
+              />
+            </div>
+            <Input
+              className="sm:col-span-2"
+              label="Notes"
+              value={maintForm.notes}
+              onChange={(e) => setMaintForm({ ...maintForm, notes: e.target.value })}
+            />
           </div>
         ) : null}
       </Modal>

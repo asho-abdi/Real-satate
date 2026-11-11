@@ -15,6 +15,8 @@ import {
   MdSwapHoriz,
   MdToday,
   MdWarningAmber,
+  MdAccountBalanceWallet,
+  MdDescription,
   MdCircle,
 } from 'react-icons/md';
 import { NAV_SECTIONS } from '../../utils/constants.js';
@@ -24,7 +26,7 @@ import { userCanAccessRoute } from '../../utils/pageAccess.js';
 export const TOPBAR_SECTION_LABELS = {
   Overview: 'Overview',
   Portfolio: 'Portfolio',
-  'Business Units': 'Business Units',
+  'Commercial Spaces': 'Commercial Spaces',
   Finance: 'Finance',
   Operations: 'Operations',
   System: 'System',
@@ -55,6 +57,8 @@ const NAV_ICONS = {
   MdSwapHoriz,
   MdToday,
   MdWarningAmber,
+  MdAccountBalanceWallet,
+  MdDescription,
   MdCircle,
 };
 
