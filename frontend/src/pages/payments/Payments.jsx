@@ -220,7 +220,7 @@ export default function Payments() {
                     </td>
                     <td className="py-3">{r.date ? formatDate(r.date) : '—'}</td>
                     <td className="py-3">
-                      <Button variant="secondary" className="h-8 px-3 text-xs" onClick={() => openEdit(r)}>
+                      <Button size="sm" variant="secondary" onClick={() => openEdit(r)}>
                         Edit
                       </Button>
                     </td>
@@ -241,10 +241,10 @@ export default function Payments() {
         title="Edit Payment"
         footer={
           <div className="flex justify-end gap-2">
-            <Button variant="secondary" className="h-11 px-4" onClick={() => setEditModal(null)} disabled={saving}>
+            <Button variant="secondary" onClick={() => setEditModal(null)} disabled={saving}>
               Cancel
             </Button>
-            <Button className="h-11 px-4" onClick={saveEdit} disabled={saving}>
+            <Button onClick={saveEdit} disabled={saving}>
               {saving ? 'Saving…' : 'Save Changes'}
             </Button>
           </div>

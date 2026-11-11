@@ -91,7 +91,7 @@ export default function FloorTabMenu({
                 }}
                 className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left text-sm text-[var(--text)] transition hover:bg-[var(--surface-2)]"
               >
-                <MdEdit className="h-4 w-4 text-[#F05A28]" />
+                <MdEdit className="h-4 w-4 text-[var(--accent)]" />
                 Edit Floor
               </button>
               <button

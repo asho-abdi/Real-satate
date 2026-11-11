@@ -79,13 +79,13 @@ export default function StatementModal({ open, onClose, party }) {
       title="Customer statement"
       footer={
         <div className="flex flex-wrap justify-end gap-2">
-          <Button variant="secondary" className="h-11 px-4" onClick={() => window.print()}>
+          <Button variant="secondary" onClick={() => window.print()}>
             Print
           </Button>
-          <Button variant="secondary" className="h-11 px-4" onClick={downloadPdf}>
+          <Button variant="secondary" onClick={downloadPdf}>
             Download PDF
           </Button>
-          <Button className="h-11 px-4" onClick={share}>
+          <Button onClick={share}>
             Share
           </Button>
         </div>

@@ -389,10 +389,10 @@ export default function CommercialRentals({ usage = 'SHOP' }) {
             type="button"
             onClick={() => setTab(t.id)}
             className={cn(
-              'h-12 rounded-xl px-5 text-base font-medium transition',
+              'h-10 rounded-lg px-4 text-sm font-semibold transition-colors',
               tab === t.id
-                ? 'bg-[var(--primary)] text-white'
-                : 'bg-[var(--surface)] text-[var(--text-muted)] ring-1 ring-[var(--border)]',
+                ? 'bg-brand-700 text-white dark:bg-brand-400 dark:text-ink-950'
+                : 'bg-[var(--surface)] text-[var(--text-secondary)] shadow-xs ring-1 ring-[var(--border)] hover:text-[var(--text)] hover:ring-[var(--border-strong)]',
             )}
           >
             {t.label}
@@ -535,7 +535,7 @@ export default function CommercialRentals({ usage = 'SHOP' }) {
               </>
             )}
           </div>
-          <Button className="mt-6 h-12 px-8 text-base" onClick={register}>
+          <Button className="mt-6 px-8" onClick={register}>
             {form.dealType === 'SALE' ? 'Record Sale' : copy.saveRental}
           </Button>
         </Card>
@@ -589,7 +589,7 @@ export default function CommercialRentals({ usage = 'SHOP' }) {
                       setFilterBuildingId('');
                       setFilterFloorId('');
                     }}
-                    className="h-11 rounded-xl border border-[var(--border)] px-4 text-sm text-[var(--text-muted)] hover:bg-[var(--surface-2)]"
+                    className="h-10 rounded-xl border border-[var(--border)] px-4 text-sm text-[var(--text-muted)] hover:bg-[var(--surface-2)]"
                   >
                     Clear filters
                   </button>
@@ -692,10 +692,10 @@ export default function CommercialRentals({ usage = 'SHOP' }) {
         title="Edit Business"
         footer={
           <div className="flex justify-end gap-2">
-            <Button variant="secondary" className="h-12 px-5" onClick={() => setEditModal(null)} disabled={savingEdit}>
+            <Button variant="secondary" onClick={() => setEditModal(null)} disabled={savingEdit}>
               Cancel
             </Button>
-            <Button className="h-12 px-5" onClick={saveEdit} disabled={savingEdit}>
+            <Button onClick={saveEdit} disabled={savingEdit}>
               {savingEdit ? 'Saving…' : 'Save Changes'}
             </Button>
           </div>
@@ -749,7 +749,7 @@ export default function CommercialRentals({ usage = 'SHOP' }) {
           <div className="flex justify-end gap-2">
             <Button
               variant="secondary"
-              className="h-12 px-5"
+
               onClick={() => setTermModal(null)}
               disabled={terminating}
             >
@@ -759,7 +759,7 @@ export default function CommercialRentals({ usage = 'SHOP' }) {
               type="button"
               disabled={terminating}
               onClick={confirmTerminate}
-              className="h-12 rounded-xl bg-rose-600 px-6 text-base font-medium text-white transition hover:bg-rose-700 disabled:opacity-60"
+              className="h-10 rounded-xl bg-rose-600 px-6 text-base font-medium text-white transition hover:bg-rose-700 disabled:opacity-60"
             >
               {terminating ? 'Terminating…' : 'Confirm Termination'}
             </button>
@@ -936,10 +936,10 @@ function SoldShopsPanel({ sales, onRefresh, emptyMessage, kind = 'Shop' }) {
                       Open profile
                     </Link>
                   ) : null}
-                  <Button variant="secondary" className="h-10 px-4 text-sm" onClick={() => openSalePay(s)}>
+                  <Button variant="secondary" onClick={() => openSalePay(s)}>
                     Sale payment
                   </Button>
-                  <Button className="h-10 px-4 text-sm" onClick={() => openMaint(s)}>
+                  <Button onClick={() => openMaint(s)}>
                     Monthly charge
                   </Button>
                 </div>

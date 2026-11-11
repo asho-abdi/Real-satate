@@ -2,7 +2,7 @@ import { useForm } from 'react-hook-form';
 import toast from 'react-hot-toast';
 import PageHeader from '../../components/ui/PageHeader.jsx';
 import Card from '../../components/ui/Card.jsx';
-import Input from '../../components/ui/Input.jsx';
+import PasswordInput from '../../components/ui/PasswordInput.jsx';
 import Button from '../../components/ui/Button.jsx';
 import { authService } from '../../services/authService.js';
 
@@ -44,18 +44,16 @@ export default function ChangePassword() {
         breadcrumbs={[{ label: 'Account' }, { label: 'Change Password' }]}
       />
 
-      <Card className="max-w-lg" title="Security">
+      <Card className="max-w-lg" title="Security" description="Use at least 8 characters. You will stay signed in on this device.">
         <form className="space-y-4" onSubmit={handleSubmit(onSubmit)}>
-          <Input
+          <PasswordInput
             label="Current password"
-            type="password"
             autoComplete="current-password"
             error={errors.currentPassword?.message}
             {...register('currentPassword', { required: 'Current password is required' })}
           />
-          <Input
+          <PasswordInput
             label="New password"
-            type="password"
             autoComplete="new-password"
             error={errors.newPassword?.message}
             {...register('newPassword', {
@@ -63,9 +61,8 @@ export default function ChangePassword() {
               minLength: { value: 8, message: 'At least 8 characters' },
             })}
           />
-          <Input
+          <PasswordInput
             label="Confirm new password"
-            type="password"
             autoComplete="new-password"
             error={errors.confirmPassword?.message}
             {...register('confirmPassword', {
@@ -73,9 +70,11 @@ export default function ChangePassword() {
               validate: (value) => value === newPassword || 'Passwords do not match',
             })}
           />
-          <Button type="submit" className="h-12 px-6" loading={isSubmitting}>
-            Save password
-          </Button>
+          <div className="flex justify-end border-t border-[var(--border)] pt-5">
+            <Button type="submit" loading={isSubmitting}>
+              Update password
+            </Button>
+          </div>
         </form>
       </Card>
     </div>

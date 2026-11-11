@@ -293,10 +293,10 @@ export default function Apartments() {
             type="button"
             onClick={() => setTab(t.id)}
             className={cn(
-              'h-12 rounded-xl px-5 text-base font-medium transition',
+              'h-10 rounded-lg px-4 text-sm font-semibold transition-colors',
               tab === t.id
                 ? 'bg-brand-700 text-white dark:bg-brand-400 dark:text-ink-950'
-                : 'bg-[var(--surface)] text-[var(--text-muted)] ring-1 ring-[var(--border)]',
+                : 'bg-[var(--surface)] text-[var(--text-secondary)] shadow-xs ring-1 ring-[var(--border)] hover:text-[var(--text)] hover:ring-[var(--border-strong)]',
             )}
           >
             {t.label}
@@ -418,7 +418,7 @@ export default function Apartments() {
               onChange={(e) => setForm({ ...form, leaseStart: e.target.value })}
             />
           </div>
-          <Button className="mt-6 h-12 px-8 text-base" onClick={register}>
+          <Button className="mt-6 px-8" onClick={register}>
             Save Tenant
           </Button>
         </Card>
@@ -470,7 +470,7 @@ export default function Apartments() {
                       setFilterBuildingId('');
                       setFilterFloorId('');
                     }}
-                    className="h-11 rounded-xl border border-[var(--border)] px-4 text-sm text-[var(--text-muted)] hover:bg-[var(--surface-2)]"
+                    className="h-10 rounded-xl border border-[var(--border)] px-4 text-sm text-[var(--text-muted)] hover:bg-[var(--surface-2)]"
                   >
                     Clear filters
                   </button>
@@ -580,10 +580,10 @@ export default function Apartments() {
         title="Edit Tenant"
         footer={
           <div className="flex justify-end gap-2">
-            <Button variant="secondary" className="h-12 px-5" onClick={() => setEditModal(null)} disabled={savingEdit}>
+            <Button variant="secondary" onClick={() => setEditModal(null)} disabled={savingEdit}>
               Cancel
             </Button>
-            <Button className="h-12 px-5" onClick={saveEdit} disabled={savingEdit}>
+            <Button onClick={saveEdit} disabled={savingEdit}>
               {savingEdit ? 'Saving…' : 'Save Changes'}
             </Button>
           </div>
@@ -642,7 +642,7 @@ export default function Apartments() {
           <div className="flex justify-end gap-2">
             <Button
               variant="secondary"
-              className="h-12 px-5"
+
               onClick={() => setTermModal(null)}
               disabled={terminating}
             >
@@ -652,7 +652,7 @@ export default function Apartments() {
               type="button"
               disabled={terminating}
               onClick={confirmTerminate}
-              className="h-12 rounded-xl bg-rose-600 px-6 text-base font-medium text-white transition hover:bg-rose-700 disabled:opacity-60"
+              className="h-10 rounded-xl bg-rose-600 px-6 text-base font-medium text-white transition hover:bg-rose-700 disabled:opacity-60"
             >
               {terminating ? 'Terminating…' : 'Confirm Termination'}
             </button>

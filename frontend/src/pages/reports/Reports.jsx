@@ -238,7 +238,7 @@ export default function Reports() {
           <div className="flex flex-wrap gap-2 print:hidden">
             <Button
               variant="secondary"
-              className="h-11 px-4"
+
               onClick={() => window.print()}
               disabled={!report}
             >
@@ -246,7 +246,7 @@ export default function Reports() {
             </Button>
             <Button
               variant="secondary"
-              className="h-11 px-4"
+
               onClick={downloadCsv}
               disabled={!report}
             >
@@ -254,14 +254,14 @@ export default function Reports() {
             </Button>
             <Button
               variant="secondary"
-              className="h-11 px-4"
+
               onClick={() => downloadFile('xlsx')}
               disabled={!report || exporting}
             >
               Excel
             </Button>
             <Button
-              className="h-11 px-4"
+
               onClick={() => downloadFile('pdf')}
               disabled={!report || exporting}
             >
@@ -347,7 +347,7 @@ export default function Reports() {
         </div>
 
         {period === 'custom' ? (
-          <Button className="mt-4 h-11 px-5" onClick={loadReport}>
+          <Button className="mt-4" onClick={loadReport}>
             Generate custom report
           </Button>
         ) : null}

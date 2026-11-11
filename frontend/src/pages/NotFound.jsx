@@ -1,41 +1,47 @@
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { MdHome } from 'react-icons/md';
-import { APP_NAME } from '../utils/constants.js';
+import { MdArrowBack, MdHome } from 'react-icons/md';
+import Logo from '../components/brand/Logo.jsx';
 
 export default function NotFound() {
+  const navigate = useNavigate();
   return (
-    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[var(--bg)] px-4">
-      <div
-        className="pointer-events-none absolute inset-0 opacity-70"
-        style={{
-          background:
-            'radial-gradient(ellipse 80% 50% at 50% -20%, color-mix(in oklab, var(--accent) 28%, transparent), transparent), radial-gradient(circle at 80% 80%, color-mix(in oklab, #94a3b8 18%, transparent), transparent)',
-        }}
-      />
-      <motion.div
-        initial={{ opacity: 0, y: 18 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4 }}
-        className="relative z-10 max-w-lg text-center"
-      >
-        <p className="text-sm font-semibold uppercase tracking-[0.2em] text-brand-700 dark:text-brand-300">
-          {APP_NAME}
-        </p>
-        <h1 className="page-title mt-3 text-7xl text-[var(--text)] md:text-8xl">404</h1>
-        <p className="mt-4 text-lg font-medium text-[var(--text)]">Page not found</p>
-        <p className="mt-2 text-sm text-[var(--text-muted)]">
-          The route you requested is not part of this REMS workspace.
-        </p>
-        <div className="mt-8 flex justify-center">
-          <Link
-            to="/dashboard"
-            className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-brand-700 px-4 text-sm font-medium text-white transition hover:bg-brand-800 dark:bg-brand-400 dark:text-ink-950 dark:hover:bg-brand-300"
-          >
-            <MdHome className="h-4 w-4" /> Back to home
-          </Link>
-        </div>
-      </motion.div>
+    <div className="flex min-h-screen flex-col bg-[var(--bg)]">
+      <header className="px-6 py-6 sm:px-10">
+        <Link to="/dashboard" aria-label="RJK Realty home">
+          <Logo className="h-10 w-auto" />
+        </Link>
+      </header>
+      <main className="flex flex-1 items-center justify-center px-6 pb-20">
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.35 }}
+          className="max-w-md text-center"
+        >
+          <p className="eyebrow !text-[var(--accent)]">Error 404</p>
+          <h1 className="page-title mt-3 text-[40px] leading-tight sm:text-[48px]">Page not found</h1>
+          <p className="mt-3 text-[15px] leading-relaxed text-[var(--text-muted)]">
+            The page you&apos;re looking for doesn&apos;t exist or may have moved. Let&apos;s get you back to your
+            workspace.
+          </p>
+          <div className="mt-8 flex flex-col justify-center gap-2 sm:flex-row">
+            <button
+              type="button"
+              onClick={() => navigate(-1)}
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-4 text-sm font-semibold text-[var(--text)] shadow-xs hover:bg-[var(--surface-2)]"
+            >
+              <MdArrowBack className="h-4 w-4" /> Go back
+            </button>
+            <Link
+              to="/dashboard"
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[var(--gold)] px-4 text-sm font-semibold text-[var(--on-gold)] shadow-xs hover:bg-[var(--gold-hover)]"
+            >
+              <MdHome className="h-4 w-4" /> Back to dashboard
+            </Link>
+          </div>
+        </motion.div>
+      </main>
     </div>
   );
 }

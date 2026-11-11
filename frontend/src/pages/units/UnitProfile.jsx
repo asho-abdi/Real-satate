@@ -465,34 +465,34 @@ export default function UnitProfile() {
         actions={
           <div className="flex flex-wrap gap-2">
             {actions.includes('RECORD_PAYMENT') ? (
-              <Button className="h-11 px-4" onClick={openPay}>Record Payment</Button>
+              <Button onClick={openPay}>Record Payment</Button>
             ) : null}
             {actions.includes('ADD_CHARGE') ? (
-              <Button variant="secondary" className="h-11 px-4" onClick={openCharge}>Add Charge</Button>
+              <Button variant="secondary" onClick={openCharge}>Add Charge</Button>
             ) : null}
             {actions.includes('CREATE_LEASE') && unit.usage === 'SHOP' ? (
-              <Button className="h-11 px-4" onClick={openCreateLease}>Create Lease</Button>
+              <Button onClick={openCreateLease}>Create Lease</Button>
             ) : null}
             {actions.includes('RENEW_LEASE') ? (
-              <Button variant="secondary" className="h-11 px-4" onClick={openRenew}>Renew Lease</Button>
+              <Button variant="secondary" onClick={openRenew}>Renew Lease</Button>
             ) : null}
             {actions.includes('TERMINATE_LEASE') ? (
-              <Button variant="secondary" className="h-11 px-4" onClick={() => setTermOpen(true)}>
+              <Button variant="secondary" onClick={() => setTermOpen(true)}>
                 Terminate Lease
               </Button>
             ) : null}
             {actions.includes('UPLOAD_DOCUMENT') ? (
-              <Button variant="secondary" className="h-11 px-4" onClick={() => setDocOpen(true)}>
+              <Button variant="secondary" onClick={() => setDocOpen(true)}>
                 Upload Document
               </Button>
             ) : null}
             {actions.includes('CREATE_BOOKING') ? (
               <Link to="/bookings?tab=new">
-                <Button variant="secondary" className="h-11 px-4">New Booking</Button>
+                <Button variant="secondary">New Booking</Button>
               </Link>
             ) : null}
             <Link to={`/buildings/${unit.building?.id}`}>
-              <Button variant="secondary" className="h-11 px-4">Edit in Building</Button>
+              <Button variant="secondary">Edit in Building</Button>
             </Link>
           </div>
         }
@@ -546,10 +546,10 @@ export default function UnitProfile() {
             type="button"
             onClick={() => setTab(t.id)}
             className={cn(
-              'h-10 rounded-xl px-4 text-sm font-medium transition',
+              'h-10 rounded-lg px-4 text-sm font-semibold transition-colors',
               tab === t.id
                 ? 'bg-brand-700 text-white dark:bg-brand-400 dark:text-ink-950'
-                : 'bg-[var(--surface)] text-[var(--text-muted)] ring-1 ring-[var(--border)]',
+                : 'bg-[var(--surface)] text-[var(--text-secondary)] shadow-xs ring-1 ring-[var(--border)] hover:text-[var(--text)] hover:ring-[var(--border-strong)]',
             )}
           >
             {t.label}
@@ -561,7 +561,7 @@ export default function UnitProfile() {
         <div className="grid gap-4 lg:grid-cols-3">
           <Card title="Photos" className="lg:col-span-3">
             <UnitImageGallery unitId={unit.id} images={unit.images || []} readOnly onChange={load} />
-            <Button variant="secondary" className="mt-3 h-10 px-4 text-sm" onClick={() => navigate(`/buildings/${unit.building?.id}`)}>
+            <Button variant="secondary" className="mt-3" onClick={() => navigate(`/buildings/${unit.building?.id}`)}>
               Manage photos
             </Button>
           </Card>
@@ -627,7 +627,7 @@ export default function UnitProfile() {
             <Card>
               <p className="text-sm text-[var(--text-muted)]">No active lease on this unit.</p>
               {actions.includes('CREATE_LEASE') && unit.usage === 'SHOP' ? (
-                <Button className="mt-3 h-11 px-4" onClick={openCreateLease}>Create Lease</Button>
+                <Button className="mt-3" onClick={openCreateLease}>Create Lease</Button>
               ) : null}
             </Card>
           )}
@@ -709,7 +709,7 @@ export default function UnitProfile() {
             title="Monthly charges"
             action={
               actions.includes('ADD_CHARGE') ? (
-                <Button className="h-9 px-3 text-sm" onClick={openCharge}>Add monthly charge</Button>
+                <Button onClick={openCharge}>Add monthly charge</Button>
               ) : null
             }
           >
@@ -788,7 +788,7 @@ export default function UnitProfile() {
           title="Payment history"
           action={
             actions.includes('RECORD_PAYMENT') ? (
-              <Button className="h-9 px-3 text-sm" onClick={openPay}>Record Payment</Button>
+              <Button onClick={openPay}>Record Payment</Button>
             ) : null
           }
         >
@@ -856,7 +856,7 @@ export default function UnitProfile() {
           title="Other charges"
           action={
             actions.includes('ADD_CHARGE') ? (
-              <Button className="h-9 px-3 text-sm" onClick={openCharge}>Add Charge</Button>
+              <Button onClick={openCharge}>Add Charge</Button>
             ) : null
           }
         >
@@ -1020,7 +1020,7 @@ export default function UnitProfile() {
       {tab === 'documents' ? (
         <Card
           title="Documents"
-          action={<Button className="h-9 px-3 text-sm" onClick={() => setDocOpen(true)}>Upload</Button>}
+          action={<Button onClick={() => setDocOpen(true)}>Upload</Button>}
         >
           {(profile.documents || []).length === 0 ? (
             <p className="text-sm text-[var(--text-muted)]">No documents attached yet.</p>

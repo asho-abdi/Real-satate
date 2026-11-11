@@ -11,6 +11,7 @@ export const NAV_LAYOUTS = [
 export function LayoutProvider({ children }) {
   // Sidebar is the default chrome for the property-management UI.
   const [navLayout, setNavLayout] = useLocalStorage('rjk-nav-layout-v3', 'sidebar');
+  const [sidebarCollapsed, setSidebarCollapsed] = useLocalStorage('rjk-sidebar-collapsed', false);
 
   const value = useMemo(
     () => ({
@@ -18,8 +19,11 @@ export function LayoutProvider({ children }) {
       setNavLayout: (next) => setNavLayout(next === 'sidebar' ? 'sidebar' : 'topbar'),
       isSidebar: navLayout === 'sidebar',
       isTopbar: navLayout !== 'sidebar',
+      sidebarCollapsed: Boolean(sidebarCollapsed),
+      setSidebarCollapsed,
+      toggleSidebar: () => setSidebarCollapsed(!sidebarCollapsed),
     }),
-    [navLayout, setNavLayout],
+    [navLayout, setNavLayout, sidebarCollapsed, setSidebarCollapsed],
   );
 
   return <LayoutContext.Provider value={value}>{children}</LayoutContext.Provider>;

@@ -67,7 +67,7 @@ export default function ActionMenu({ items = [], align = 'right' }) {
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={toggle}
-        className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-[var(--border)] bg-[var(--surface)] text-[var(--text)] hover:bg-[var(--surface-2)]"
+        className={cn('inline-flex h-8 w-8 items-center justify-center rounded-lg border text-[var(--text-muted)] transition-colors hover:border-[var(--border)] hover:bg-[var(--surface-2)] hover:text-[var(--text)]', open ? 'border-[var(--border)] bg-[var(--surface-2)] text-[var(--text)]' : 'border-transparent')}
       >
         <MdMoreVert className="text-lg" />
       </button>
@@ -78,7 +78,7 @@ export default function ActionMenu({ items = [], align = 'right' }) {
               ref={menuRef}
               role="menu"
               style={{ top: coords.top, left: coords.left }}
-              className="fixed z-[80] w-[220px] overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface)] py-1 shadow-2xl"
+              className="animate-fade-in fixed z-[80] w-[220px] overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface)] p-1 shadow-[var(--shadow-pop)]"
             >
               {visible.map((item) => (
                 <button
@@ -91,11 +91,11 @@ export default function ActionMenu({ items = [], align = 'right' }) {
                     item.onClick?.();
                   }}
                   className={cn(
-                    'flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm transition hover:bg-[var(--surface-2)] disabled:cursor-not-allowed disabled:opacity-50',
-                    item.danger ? 'text-rose-600 dark:text-rose-400' : 'text-[var(--text)]',
+                    'flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13.5px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50',
+                    item.danger ? 'text-rose-600 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-500/10' : 'text-[var(--text)] hover:bg-[var(--surface-2)]',
                   )}
                 >
-                  {item.icon ? <span className="text-base opacity-80">{item.icon}</span> : null}
+                  {item.icon ? <span className="text-base opacity-70">{item.icon}</span> : null}
                   <span>{item.label}</span>
                 </button>
               ))}

@@ -20,7 +20,7 @@ export default function PropertySearch({ value, onChange, onSubmit, locations = 
             value={value.q || ''}
             onChange={set('q')}
             placeholder="Search by name or unit"
-            className="h-12 w-full rounded-2xl border border-[var(--border)] bg-[var(--background)] px-4 text-sm outline-none focus:border-[var(--primary)]"
+            className="h-10 w-full rounded-2xl border border-[var(--border)] bg-[var(--background)] px-4 text-sm outline-none focus:border-[var(--primary)]"
           />
         </label>
         <label className="block">
@@ -30,7 +30,7 @@ export default function PropertySearch({ value, onChange, onSubmit, locations = 
           <select
             value={value.location || ''}
             onChange={set('location')}
-            className="h-12 w-full rounded-2xl border border-[var(--border)] bg-[var(--background)] px-3 text-sm outline-none focus:border-[var(--primary)]"
+            className="h-10 w-full rounded-2xl border border-[var(--border)] bg-[var(--background)] px-3 text-sm outline-none focus:border-[var(--primary)]"
           >
             <option value="">All locations</option>
             {locations.map((location) => (
@@ -47,7 +47,7 @@ export default function PropertySearch({ value, onChange, onSubmit, locations = 
           <select
             value={value.type || ''}
             onChange={set('type')}
-            className="h-12 w-full rounded-2xl border border-[var(--border)] bg-[var(--background)] px-3 text-sm outline-none focus:border-[var(--primary)]"
+            className="h-10 w-full rounded-2xl border border-[var(--border)] bg-[var(--background)] px-3 text-sm outline-none focus:border-[var(--primary)]"
           >
             {CATEGORY_FILTERS.map((option) => (
               <option key={option.value || 'all'} value={option.value}>
@@ -63,7 +63,7 @@ export default function PropertySearch({ value, onChange, onSubmit, locations = 
           <select
             value={value.status || ''}
             onChange={set('status')}
-            className="h-12 w-full rounded-2xl border border-[var(--border)] bg-[var(--background)] px-3 text-sm outline-none focus:border-[var(--primary)]"
+            className="h-10 w-full rounded-2xl border border-[var(--border)] bg-[var(--background)] px-3 text-sm outline-none focus:border-[var(--primary)]"
           >
             {STATUS_FILTERS.map((option) => (
               <option key={option.value || 'any'} value={option.value}>
@@ -82,7 +82,7 @@ export default function PropertySearch({ value, onChange, onSubmit, locations = 
             value={value.minPrice || ''}
             onChange={set('minPrice')}
             placeholder="0"
-            className="h-12 w-full rounded-2xl border border-[var(--border)] bg-[var(--background)] px-4 text-sm outline-none focus:border-[var(--primary)]"
+            className="h-10 w-full rounded-2xl border border-[var(--border)] bg-[var(--background)] px-4 text-sm outline-none focus:border-[var(--primary)]"
           />
         </label>
         <label className="block">
@@ -95,13 +95,13 @@ export default function PropertySearch({ value, onChange, onSubmit, locations = 
             value={value.maxPrice || ''}
             onChange={set('maxPrice')}
             placeholder="Any"
-            className="h-12 w-full rounded-2xl border border-[var(--border)] bg-[var(--background)] px-4 text-sm outline-none focus:border-[var(--primary)]"
+            className="h-10 w-full rounded-2xl border border-[var(--border)] bg-[var(--background)] px-4 text-sm outline-none focus:border-[var(--primary)]"
           />
         </label>
         <div className="flex items-end xl:col-span-1">
           <button
             type="submit"
-            className="h-12 w-full rounded-2xl bg-[var(--primary)] px-4 text-sm font-semibold text-white transition hover:bg-[var(--primary-dark)]"
+            className="h-10 w-full rounded-2xl bg-[var(--primary)] px-4 text-sm font-semibold text-white transition hover:bg-[var(--primary-dark)]"
           >
             Search
           </button>

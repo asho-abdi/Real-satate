@@ -656,7 +656,7 @@ export default function NewBooking({ onSuccess } = {}) {
               </div>
 
               <Button
-                className="h-11 w-full text-base"
+                className="w-full"
                 onClick={save}
                 disabled={saving || !room}
               >

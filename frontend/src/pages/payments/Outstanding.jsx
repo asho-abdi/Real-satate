@@ -1,3 +1,5 @@
+import EmptyState from '../../components/ui/EmptyState.jsx';
+import { MdTaskAlt as MdTaskAltIcon } from 'react-icons/md';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
@@ -146,7 +148,7 @@ export default function Outstanding() {
             <Spinner />
           </div>
         ) : rows.length === 0 ? (
-          <p className="py-8 text-center text-sm text-[var(--text-muted)]">Nothing outstanding.</p>
+          <EmptyState compact className="border-0" icon={MdTaskAltIcon} title="Nothing outstanding" description="Every rent, charge and guest stay is fully paid." />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[900px] text-left text-sm">
@@ -188,7 +190,7 @@ export default function Outstanding() {
                     </td>
                     <td className="py-3">
                       {r.recordAction === 'UPDATE_PAYMENT' || r.recordAction === 'UPDATE_CHARGE' ? (
-                        <Button variant="secondary" className="h-9 px-3 text-xs" onClick={() => openRecord(r)}>
+                        <Button size="sm" variant="secondary" onClick={() => openRecord(r)}>
                           Record
                         </Button>
                       ) : r.unitId ? (

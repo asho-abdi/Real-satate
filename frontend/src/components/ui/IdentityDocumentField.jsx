@@ -77,7 +77,7 @@ export default function IdentityDocumentField({
         <button
           type="button"
           onClick={() => inputRef.current?.click()}
-          className="h-11 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 text-sm text-[var(--text)] transition hover:bg-[var(--surface-2)]"
+          className="h-10 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 text-sm text-[var(--text)] transition hover:bg-[var(--surface-2)]"
         >
           {displayName ? 'Replace file' : 'Choose file'}
         </button>

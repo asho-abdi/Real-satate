@@ -318,7 +318,7 @@ function renderChart(type, data) {
         <YAxis domain={[60, 100]} tick={{ fill: 'var(--text-muted)', fontSize: 12 }} />
         <Tooltip contentStyle={chartTooltipStyle} formatter={(v) => `${v}%`} />
         <Legend />
-        <Line type="monotone" dataKey="rate" name="Occupancy" stroke="#0f766e" strokeWidth={2} dot={false} />
+        <Line type="monotone" dataKey="rate" name="Occupancy" stroke="#2E6299" strokeWidth={2} dot={false} />
       </LineChart>
     );
   }
@@ -328,8 +328,8 @@ function renderChart(type, data) {
       <AreaChart data={data}>
         <defs>
           <linearGradient id="revReportFill" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#0f766e" stopOpacity={0.35} />
-            <stop offset="100%" stopColor="#0f766e" stopOpacity={0.02} />
+            <stop offset="0%" stopColor="#2E6299" stopOpacity={0.35} />
+            <stop offset="100%" stopColor="#2E6299" stopOpacity={0.02} />
           </linearGradient>
         </defs>
         <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
@@ -340,9 +340,9 @@ function renderChart(type, data) {
         />
         <Tooltip contentStyle={chartTooltipStyle} formatter={(v) => formatCurrency(v)} />
         <Legend />
-        <Area type="monotone" dataKey="residential" stroke="#0f766e" fill="url(#revReportFill)" strokeWidth={2} />
-        <Area type="monotone" dataKey="commercial" stroke="#94a3b8" fill="transparent" strokeWidth={2} />
-        <Area type="monotone" dataKey="airbnb" stroke="#334155" fill="transparent" strokeWidth={2} />
+        <Area type="monotone" dataKey="residential" stroke="#2E6299" fill="url(#revReportFill)" strokeWidth={2} />
+        <Area type="monotone" dataKey="commercial" stroke="#CF8C00" fill="transparent" strokeWidth={2} />
+        <Area type="monotone" dataKey="airbnb" stroke="#1A9470" fill="transparent" strokeWidth={2} />
       </AreaChart>
     );
   }
@@ -355,8 +355,8 @@ function renderChart(type, data) {
         <YAxis tick={{ fill: 'var(--text-muted)', fontSize: 12 }} />
         <Tooltip contentStyle={chartTooltipStyle} />
         <Legend />
-        <Bar dataKey="occupancy" name="Occupancy %" fill="#0f766e" radius={[6, 6, 0, 0]} />
-        <Bar dataKey="units" name="Units" fill="#94a3b8" radius={[6, 6, 0, 0]} />
+        <Bar dataKey="occupancy" name="Occupancy %" fill="#2E6299" radius={[4, 4, 0, 0]} />
+        <Bar dataKey="units" name="Units" fill="#CF8C00" radius={[4, 4, 0, 0]} />
       </BarChart>
     );
   }
@@ -370,7 +370,7 @@ function renderChart(type, data) {
         contentStyle={chartTooltipStyle}
         formatter={(v) => (type === 'financial' ? formatCurrency(v) : v)}
       />
-      <Bar dataKey="value" fill="#0f766e" radius={[6, 6, 0, 0]} />
+      <Bar dataKey="value" fill="#2E6299" radius={[4, 4, 0, 0]} />
     </BarChart>
   );
 }

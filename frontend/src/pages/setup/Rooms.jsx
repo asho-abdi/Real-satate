@@ -59,18 +59,18 @@ const STATUS_STYLE = {
     barBg: 'bg-emerald-500',
   },
   Rented: {
-    card: 'border-l-4 border-l-sky-500',
+    card: 'border-l-4 border-l-[#2E6299]',
     icon: MdCancel,
-    iconClass: 'text-sky-500',
-    badgeBg: 'bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-200',
-    barBg: 'bg-sky-500',
+    iconClass: 'text-[#2E6299] dark:text-[#5E8FCB]',
+    badgeBg: 'bg-[#eaf0f7] text-[#002b50] dark:bg-[#6b9bd0]/15 dark:text-[#b7cbe2]',
+    barBg: 'bg-[#2E6299]',
   },
   Occupied: {
-    card: 'border-l-4 border-l-sky-500',
+    card: 'border-l-4 border-l-[#2E6299]',
     icon: MdCancel,
-    iconClass: 'text-sky-500',
-    badgeBg: 'bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-200',
-    barBg: 'bg-sky-500',
+    iconClass: 'text-[#2E6299] dark:text-[#5E8FCB]',
+    badgeBg: 'bg-[#eaf0f7] text-[#002b50] dark:bg-[#6b9bd0]/15 dark:text-[#b7cbe2]',
+    barBg: 'bg-[#2E6299]',
   },
   Sold: {
     card: 'border-l-4 border-l-violet-500',
@@ -554,8 +554,8 @@ export default function Rooms() {
           label="Rented"
           value={stats.rented}
           icon={MdCancel}
-          iconClass="text-sky-500"
-          barBg="bg-sky-500"
+          iconClass="text-[#2E6299] dark:text-[#5E8FCB]"
+          barBg="bg-[#2E6299]"
           total={stats.total}
         />
         <StatCard
@@ -661,12 +661,12 @@ export default function Rooms() {
         title={viewPhotosRoom ? `Room ${viewPhotosRoom.roomNumber} · Photos` : 'Photos'}
         footer={
           <div className="flex justify-end gap-2">
-            <Button variant="secondary" className="h-11 px-4" onClick={() => setViewPhotosRoom(null)}>
+            <Button variant="secondary" onClick={() => setViewPhotosRoom(null)}>
               Close
             </Button>
             {viewPhotosRoom ? (
               <Button
-                className="h-11 px-4"
+
                 onClick={() => {
                   const room = viewPhotosRoom;
                   setViewPhotosRoom(null);
@@ -695,10 +695,10 @@ export default function Rooms() {
         title={editRoom ? `Edit unit ${editRoom.roomNumber}` : 'Edit unit'}
         footer={
           <div className="flex justify-end gap-2">
-            <Button variant="secondary" className="h-11 px-4" onClick={() => setEditRoom(null)} disabled={savingRoom}>
+            <Button variant="secondary" onClick={() => setEditRoom(null)} disabled={savingRoom}>
               Cancel
             </Button>
-            <Button className="h-11 px-5" onClick={saveRoom} disabled={savingRoom}>
+            <Button onClick={saveRoom} disabled={savingRoom}>
               {savingRoom ? 'Saving…' : 'Save changes'}
             </Button>
           </div>

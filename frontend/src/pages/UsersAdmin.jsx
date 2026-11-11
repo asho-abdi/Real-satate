@@ -219,7 +219,7 @@ export default function UsersAdmin() {
         title="Users & Access"
         subtitle="Give each person the buildings they manage and the pages they can open."
         actions={
-          <Button className="h-12 px-5" onClick={openCreate}>
+          <Button onClick={openCreate}>
             Add User
           </Button>
         }
@@ -309,10 +309,10 @@ export default function UsersAdmin() {
         title={editing ? 'Edit user access' : 'Add user'}
         footer={
           <div className="flex justify-end gap-2">
-            <Button variant="secondary" className="h-12 px-5" onClick={() => setModalOpen(false)} disabled={saving}>
+            <Button variant="secondary" onClick={() => setModalOpen(false)} disabled={saving}>
               Cancel
             </Button>
-            <Button className="h-12 px-5" onClick={saveUser} disabled={saving}>
+            <Button onClick={saveUser} disabled={saving}>
               {saving ? 'Saving…' : editing ? 'Save access' : 'Create user'}
             </Button>
           </div>
