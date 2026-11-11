@@ -64,4 +64,13 @@ JWT auth (access + refresh), RBAC roles/permissions, full CRUD modules, paginati
 
 ## Roles
 
-`SUPER_ADMIN`, `ADMIN`, `MANAGER`, `AGENT`, `ACCOUNTANT`, `CUSTOMER`
+Seeded runtime roles are defined in `backend/prisma/seed.js` (typically `ADMIN` + building staff). Older README role names may not match production seed — see [docs/SYSTEM_OVERVIEW.md](docs/SYSTEM_OVERVIEW.md).
+
+## Documentation
+
+| Doc | Description |
+|-----|-------------|
+| [docs/SYSTEM_OVERVIEW.md](docs/SYSTEM_OVERVIEW.md) | Current architecture, modules, workflows |
+| [docs/WEAKNESSES_AND_ERRORS.md](docs/WEAKNESSES_AND_ERRORS.md) | Known weaknesses, bugs, security gaps |
+| [SECURITY_REPORT.md](SECURITY_REPORT.md) | Security findings & mitigations |
+| [DEPLOY.md](DEPLOY.md) | Production deploy |

@@ -28,6 +28,12 @@ enum UnitUsage {
   GUEST
 }
 
+/// Commercial Spaces subtype (Shop | Office). Kept in sync with Unit.usage for SHOP/OFFICE.
+enum CommercialType {
+  SHOP
+  OFFICE
+}
+
 /// How a building/unit is offered on the market
 enum TransactionType {
   FOR_SALE
@@ -233,6 +239,11 @@ model User {
   resetPasswordToken   String?
   resetPasswordExpires DateTime?
   lastLoginAt          DateTime?
+  /// Admin TOTP MFA (encrypted secret). Disabled by default — enrollment is opt-in.
+  mfaEnabled           Boolean   @default(false)
+  mfaSecretEnc         String?
+  mfaRecoveryHashes    Json?
+  mfaEnrolledAt        DateTime?
   createdAt            DateTime  @default(now())
   updatedAt            DateTime  @updatedAt
 
@@ -319,6 +330,8 @@ model Unit {
   roomNumber         String
   unitType           UnitType
   usage              UnitUsage
+  /// Shop or Office when this unit is a commercial space (null for apartment/guest)
+  commercialType     CommercialType?
   transactionType    TransactionType @default(FOR_RENT)
   /// Shop floor area in square meters
   areaSqm            Decimal?        @db.Decimal(12, 2)
@@ -357,6 +370,7 @@ model Unit {
   @@index([floorId])
   @@index([status])
   @@index([usage])
+  @@index([commercialType])
   @@index([transactionType])
 }
 
@@ -989,6 +1003,7 @@ model FinanceDocument {
   @@index([unitId])
   @@index([createdAt])
   @@index([sourceType, sourceId])
+  /// Partial unique enforced in migration 6 (WHERE sourceType/sourceId NOT NULL)
 }
 
 /// Audit / activity timeline for unit profiles (and related entities)

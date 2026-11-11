@@ -18,12 +18,14 @@
     "seed": "node prisma/seed.js",
     "db:setup": "prisma generate && prisma db push && node prisma/seed.js",
     "db:deploy": "prisma generate && prisma migrate deploy",
-    "security:check": "node scripts/security-checks.mjs"
+    "security:check": "node scripts/security-checks.mjs",
+    "test": "node --test tests/**/*.test.js"
   },
   "dependencies": {
     "@prisma/client": "^6.13.0",
     "bcryptjs": "^3.0.2",
     "compression": "^1.8.1",
+    "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "dotenv": "^17.2.1",
     "exceljs": "^4.4.0",
@@ -35,6 +37,7 @@
     "morgan": "^1.10.1",
     "multer": "^2.0.2",
     "nodemailer": "^7.0.5",
+    "otplib": "^13.6.0",
     "pdfkit": "^0.17.1",
     "swagger-jsdoc": "^6.3.0",
     "swagger-ui-express": "^5.0.1",

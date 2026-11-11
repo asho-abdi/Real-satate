@@ -16,13 +16,14 @@
  */
 
 import { useMemo, useState } from 'react';
-import { MdAdd, MdCheck, MdCreditCard, MdPrint, MdVisibility } from 'react-icons/md';
+import { MdAdd, MdCheck, MdCreditCard, MdVisibility } from 'react-icons/md';
 import { AnimatePresence, motion } from 'framer-motion';
 import { MdClose } from 'react-icons/md';
 import Input from '../ui/Input.jsx';
 import Select from '../ui/Select.jsx';
 import Button from '../ui/Button.jsx';
 import PaymentMethodFields from '../payments/PaymentMethodFields.jsx';
+import FinanceDocActions from '../finance/FinanceDocActions.jsx';
 import { formatCurrency, formatDate, cn } from '../../utils/format.js';
 import { rentalApi } from '../../services/rentalApi.js';
 import toast from 'react-hot-toast';
@@ -624,15 +625,37 @@ export default function PaymentCalendar({
         onClose={() => setViewModal(null)}
         title="Payment Receipt"
         footer={
-          <div className="flex justify-between">
-            <button
-              type="button"
-              onClick={() => window.print()}
-              className="flex items-center gap-1.5 rounded-xl border border-[var(--border)] px-4 py-2 text-sm font-medium text-[var(--text-muted)] transition hover:bg-[var(--surface-2)]"
-            >
-              <MdPrint className="h-4 w-4" />
-              Print Receipt
-            </button>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <FinanceDocActions
+              compact
+              label="Receipt"
+              onPayload={() => {
+                const row = viewModal?.row;
+                if (!row) return null;
+                return {
+                  type: 'RECEIPT',
+                  customerName: tenantName || 'Customer',
+                  unitId: null,
+                  description: `Rent payment · ${row.label}`,
+                  billingPeriod: row.label,
+                  amount: Number(row.monthlyDue) || 0,
+                  previousBalance: 0,
+                  currentCharges: Number(row.monthlyDue) || 0,
+                  amountPaid: Number(row.paid) || 0,
+                  remainingBalance: Number(row.outstanding) || 0,
+                  method: row.record?.method || null,
+                  paymentDate: row.record?.paymentDate || null,
+                  sourceType: 'MONTHLY_PAYMENT',
+                  sourceId: row.record?.id || null,
+                  buildingName: building || null,
+                  floorName: floor || null,
+                  unitNumber: unitNumber || null,
+                  notes: row.record?.notes || null,
+                  tenantId: tenantId || null,
+                  businessId: businessId || null,
+                };
+              }}
+            />
             <button
               type="button"
               onClick={() => setViewModal(null)}

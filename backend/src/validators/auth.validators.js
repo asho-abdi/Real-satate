@@ -12,14 +12,17 @@ function strongPassword(field = 'password') {
 export const loginValidators = [
   body('email').isEmail().withMessage('Valid email is required').normalizeEmail(),
   body('password').notEmpty().withMessage('Password is required'),
+  body('mfaCode').optional({ nullable: true }).isString(),
+  body('recoveryCode').optional({ nullable: true }).isString(),
 ];
 
+// refreshToken may arrive via HttpOnly cookie during dual-mode auth migration
 export const logoutValidators = [
-  body('refreshToken').notEmpty().withMessage('refreshToken is required'),
+  body('refreshToken').optional({ nullable: true }).isString(),
 ];
 
 export const refreshValidators = [
-  body('refreshToken').notEmpty().withMessage('refreshToken is required'),
+  body('refreshToken').optional({ nullable: true }).isString(),
 ];
 
 export const forgotPasswordValidators = [

@@ -8,6 +8,8 @@ const api = axios.create({
     'Content-Type': 'application/json',
   },
   timeout: 15000,
+  // Dual-mode: send HttpOnly cookies when present (same-origin / CORS credentials)
+  withCredentials: true,
 });
 
 let refreshPromise = null;
@@ -34,34 +36,37 @@ function clearSessionAndRedirect() {
 
 async function refreshAccessToken() {
   const session = readSession();
-  if (!session?.refreshToken) {
-    throw new Error('No refresh token');
-  }
-
+  // Cookie-only sessions may have no local refreshToken; backend reads rjk_refresh cookie
   const res = await axios.post(
     `${api.defaults.baseURL}/auth/refresh`,
-    { refreshToken: session.refreshToken },
-    { headers: { 'Content-Type': 'application/json' }, timeout: 15000 },
+    session?.refreshToken ? { refreshToken: session.refreshToken } : {},
+    {
+      headers: { 'Content-Type': 'application/json' },
+      timeout: 15000,
+      withCredentials: true,
+    },
   );
   const data = res.data?.data ?? res.data;
+  if (!data?.accessToken) throw new Error('No access token');
   const next = {
-    ...session,
-    id: data.user?.id || session.id,
-    name: data.user?.name || session.name,
-    email: data.user?.email || session.email,
-    role: data.user?.role || data.user?.roleName || session.role,
+    ...(session || {}),
+    id: data.user?.id || session?.id,
+    name: data.user?.name || session?.name,
+    email: data.user?.email || session?.email,
+    role: data.user?.role || data.user?.roleName || session?.role,
     isAdmin: Boolean(
-      data.user?.isAdmin || data.user?.role === 'ADMIN' || session.isAdmin,
+      data.user?.isAdmin || data.user?.role === 'ADMIN' || session?.isAdmin,
     ),
-    permissions: data.user?.permissions || session.permissions || [],
+    permissions: data.user?.permissions || session?.permissions || [],
     allowedPages: Array.isArray(data.user?.allowedPages)
       ? data.user.allowedPages
-      : session.allowedPages || [],
+      : session?.allowedPages || [],
     buildingIds:
       data.user?.buildingIds === null
         ? null
-        : data.user?.buildingIds || session.buildingIds || [],
-    buildings: data.user?.buildings || session.buildings || [],
+        : data.user?.buildingIds || session?.buildingIds || [],
+    buildings: data.user?.buildings || session?.buildings || [],
+    mfaEnabled: Boolean(data.user?.mfaEnabled ?? session?.mfaEnabled),
     token: data.accessToken,
     refreshToken: data.refreshToken,
   };
@@ -72,6 +77,7 @@ async function refreshAccessToken() {
 api.interceptors.request.use(
   (config) => {
     const auth = readSession();
+    // Dual-mode: still send Bearer when present (dev cross-origin); cookies also sent
     if (auth?.token && !String(auth.token).startsWith('mock-')) {
       config.headers.Authorization = `Bearer ${auth.token}`;
     }
@@ -134,6 +140,7 @@ export function normalizeApiError(error) {
       message: String(message),
       status,
       data,
+      code: data?.error?.code || data?.code || null,
       original: error,
     };
   }
@@ -142,6 +149,7 @@ export function normalizeApiError(error) {
     message: error instanceof Error ? error.message : 'An unexpected error occurred',
     status: null,
     data: null,
+    code: null,
     original: error,
   };
 }

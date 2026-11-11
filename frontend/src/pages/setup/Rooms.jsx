@@ -17,12 +17,16 @@ import Badge from '../../components/ui/Badge.jsx';
 import Modal from '../../components/ui/Modal.jsx';
 import Spinner from '../../components/ui/Spinner.jsx';
 import UnitImageGallery from '../../components/ui/UnitImageGallery.jsx';
-import { UNIT_STATUSES, UNIT_USAGES, UNIT_TYPES } from '../../utils/constants.js';
+import { UNIT_STATUSES, UNIT_TYPES } from '../../utils/constants.js';
 import { formatCurrency, cn } from '../../utils/format.js';
 import { usageToApi, usageAfterUnitTypeChange } from '../../utils/labels.js';
 import { rentalApi } from '../../services/rentalApi.js';
 import GuestPricingFields, { guestPricingError } from '../../components/units/GuestPricingFields.jsx';
-import { FormSection, LeasePricingFields } from '../../components/units/FlatFormLayout.jsx';
+import {
+  FormSection,
+  LeasePricingFields,
+  UsageChoiceCards,
+} from '../../components/units/FlatFormLayout.jsx';
 import api from '../../services/api.js';
 
 function RoomThumb({ url }) {
@@ -474,10 +478,6 @@ export default function Rooms() {
   const saveRoom = async () => {
     if (!editRoom) return;
     const usageApi = usageToApi(roomForm.usage);
-    if ((usageApi === 'SHOP' || usageApi === 'OFFICE') && !roomForm.areaSqm) {
-      toast.error('Floor area (m²) is required for shops and offices');
-      return;
-    }
     if (usageApi === 'APARTMENT' && (!roomForm.roomsCount || !roomForm.bathroomsCount)) {
       toast.error('Apartment rooms and bathrooms are required');
       return;
@@ -511,7 +511,9 @@ export default function Rooms() {
         discount: Number(roomForm.discount) || 0,
         status: roomForm.status,
         areaSqm:
-          usageApi === 'SHOP' || usageApi === 'OFFICE' ? Number(roomForm.areaSqm) : null,
+          (usageApi === 'SHOP' || usageApi === 'OFFICE') && roomForm.areaSqm !== ''
+            ? Number(roomForm.areaSqm)
+            : null,
         roomsCount: usageApi === 'APARTMENT' ? Number(roomForm.roomsCount) : null,
         bathroomsCount: usageApi === 'APARTMENT' ? Number(roomForm.bathroomsCount) : null,
       });
@@ -705,17 +707,33 @@ export default function Rooms() {
         }
       >
         <div className="space-y-5">
-          <FormSection title="Basics" description="Unit number and layout. Usage is set when the unit is created.">
+          <FormSection
+            title="Basics"
+            description="Unit number, usage, and layout. You can change usage if it was set wrongly (e.g. Residential → Guest / Airbnb)."
+          >
+            <div className="mb-4">
+              <UsageChoiceCards
+                value={roomForm.usage}
+                shopOnly={roomForm.unitType === 'Commercial Shop'}
+                onChange={(usage) =>
+                  setRoomForm({
+                    ...roomForm,
+                    usage,
+                    areaSqm: usage === 'shop' || usage === 'office' ? roomForm.areaSqm : '',
+                    roomsCount: usage === 'apartment' ? roomForm.roomsCount : '',
+                    bathroomsCount: usage === 'apartment' ? roomForm.bathroomsCount : '',
+                    dailyRate: usage === 'guest' ? roomForm.dailyRate : '',
+                    weeklyRent: usage === 'guest' ? roomForm.weeklyRent : '',
+                    salePrice: usage === 'shop' || usage === 'office' ? roomForm.salePrice : '',
+                  })
+                }
+              />
+            </div>
             <div className="grid gap-4 sm:grid-cols-2">
               <Input
                 label="Unit number"
                 value={roomForm.roomNumber}
                 onChange={(e) => setRoomForm({ ...roomForm, roomNumber: e.target.value })}
-              />
-              <Input
-                label="How this unit is used"
-                value={UNIT_USAGES.find((u) => u.value === roomForm.usage)?.label || roomForm.usage}
-                readOnly
               />
               <Select
                 label="Layout type"
@@ -740,6 +758,8 @@ export default function Rooms() {
                   step="0.01"
                   value={roomForm.areaSqm}
                   onChange={(e) => setRoomForm({ ...roomForm, areaSqm: e.target.value })}
+                  placeholder="Optional"
+                  hint="Optional — unit size in square metres."
                 />
               ) : null}
               {roomForm.usage === 'apartment' ? (

@@ -11,6 +11,10 @@ import {
   assertUnitBuildingAccess,
   resourceBuildingFilter,
 } from '../../services/access.service.js';
+import {
+  commercialTypeFromUsage,
+  resolveCommercialFields,
+} from '../../utils/commercialType.js';
 
 const router = Router();
 router.use(authenticate);
@@ -29,8 +33,11 @@ function withDaily(unit) {
   const isGuest = unit.usage === 'GUEST';
   const daily = isGuest && unit.dailyRate != null ? Number(unit.dailyRate) : null;
   const weeklyStored = isGuest && unit.weeklyRent != null ? Number(unit.weeklyRent) : null;
+  const commercialType =
+    unit.commercialType || commercialTypeFromUsage(unit.usage, unit.commercialType);
   return {
     ...unit,
+    commercialType,
     monthlyRent: monthly,
     discount: Number(unit.discount),
     areaSqm: unit.areaSqm != null ? Number(unit.areaSqm) : null,
@@ -53,6 +60,7 @@ router.get(
       floorId,
       status,
       usage,
+      commercialType,
       search,
       transactionType,
       minPrice,
@@ -61,6 +69,25 @@ router.get(
     if (buildingId) {
       await assertBuildingAccess(req.user, String(buildingId), req.user.buildingIds);
     }
+
+    const usageFilter = (() => {
+      if (commercialType) {
+        const ct = String(commercialType).toUpperCase();
+        if (ct === 'SHOP' || ct === 'OFFICE') return { usage: ct, commercialType: ct };
+        if (ct === 'ALL' || ct === 'COMMERCIAL') {
+          return { usage: { in: ['SHOP', 'OFFICE'] } };
+        }
+      }
+      if (usage) {
+        const parts = String(usage)
+          .split(',')
+          .map((u) => u.trim().toUpperCase())
+          .filter(Boolean);
+        if (parts.length > 1) return { usage: { in: parts } };
+        if (parts.length === 1) return { usage: parts[0] };
+      }
+      return {};
+    })();
 
     const where = {
       deletedAt: null,
@@ -71,7 +98,7 @@ router.get(
         : resourceBuildingFilter(req.user.buildingIds)),
       ...(floorId ? { floorId: String(floorId) } : {}),
       ...(status ? { status: String(status).toUpperCase() } : {}),
-      ...(usage ? { usage: String(usage).toUpperCase() } : {}),
+      ...usageFilter,
       ...(transactionType
         ? { transactionType: String(transactionType).toUpperCase() }
         : {}),
@@ -246,6 +273,7 @@ router.post(
       roomNumber,
       unitType,
       usage,
+      commercialType,
       monthlyRent,
       weeklyRent: weeklyRentIn,
       dailyRate,
@@ -260,11 +288,14 @@ router.post(
       notes,
     } = req.body || {};
 
-    if (!buildingId || !floorId || !roomNumber || !unitType || !usage || monthlyRent === undefined) {
+    if (!buildingId || !floorId || !roomNumber || !unitType || monthlyRent === undefined) {
       throw new AppError(
-        'buildingId, floorId, roomNumber, unitType, usage, and monthlyRent are required',
+        'buildingId, floorId, roomNumber, unitType, and monthlyRent are required',
         400,
       );
+    }
+    if (!usage && !commercialType) {
+      throw new AppError('usage or commercialType is required', 400);
     }
 
     await assertBuildingAccess(req.user, buildingId, req.user.buildingIds);
@@ -279,7 +310,8 @@ router.post(
     });
     if (!floor) throw new AppError('Floor not found for this building', 404);
 
-    const usageUpper = String(usage).toUpperCase();
+    const resolved = resolveCommercialFields({ usage, commercialType, unitType });
+    const usageUpper = resolved.usage;
     const txType = transactionType
       ? String(transactionType).toUpperCase()
       : building.transactionType || 'FOR_RENT';
@@ -289,8 +321,9 @@ router.post(
         buildingId,
         floorId,
         roomNumber: String(roomNumber).trim(),
-        unitType: String(unitType).toUpperCase(),
+        unitType: resolved.unitType || String(unitType).toUpperCase(),
         usage: usageUpper,
+        commercialType: resolved.commercialType ?? null,
         transactionType: txType,
         monthlyRent,
         weeklyRent:
@@ -341,6 +374,7 @@ router.patch(
       roomNumber,
       unitType,
       usage,
+      commercialType,
       monthlyRent,
       weeklyRent: weeklyRentIn,
       dailyRate,
@@ -356,14 +390,92 @@ router.patch(
       notes,
     } = req.body || {};
 
-    const nextUsage = usage !== undefined ? String(usage).toUpperCase() : existing.usage;
+    const resolved =
+      usage !== undefined || commercialType !== undefined || unitType !== undefined
+        ? resolveCommercialFields({
+            usage: usage !== undefined ? usage : existing.usage,
+            commercialType:
+              commercialType !== undefined ? commercialType : existing.commercialType,
+            unitType: unitType !== undefined ? unitType : existing.unitType,
+          })
+        : null;
+    const nextUsage = resolved?.usage || existing.usage;
+
+    // Allow correcting wrong usage, but block when it would conflict with live occupancy
+    if (nextUsage !== existing.usage) {
+      const [activeTenant, activeBusiness, activeBooking] = await Promise.all([
+        prisma.tenant.findFirst({
+          where: { unitId: existing.id, status: 'ACTIVE', deletedAt: null },
+          select: { id: true, fullName: true },
+        }),
+        prisma.business.findFirst({
+          where: { unitId: existing.id, status: 'ACTIVE', deletedAt: null },
+          select: { id: true, businessName: true },
+        }),
+        prisma.booking.findFirst({
+          where: {
+            unitId: existing.id,
+            deletedAt: null,
+            status: { in: ['CONFIRMED', 'CHECKED_IN'] },
+          },
+          select: { id: true, fullName: true, code: true },
+        }),
+      ]);
+
+      if (existing.usage === 'APARTMENT' && nextUsage !== 'APARTMENT' && activeTenant) {
+        throw new AppError(
+          `Cannot change usage while tenant "${activeTenant.fullName}" still has an active lease. End the lease first.`,
+          400,
+          { code: 'USAGE_CHANGE_BLOCKED' },
+        );
+      }
+      if (
+        (existing.usage === 'SHOP' || existing.usage === 'OFFICE') &&
+        nextUsage !== 'SHOP' &&
+        nextUsage !== 'OFFICE' &&
+        activeBusiness
+      ) {
+        throw new AppError(
+          `Cannot change usage while business "${activeBusiness.businessName}" still has an active lease. End the lease first.`,
+          400,
+          { code: 'USAGE_CHANGE_BLOCKED' },
+        );
+      }
+      if (existing.usage === 'GUEST' && nextUsage !== 'GUEST' && activeBooking) {
+        throw new AppError(
+          `Cannot change usage while booking ${activeBooking.code || activeBooking.fullName} is still active. Check out or cancel it first.`,
+          400,
+          { code: 'USAGE_CHANGE_BLOCKED' },
+        );
+      }
+      if (nextUsage === 'GUEST' && (activeTenant || activeBusiness)) {
+        throw new AppError(
+          'Cannot switch to Guest / Airbnb while a long-term lease is still active. End the lease first.',
+          400,
+          { code: 'USAGE_CHANGE_BLOCKED' },
+        );
+      }
+      if (
+        (nextUsage === 'APARTMENT' || nextUsage === 'SHOP' || nextUsage === 'OFFICE') &&
+        activeBooking
+      ) {
+        throw new AppError(
+          'Cannot switch away from guest stays while a booking is still active. Check out or cancel it first.',
+          400,
+          { code: 'USAGE_CHANGE_BLOCKED' },
+        );
+      }
+    }
 
     const unit = await prisma.unit.update({
       where: { id: existing.id },
       data: {
         ...(roomNumber !== undefined && { roomNumber: String(roomNumber).trim() }),
-        ...(unitType !== undefined && { unitType: String(unitType).toUpperCase() }),
-        ...(usage !== undefined && { usage: nextUsage }),
+        ...(resolved?.unitType !== undefined && { unitType: resolved.unitType }),
+        ...(resolved?.usage !== undefined && { usage: resolved.usage }),
+        ...(resolved
+          ? { commercialType: resolved.commercialType ?? null }
+          : {}),
         ...(monthlyRent !== undefined && { monthlyRent }),
         ...(nextUsage !== 'GUEST'
           ? { weeklyRent: null, dailyRate: null }

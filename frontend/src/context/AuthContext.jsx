@@ -65,6 +65,7 @@ export function AuthProvider({ children }) {
       navigate('/dashboard');
       return session;
     } catch (error) {
+      if (error?.mfaRequired) throw error;
       toast.error(error.message || 'Login failed');
       throw error;
     } finally {

@@ -10,6 +10,11 @@ import {
   assertUnitBuildingAccess,
   unitBuildingFilter,
 } from '../../services/access.service.js';
+import {
+  normalizePaymentMethod,
+  pickPaymentDetails,
+} from '../../utils/paymentMethod.js';
+import { ensurePaymentReceipt } from '../../services/financeReceipt.service.js';
 
 const router = Router();
 router.use(authenticate);
@@ -262,8 +267,8 @@ router.post(
     const unitStatus = checkInDay <= today ? 'OCCUPIED' : 'RESERVED';
     const bookingStatus = checkInDay <= today ? 'CHECKED_IN' : 'CONFIRMED';
 
-    const method = String(paymentMethod).toUpperCase().replace(/-/g, '_');
-    const paymentMethodValue = method === 'E_BESA' || method === 'EBESA' ? 'E_BESA' : 'CASH';
+    const paymentMethodValue = normalizePaymentMethod(paymentMethod, { fallback: 'CASH' });
+    const payDetails = pickPaymentDetails(req.body || {}, paymentMethodValue);
     const paid =
       amountPaid !== undefined && amountPaid !== null
         ? Math.min(Number(amountPaid), totals.totalAmount)
@@ -332,6 +337,10 @@ router.post(
             amount: paid,
             method: paymentMethodValue,
             paymentDate: new Date(),
+            reference: payDetails.reference,
+            receivedByName: payDetails.receivedByName,
+            agentName: payDetails.agentName,
+            officeMpesaNumber: payDetails.officeMpesaNumber,
             comment: 'Initial payment on booking',
             recordedById: req.user.id || null,
           },
@@ -374,14 +383,31 @@ router.post(
         : Number(booking.amountPaid);
     const paymentStatus = derivePaymentStatus(paid, total);
 
-    const methodRaw =
-      paymentMethod !== undefined
-        ? String(paymentMethod).toUpperCase().replace(/-/g, '_')
-        : booking.paymentMethod;
     const paymentMethodValue =
-      methodRaw === 'E_BESA' || methodRaw === 'EBESA' ? 'E_BESA' : 'CASH';
+      paymentMethod !== undefined
+        ? normalizePaymentMethod(paymentMethod, { fallback: booking.paymentMethod || 'CASH' })
+        : booking.paymentMethod || 'CASH';
+    const payDetails = pickPaymentDetails(req.body || {}, paymentMethodValue);
 
     const updated = await prisma.$transaction(async (tx) => {
+      const prevPaid = Number(booking.amountPaid || 0);
+      const delta = Math.round((paid - prevPaid) * 100) / 100;
+      if (delta > 0) {
+        await tx.bookingPayment.create({
+          data: {
+            bookingId: booking.id,
+            amount: delta,
+            method: paymentMethodValue,
+            paymentDate: new Date(),
+            reference: payDetails.reference,
+            receivedByName: payDetails.receivedByName,
+            agentName: payDetails.agentName,
+            officeMpesaNumber: payDetails.officeMpesaNumber,
+            comment: 'Check-in payment',
+            recordedById: req.user.id || null,
+          },
+        });
+      }
       const b = await tx.booking.update({
         where: { id: booking.id },
         data: {
@@ -549,13 +575,13 @@ router.post(
     if (!booking) throw new AppError('Booking not found', 404);
     await assertUnitBuildingAccess(req.user, booking.unitId, req.user.buildingIds);
 
-    const { amount, paymentMethod = 'CASH', paymentDate, reference, comment } = req.body || {};
+    const { amount, paymentMethod = 'CASH', paymentDate, comment } = req.body || {};
     if (amount === undefined || amount === null || Number(amount) <= 0) {
       throw new AppError('A positive payment amount is required', 400);
     }
 
-    const method = String(paymentMethod).toUpperCase().replace(/-/g, '_');
-    const paymentMethodValue = method === 'E_BESA' || method === 'EBESA' ? 'E_BESA' : 'CASH';
+    const paymentMethodValue = normalizePaymentMethod(paymentMethod, { fallback: 'CASH' });
+    const payDetails = pickPaymentDetails(req.body || {}, paymentMethodValue);
     const total = Number(booking.totalAmount);
     const currentPaid = Number(booking.amountPaid || 0);
     const nextPaid = Math.min(total, Math.round((currentPaid + Number(amount)) * 100) / 100);
@@ -565,17 +591,46 @@ router.post(
     }
 
     const updated = await prisma.$transaction(async (tx) => {
-      await tx.bookingPayment.create({
+      const bp = await tx.bookingPayment.create({
         data: {
           bookingId: booking.id,
           amount: applied,
           method: paymentMethodValue,
           paymentDate: paymentDate ? new Date(paymentDate) : new Date(),
-          reference: reference ? String(reference).trim() : null,
+          reference: payDetails.reference,
+          receivedByName: payDetails.receivedByName,
+          agentName: payDetails.agentName,
+          officeMpesaNumber: payDetails.officeMpesaNumber,
           comment: comment ? String(comment).trim() : null,
           recordedById: req.user.id || null,
         },
       });
+
+      const receipt = await ensurePaymentReceipt(tx, {
+        sourceType: 'BOOKING_PAYMENT',
+        sourceId: bp.id,
+        unitId: booking.unitId,
+        customerName: booking.fullName,
+        customerPhone: booking.phone || null,
+        amount: applied,
+        amountPaid: applied,
+        remainingBalance: Math.max(0, Math.round((total - nextPaid) * 100) / 100),
+        currentCharges: total,
+        previousBalance: Math.max(0, Math.round((total - currentPaid) * 100) / 100),
+        method: paymentMethodValue,
+        reference: payDetails.reference,
+        paymentDate: paymentDate || new Date(),
+        billingPeriod: `${String(booking.checkIn).slice(0, 10)} → ${String(booking.checkOut).slice(0, 10)}`,
+        description: `Guest booking payment · ${booking.code}`,
+        createdById: req.user.id || null,
+      });
+
+      if (receipt?.number) {
+        await tx.bookingPayment.update({
+          where: { id: bp.id },
+          data: { receiptNumber: receipt.number },
+        });
+      }
 
       return tx.booking.update({
         where: { id: booking.id },
@@ -602,7 +657,7 @@ router.patch(
     if (!booking) throw new AppError('Booking not found', 404);
     await assertUnitBuildingAccess(req.user, booking.unitId, req.user.buildingIds);
 
-    const { amountPaid, paymentMethod, reference, comment, paymentDate } = req.body || {};
+    const { amountPaid, paymentMethod, comment, paymentDate } = req.body || {};
     if (amountPaid === undefined || amountPaid === null) {
       throw new AppError('amountPaid is required', 400);
     }
@@ -612,12 +667,11 @@ router.patch(
     const targetPaid = Math.min(Math.max(0, Number(amountPaid)), total);
     const delta = Math.round((targetPaid - currentPaid) * 100) / 100;
 
-    const methodRaw =
-      paymentMethod !== undefined
-        ? String(paymentMethod).toUpperCase().replace(/-/g, '_')
-        : booking.paymentMethod;
     const paymentMethodValue =
-      methodRaw === 'E_BESA' || methodRaw === 'EBESA' ? 'E_BESA' : 'CASH';
+      paymentMethod !== undefined
+        ? normalizePaymentMethod(paymentMethod, { fallback: booking.paymentMethod || 'CASH' })
+        : booking.paymentMethod || 'CASH';
+    const payDetails = pickPaymentDetails(req.body || {}, paymentMethodValue);
 
     const updated = await prisma.$transaction(async (tx) => {
       if (delta > 0) {
@@ -627,7 +681,10 @@ router.patch(
             amount: delta,
             method: paymentMethodValue,
             paymentDate: paymentDate ? new Date(paymentDate) : new Date(),
-            reference: reference ? String(reference).trim() : null,
+            reference: payDetails.reference,
+            receivedByName: payDetails.receivedByName,
+            agentName: payDetails.agentName,
+            officeMpesaNumber: payDetails.officeMpesaNumber,
             comment: comment ? String(comment).trim() : 'Payment recorded',
             recordedById: req.user.id || null,
           },
@@ -680,14 +737,31 @@ router.post(
     const paid = total;
     const paymentStatus = 'PAID';
 
-    const methodRaw =
-      paymentMethod !== undefined
-        ? String(paymentMethod).toUpperCase().replace(/-/g, '_')
-        : booking.paymentMethod;
     const paymentMethodValue =
-      methodRaw === 'E_BESA' || methodRaw === 'EBESA' ? 'E_BESA' : 'CASH';
+      paymentMethod !== undefined
+        ? normalizePaymentMethod(paymentMethod, { fallback: booking.paymentMethod || 'CASH' })
+        : booking.paymentMethod || 'CASH';
+    const payDetails = pickPaymentDetails(req.body || {}, paymentMethodValue);
+    const prevPaid = Number(booking.amountPaid || 0);
+    const delta = Math.max(0, Math.round((paid - prevPaid) * 100) / 100);
 
     const updated = await prisma.$transaction(async (tx) => {
+      if (delta > 0) {
+        await tx.bookingPayment.create({
+          data: {
+            bookingId: booking.id,
+            amount: delta,
+            method: paymentMethodValue,
+            paymentDate: new Date(),
+            reference: payDetails.reference,
+            receivedByName: payDetails.receivedByName,
+            agentName: payDetails.agentName,
+            officeMpesaNumber: payDetails.officeMpesaNumber,
+            comment: 'Checkout settlement',
+            recordedById: req.user.id || null,
+          },
+        });
+      }
       const b = await tx.booking.update({
         where: { id: booking.id },
         data: {

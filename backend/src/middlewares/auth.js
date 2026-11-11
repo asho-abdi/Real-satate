@@ -3,18 +3,21 @@ import { AppError } from '../utils/AppError.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { findUserByIdWithRole } from '../repositories/user.repository.js';
 import { sanitizeUser } from '../services/auth.service.js';
+import { readAccessCookie } from '../utils/authCookies.js';
 
 /**
- * Extract Bearer token from Authorization header.
+ * Extract access token from Authorization Bearer header or HttpOnly cookie.
+ * Bearer remains supported for backward compatibility during cookie migration.
  * @param {import('express').Request} req
  * @returns {string | null}
  */
-function extractBearer(req) {
+function extractAccessToken(req) {
   const header = req.headers.authorization || req.headers.Authorization;
-  if (!header || typeof header !== 'string') return null;
-  const [scheme, token] = header.split(' ');
-  if (!scheme || scheme.toLowerCase() !== 'bearer' || !token) return null;
-  return token.trim();
+  if (header && typeof header === 'string') {
+    const [scheme, token] = header.split(' ');
+    if (scheme && scheme.toLowerCase() === 'bearer' && token) return token.trim();
+  }
+  return readAccessCookie(req);
 }
 
 async function attachUser(req, user) {
@@ -28,7 +31,7 @@ async function attachUser(req, user) {
  * Require a valid access JWT and attach req.user (with permissions + buildingIds).
  */
 export const authenticate = asyncHandler(async (req, _res, next) => {
-  const token = extractBearer(req);
+  const token = extractAccessToken(req);
   if (!token) {
     throw new AppError('Authentication required', 401, { code: 'UNAUTHORIZED' });
   }
@@ -57,7 +60,7 @@ export const authenticate = asyncHandler(async (req, _res, next) => {
  * Optionally attach user if a valid Bearer token is present.
  */
 export const optionalAuth = asyncHandler(async (req, _res, next) => {
-  const token = extractBearer(req);
+  const token = extractAccessToken(req);
   if (!token) {
     req.user = null;
     return next();

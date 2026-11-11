@@ -15,6 +15,8 @@ import {
   findOwnerMonthlyCharge,
   OWNER_MONTHLY_CATEGORY,
 } from '../../services/ownerCharge.service.js';
+import { ensurePaymentReceipt } from '../../services/financeReceipt.service.js';
+import { normalizePaymentMethod, pickPaymentDetails } from '../../utils/paymentMethod.js';
 
 const router = Router();
 router.use(authenticate);
@@ -189,6 +191,7 @@ router.patch(
       month,
       notes,
       addPayment,
+      paymentMethod,
     } = req.body || {};
 
     let nextDue = amountDue !== undefined ? money(amountDue) : money(existing.amountDue);
@@ -197,23 +200,87 @@ router.patch(
       nextPaid = money(nextPaid + money(addPayment));
     }
     nextPaid = Math.min(nextDue, Math.max(0, nextPaid));
+    const paymentIncreased =
+      Boolean(addPayment) ||
+      (amountPaid !== undefined && money(amountPaid) > money(existing.amountPaid));
+    const incrementalPaid = money(nextPaid - money(existing.amountPaid));
 
-    const updated = await prisma.leaseCharge.update({
-      where: { id: existing.id },
-      data: {
-        ...(description !== undefined && { description: String(description).trim() }),
-        ...(category !== undefined && { category: String(category).toUpperCase() }),
-        amountDue: nextDue,
-        amountPaid: nextPaid,
-        status: resolveStatus(nextDue, nextPaid),
-        ...(chargeDate !== undefined && { chargeDate: chargeDate ? new Date(chargeDate) : existing.chargeDate }),
-        ...(dueDate !== undefined && { dueDate: dueDate ? new Date(dueDate) : null }),
-        ...(month !== undefined && { month: month || null }),
-        ...(notes !== undefined && { notes: notes ? String(notes).trim() : null }),
-      },
+    let payDetails = null;
+    if (paymentIncreased && incrementalPaid > 0) {
+      const method = normalizePaymentMethod(paymentMethod || existing.method || 'CASH', {
+        fallback: 'CASH',
+      });
+      payDetails = pickPaymentDetails(req.body || {}, method);
+    }
+
+    const updated = await prisma.$transaction(async (tx) => {
+      const row = await tx.leaseCharge.update({
+        where: { id: existing.id },
+        data: {
+          ...(description !== undefined && { description: String(description).trim() }),
+          ...(category !== undefined && { category: String(category).toUpperCase() }),
+          amountDue: nextDue,
+          amountPaid: nextPaid,
+          status: resolveStatus(nextDue, nextPaid),
+          ...(chargeDate !== undefined && {
+            chargeDate: chargeDate ? new Date(chargeDate) : existing.chargeDate,
+          }),
+          ...(dueDate !== undefined && { dueDate: dueDate ? new Date(dueDate) : null }),
+          ...(month !== undefined && { month: month || null }),
+          ...(notes !== undefined && { notes: notes ? String(notes).trim() : null }),
+          ...(payDetails
+            ? {
+                method: payDetails.method,
+                reference: payDetails.reference,
+                receivedByName: payDetails.receivedByName,
+                agentName: payDetails.agentName,
+                officeMpesaNumber: payDetails.officeMpesaNumber,
+              }
+            : {}),
+        },
+        include: {
+          tenant: true,
+          business: true,
+          unit: { include: { building: true, floor: true } },
+        },
+      });
+
+      if (paymentIncreased && incrementalPaid > 0) {
+        const customerName =
+          row.tenant?.fullName || row.business?.businessName || 'Customer';
+        const customerPhone = row.tenant?.phone || row.business?.phone || null;
+        const receipt = await ensurePaymentReceipt(tx, {
+          sourceType: 'LEASE_CHARGE',
+          sourceId: row.id,
+          tenantId: row.tenantId,
+          businessId: row.businessId,
+          unitId: row.unitId,
+          customerName,
+          customerPhone,
+          amount: incrementalPaid,
+          amountPaid: incrementalPaid,
+          remainingBalance: Math.max(0, money(nextDue - nextPaid)),
+          currentCharges: nextDue,
+          previousBalance: Math.max(0, money(nextDue - money(existing.amountPaid))),
+          method: payDetails?.method || row.method,
+          reference: payDetails?.reference || row.reference,
+          paymentDate: new Date(),
+          billingPeriod: row.month,
+          description: `Payment — ${row.description || row.category}`,
+          createdById: req.user.id || null,
+        });
+        if (receipt?.number && !row.receiptNumber) {
+          await tx.leaseCharge.update({
+            where: { id: row.id },
+            data: { receiptNumber: receipt.number },
+          });
+        }
+      }
+
+      return row;
     });
 
-    if (addPayment || (amountPaid !== undefined && money(amountPaid) > money(existing.amountPaid))) {
+    if (paymentIncreased) {
       let entityType = existing.businessId ? 'BUSINESS' : existing.tenantId ? 'TENANT' : null;
       let entityId = existing.businessId || existing.tenantId || null;
       if (!entityId) {

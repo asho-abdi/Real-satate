@@ -14,6 +14,7 @@ function mapSession(data) {
     allowedPages: Array.isArray(user.allowedPages) ? user.allowedPages : [],
     buildingIds: user.buildingIds === null ? null : user.buildingIds || [],
     buildings: user.buildings || [],
+    mfaEnabled: Boolean(user.mfaEnabled),
     token: data.accessToken,
     refreshToken: data.refreshToken,
     avatar: user.avatar || null,
@@ -41,6 +42,7 @@ export async function getMe() {
         : session.allowedPages || [],
       buildingIds: user.buildingIds === null ? null : user.buildingIds || session.buildingIds || [],
       buildings: user.buildings || session.buildings || [],
+      mfaEnabled: Boolean(user.mfaEnabled ?? session.mfaEnabled),
       token: session.token,
       refreshToken: session.refreshToken,
       avatar: user.avatar || session.avatar || null,
@@ -51,18 +53,32 @@ export async function getMe() {
   }
 }
 
-export async function login({ email, password }) {
+export async function login({ email, password, mfaCode, recoveryCode }) {
   try {
-    const res = await api.post('/auth/login', { email, password });
+    const res = await api.post('/auth/login', {
+      email,
+      password,
+      ...(mfaCode ? { mfaCode } : {}),
+      ...(recoveryCode ? { recoveryCode } : {}),
+    });
     const data = res.data?.data ?? res.data;
+    if (data?.mfaRequired) {
+      const err = new Error('Authenticator code required');
+      err.status = 200;
+      err.mfaRequired = true;
+      err.pendingUser = data.user || null;
+      throw err;
+    }
     if (!data?.accessToken) {
       throw new Error('Login succeeded but no access token was returned');
     }
     return mapSession(data);
   } catch (error) {
+    if (error?.mfaRequired) throw error;
     const normalized = normalizeApiError(error);
     const err = new Error(normalized.message || 'Invalid email or password');
     err.status = normalized.status || 401;
+    err.code = normalized.code;
     throw err;
   }
 }
@@ -70,9 +86,10 @@ export async function login({ email, password }) {
 export async function logout() {
   const session = readSession();
   try {
-    if (session?.refreshToken) {
-      await api.post('/auth/logout', { refreshToken: session.refreshToken });
-    }
+    await api.post(
+      '/auth/logout',
+      session?.refreshToken ? { refreshToken: session.refreshToken } : {},
+    );
   } catch {
     // still clear local session
   } finally {
@@ -104,6 +121,7 @@ export async function updateProfile(payload) {
       email: user.email || session.email,
       phone: user.phone || '',
       role: user.role || user.roleName || session.role,
+      mfaEnabled: Boolean(user.mfaEnabled ?? session.mfaEnabled),
     };
     writeSession(next);
     return next;
@@ -133,6 +151,26 @@ export async function resetPassword({ password, token }) {
   }
 }
 
+export async function getMfaStatus() {
+  const res = await api.get('/auth/mfa/status');
+  return res.data?.data ?? res.data;
+}
+
+export async function enrollMfa() {
+  const res = await api.post('/auth/mfa/enroll');
+  return res.data?.data ?? res.data;
+}
+
+export async function confirmMfa(code) {
+  const res = await api.post('/auth/mfa/confirm', { code });
+  return res.data?.data ?? res.data;
+}
+
+export async function disableMfa({ code, recoveryCode } = {}) {
+  const res = await api.post('/auth/mfa/disable', { code, recoveryCode });
+  return res.data?.data ?? res.data;
+}
+
 export const authService = {
   login,
   logout,
@@ -141,6 +179,10 @@ export const authService = {
   updateProfile,
   forgotPassword,
   resetPassword,
+  getMfaStatus,
+  enrollMfa,
+  confirmMfa,
+  disableMfa,
 };
 
 export default authService;

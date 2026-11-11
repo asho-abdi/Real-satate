@@ -95,6 +95,8 @@ export const STATUS_COLORS = {
   'For Rent': 'bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-200',
   Both: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-200',
   'Sale & Rent': 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-200',
+  Shop: 'bg-teal-100 text-teal-800 dark:bg-teal-900/40 dark:text-teal-200',
+  Office: 'bg-cyan-100 text-cyan-800 dark:bg-cyan-900/40 dark:text-cyan-200',
   'Not Started': 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300',
   'In Progress': 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200',
   Completed: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200',
@@ -161,10 +163,9 @@ export const NAV_SECTIONS = [
     ],
   },
   {
-    title: 'Business Units',
+    title: 'Commercial Spaces',
     items: [
-      { label: 'Shops', to: '/shops', icon: 'MdStorefront' },
-      { label: 'Offices', to: '/offices', icon: 'MdBusinessCenter' },
+      { label: 'Commercial Spaces', to: '/commercial-spaces', icon: 'MdStorefront' },
     ],
   },
   {
@@ -173,6 +174,8 @@ export const NAV_SECTIONS = [
       { label: 'Money Movements', to: '/expenses', icon: 'MdSwapHoriz' },
       { label: 'Payments', to: '/payments', icon: 'MdPayments' },
       { label: 'Outstanding', to: '/outstanding', icon: 'MdWarningAmber' },
+      { label: 'Security Deposits', to: '/deposits', icon: 'MdAccountBalanceWallet' },
+      { label: 'Statements', to: '/statements', icon: 'MdDescription' },
       { label: 'Reports', to: '/reports', icon: 'MdAnalytics' },
     ],
   },
