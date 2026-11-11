@@ -10,7 +10,7 @@ import { openIdentityDocument } from '../../services/rentalApi.js';
  */
 export default function IdentityDocumentField({
   label = 'Identity document',
-  hint = 'PDF or image of ID / passport / license',
+  hint = 'PDF or image of ID / passport / license, up to 25 MB',
   value = null,
   file = null,
   onFileChange,
