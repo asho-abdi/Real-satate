@@ -1,5 +1,6 @@
-import CommercialRentals from '../shops/CommercialRentals.jsx';
+import { Navigate } from 'react-router-dom';
 
+/** @deprecated Use /commercial-spaces — kept for bookmarks. */
 export default function Offices() {
-  return <CommercialRentals usage="OFFICE" />;
+  return <Navigate to="/commercial-spaces?type=OFFICE" replace />;
 }

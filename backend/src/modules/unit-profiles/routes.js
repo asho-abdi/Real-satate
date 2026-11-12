@@ -8,13 +8,14 @@ import { AppError } from '../../utils/AppError.js';
 import { assertUnitBuildingAccess } from '../../services/access.service.js';
 import { listUnitActivity } from '../../services/activity.service.js';
 import { currentMonthKey } from '../../utils/rent.js';
+import { commercialTypeFromUsage } from '../../utils/commercialType.js';
+import {
+  computeLeaseFinancials,
+  money,
+} from '../../services/financialBalance.service.js';
 
 const router = Router();
 router.use(authenticate);
-
-function money(v) {
-  return Number(v || 0);
-}
 
 function daysUntil(date) {
   if (!date) return null;
@@ -36,53 +37,13 @@ function leaseDisplayStatus(lease) {
 
 function serializeLease(row, kind, charges = []) {
   if (!row) return null;
-  const payments = (row.payments || []).map((p) => {
-    const amountDue = money(p.amountDue);
-    const amountPaid = money(p.amountPaid);
-    const otherCharges = money(p.otherCharges);
-    const rentDue =
-      p.rentDue != null ? money(p.rentDue) : Math.max(0, money(amountDue - otherCharges));
-    return {
-      ...p,
-      amountDue,
-      amountPaid,
-      rentDue,
-      otherCharges,
-      balance: Math.max(0, money(amountDue - amountPaid)),
-    };
-  });
-
-  const leaseCharges = (charges || [])
-    .filter((c) => !c.deletedAt)
-    .filter((c) =>
-      kind === 'BUSINESS' ? c.businessId === row.id : c.tenantId === row.id,
-    )
-    .map((c) => {
-      const amountDue = money(c.amountDue);
-      const amountPaid = money(c.amountPaid);
-      return {
-        ...c,
-        amountDue,
-        amountPaid,
-        balance: Math.max(0, money(amountDue - amountPaid)),
-      };
-    });
-
-  // Correct revenue math:
-  // Total Due = rent lines + standalone other charges
-  // Total Paid = all payments applied
-  // Outstanding = Total Due - Total Paid (never negative)
-  const rentDueTotal = payments.reduce((s, p) => s + p.amountDue, 0);
-  const rentPaidTotal = payments.reduce((s, p) => s + p.amountPaid, 0);
-  const chargesDueTotal = leaseCharges.reduce((s, c) => s + c.amountDue, 0);
-  const chargesPaidTotal = leaseCharges.reduce((s, c) => s + c.amountPaid, 0);
-  const otherEmbedded = payments.reduce((s, p) => s + p.otherCharges, 0);
-
-  const totalDue = money(rentDueTotal + chargesDueTotal);
-  const totalPaid = money(rentPaidTotal + chargesPaidTotal);
-  const outstanding = Math.max(0, money(totalDue - totalPaid));
-  const rentRevenue = money(rentPaidTotal);
-  const otherChargesRevenue = money(chargesPaidTotal + otherEmbedded);
+  const scopedCharges = (charges || []).filter((c) =>
+    kind === 'BUSINESS' ? c.businessId === row.id : c.tenantId === row.id,
+  );
+  const { payments, charges: leaseCharges, financials } = computeLeaseFinancials(
+    row.payments || [],
+    scopedCharges,
+  );
 
   const unpaidOrPartial = [
     ...payments.filter((p) => p.status !== 'PAID'),
@@ -130,14 +91,8 @@ function serializeLease(row, kind, charges = []) {
     payments,
     charges: leaseCharges,
     financials: {
+      ...financials,
       monthlyRent: Math.max(0, money(row.monthlyRent) - money(row.discount)),
-      rentDue: money(rentDueTotal),
-      otherChargesDue: money(chargesDueTotal + otherEmbedded),
-      totalDue,
-      rentPaid: rentRevenue,
-      otherChargesPaid: otherChargesRevenue,
-      totalPaid,
-      outstanding,
       lastPaymentAmount: lastPaid ? money(lastPaid.amountPaid) : 0,
       lastPaymentDate: lastPaid?.paymentDate || lastPaid?.chargeDate || null,
       nextPaymentMonth: nextPayment?.month || null,
@@ -220,20 +175,20 @@ router.get(
     const activeSale =
       unit.shopSales.find((s) => s.ownershipStatus === 'ACTIVE_OWNER') || null;
 
-    let profileMode = 'VACANT';
+    const commercialType = commercialTypeFromUsage(unit.usage, unit.commercialType);
+
+    let profileMode = 'AVAILABLE';
     if (unit.status === 'SOLD' || activeSale) profileMode = 'SOLD';
     else if (unit.usage === 'GUEST') profileMode = 'GUEST';
-    else if (activeBusiness) profileMode = 'LEASED_SHOP';
-    else if (activeTenant) profileMode = 'LEASED_APARTMENT';
+    else if (activeBusiness) {
+      profileMode = commercialType === 'OFFICE' ? 'LEASED_OFFICE' : 'LEASED_SHOP';
+    } else if (activeTenant) profileMode = 'LEASED_APARTMENT';
     else if (unit.status === 'RESERVED') profileMode = 'RESERVED';
     else if (unit.status === 'MAINTENANCE') profileMode = 'MAINTENANCE';
-    else if (
-      unit.status === 'OCCUPIED' ||
-      unit.businesses.length ||
-      unit.tenants.length
-    ) {
-      profileMode = 'VACANT';
-    } else profileMode = 'AVAILABLE';
+    else if (unit.status === 'OCCUPIED') profileMode = 'OCCUPIED_NO_LEASE';
+    else if (unit.businesses.length || unit.tenants.length) profileMode = 'AVAILABLE';
+    else if (unit.status === 'AVAILABLE') profileMode = 'AVAILABLE';
+    else profileMode = 'VACANT';
 
     const allCharges = unit.leaseCharges || [];
 
@@ -314,6 +269,7 @@ router.get(
         roomNumber: unit.roomNumber,
         unitType: unit.unitType,
         usage: unit.usage,
+        commercialType,
         status: unit.status,
         transactionType: unit.transactionType,
         monthlyRent: money(unit.monthlyRent),
@@ -334,8 +290,12 @@ router.get(
       ownershipType:
         profileMode === 'SOLD'
           ? 'Sold'
-          : profileMode === 'LEASED_SHOP' || profileMode === 'LEASED_APARTMENT'
+          : profileMode === 'LEASED_SHOP' ||
+              profileMode === 'LEASED_OFFICE' ||
+              profileMode === 'LEASED_APARTMENT'
             ? 'Rental / Lease'
+            : profileMode === 'OCCUPIED_NO_LEASE'
+              ? 'Occupied — no active lease'
             : profileMode === 'GUEST'
               ? 'Guest / Airbnb'
               : 'Unassigned',
@@ -398,14 +358,21 @@ router.get(
 
 function buildActions(mode, lease, unit) {
   const actions = ['EDIT_UNIT', 'UPLOAD_DOCUMENT'];
-  if (mode === 'AVAILABLE' || mode === 'VACANT') {
-    if (unit.usage === 'SHOP' || unit.usage === 'OFFICE') {
+  const commercialType = commercialTypeFromUsage(unit.usage, unit.commercialType);
+  const isCommercial =
+    commercialType === 'SHOP' ||
+    commercialType === 'OFFICE' ||
+    unit.usage === 'SHOP' ||
+    unit.usage === 'OFFICE';
+
+  if (mode === 'AVAILABLE' || mode === 'VACANT' || mode === 'OCCUPIED_NO_LEASE') {
+    if (isCommercial) {
       actions.push('CREATE_LEASE', 'RECORD_SALE');
     }
     if (unit.usage === 'APARTMENT') actions.push('CREATE_LEASE');
     if (unit.usage === 'GUEST') actions.push('CREATE_BOOKING');
   }
-  if (mode === 'LEASED_SHOP' || mode === 'LEASED_APARTMENT') {
+  if (mode === 'LEASED_SHOP' || mode === 'LEASED_OFFICE' || mode === 'LEASED_APARTMENT') {
     actions.push(
       'RECORD_PAYMENT',
       'ADD_CHARGE',

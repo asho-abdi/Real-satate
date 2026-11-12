@@ -1,0 +1,24 @@
+---
+description: After code changes, commit and push to GitHub automatically
+alwaysApply: true
+---
+
+# Auto commit & push to GitHub
+
+When you add, edit, or delete project code (or docs that belong with the change):
+
+1. **Commit** the relevant files with a concise message focused on why.
+2. **Push** to `origin` on the current branch (`git push -u origin HEAD` if needed).
+3. Do this in the same turn after the work is done — do not wait for the user to ask again.
+
+## Safety
+
+- Never commit secrets (`.env`, credentials, private keys, VPS passwords).
+- Never use `--force` on `main`/`master` unless the user explicitly asks.
+- Never amend a commit that was already pushed unless the user explicitly asks.
+- Skip empty commits when there is nothing to commit.
+- If push fails (auth/network), report the error and what is left unpushed.
+
+## Scope
+
+Applies to this Real-State / RJK Realty repo whenever the agent changes files.

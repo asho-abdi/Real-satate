@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
+import { MdArrowBack } from 'react-icons/md';
 import PageHeader from '../../components/ui/PageHeader.jsx';
 import Card from '../../components/ui/Card.jsx';
 import Button from '../../components/ui/Button.jsx';
@@ -10,9 +11,12 @@ import Select from '../../components/ui/Select.jsx';
 import Modal from '../../components/ui/Modal.jsx';
 import Spinner from '../../components/ui/Spinner.jsx';
 import UnitImageGallery from '../../components/ui/UnitImageGallery.jsx';
-import { APP_NAME, PAYMENT_METHODS } from '../../utils/constants.js';
+import { APP_NAME } from '../../utils/constants.js';
 import { formatCurrency, formatDate, cn } from '../../utils/format.js';
 import { rentalApi } from '../../services/rentalApi.js';
+import PaymentMethodFields from '../../components/payments/PaymentMethodFields.jsx';
+import FinanceDocActions from '../../components/finance/FinanceDocActions.jsx';
+import { rentPaymentDocPayload } from '../../utils/financeDocs.js';
 
 const TABS = [
   { id: 'overview', label: 'Overview' },
@@ -43,6 +47,34 @@ const DOC_CATEGORIES = [
   { value: 'IDENTITY', label: 'Identity' },
   { value: 'OTHER', label: 'Other' },
 ];
+
+function unitCommercialType(unit) {
+  return String(unit?.commercialType || unit?.usage || '').toUpperCase();
+}
+
+function isCommercialLeaseUnit(unit) {
+  const ct = unitCommercialType(unit);
+  return ct === 'SHOP' || ct === 'OFFICE';
+}
+
+function isApartmentUnit(unit) {
+  return String(unit?.usage || '').toUpperCase() === 'APARTMENT';
+}
+
+function unitTitleLabel(unit) {
+  const ct = unitCommercialType(unit);
+  if (ct === 'SHOP') return 'Shop';
+  if (ct === 'OFFICE') return 'Office';
+  if (isApartmentUnit(unit)) return 'Apartment';
+  return 'Unit';
+}
+
+function canCreateLease(actions, unit) {
+  return (
+    actions.includes('CREATE_LEASE') &&
+    (isCommercialLeaseUnit(unit) || isApartmentUnit(unit))
+  );
+}
 
 function moneyCards(items) {
   return (
@@ -91,7 +123,11 @@ export default function UnitProfile() {
     otherCharges: '0',
     amountPaid: '',
     paymentDate: new Date().toISOString().slice(0, 10),
-    method: 'Cash',
+    method: 'CASH',
+    reference: '',
+    receivedByName: '',
+    agentName: '',
+    officeMpesaNumber: '',
     notes: '',
   });
   const [chargeForm, setChargeForm] = useState({
@@ -115,6 +151,7 @@ export default function UnitProfile() {
     notes: '',
   });
   const [leaseForm, setLeaseForm] = useState({
+    fullName: '',
     businessName: '',
     contactName: '',
     phone: '',
@@ -174,7 +211,11 @@ export default function UnitProfile() {
       otherCharges: '0',
       amountPaid: String(rent),
       paymentDate: new Date().toISOString().slice(0, 10),
-      method: 'Cash',
+      method: 'CASH',
+      reference: '',
+      receivedByName: '',
+      agentName: '',
+      officeMpesaNumber: '',
       notes: '',
     });
     setPayOpen(true);
@@ -220,6 +261,7 @@ export default function UnitProfile() {
 
   const openCreateLease = () => {
     setLeaseForm({
+      fullName: '',
       businessName: '',
       contactName: '',
       phone: '',
@@ -261,6 +303,10 @@ export default function UnitProfile() {
         amountPaid,
         paymentDate: payForm.paymentDate,
         method: payForm.method,
+        reference: payForm.reference || null,
+        receivedByName: payForm.receivedByName || null,
+        agentName: payForm.agentName || null,
+        officeMpesaNumber: payForm.officeMpesaNumber || null,
         notes: payForm.notes || null,
       });
       toast.success('Payment recorded');
@@ -351,18 +397,26 @@ export default function UnitProfile() {
   };
 
   const renewLease = async () => {
-    if (!lease || lease.kind !== 'BUSINESS') {
-      toast.error('Renewal is currently available for shop leases');
-      return;
-    }
+    if (!lease) return;
     if (!renewForm.leaseStart || !renewForm.leaseEnd) {
       toast.error('Start and end dates are required');
       return;
     }
     setSaving(true);
     try {
-      await rentalApi.renewBusiness(lease.id, renewForm);
-      toast.success('Lease renewed — previous term kept in history');
+      if (lease.kind === 'BUSINESS') {
+        await rentalApi.renewBusiness(lease.id, renewForm);
+        toast.success('Lease renewed — previous term kept in history');
+      } else {
+        await rentalApi.updateTenant(lease.id, {
+          leaseStart: renewForm.leaseStart,
+          leaseEnd: renewForm.leaseEnd,
+          ...(renewForm.monthlyRent !== ''
+            ? { monthlyRent: Number(renewForm.monthlyRent) }
+            : {}),
+        });
+        toast.success('Lease renewed');
+      }
       setRenewOpen(false);
       await load();
     } catch (err) {
@@ -373,17 +427,44 @@ export default function UnitProfile() {
   };
 
   const createLease = async () => {
-    if (!leaseForm.businessName.trim() || !leaseForm.contactName.trim() || !leaseForm.phone.trim()) {
-      toast.error('Business, contact, and phone are required');
+    if (isApartmentUnit(unit)) {
+      if (!leaseForm.fullName.trim() || !leaseForm.phone.trim() || !leaseForm.idNumber.trim()) {
+        toast.error('Tenant name, phone, and ID are required');
+        return;
+      }
+    } else if (isCommercialLeaseUnit(unit)) {
+      if (
+        !leaseForm.businessName.trim() ||
+        !leaseForm.contactName.trim() ||
+        !leaseForm.phone.trim()
+      ) {
+        toast.error('Business, contact, and phone are required');
+        return;
+      }
+    } else {
+      toast.error('This unit type cannot create a lease here');
       return;
     }
     setSaving(true);
     try {
-      await rentalApi.createBusiness({
-        ...leaseForm,
-        unitId: unit.id,
-        roomId: unit.id,
-      });
+      if (isApartmentUnit(unit)) {
+        await rentalApi.createTenant({
+          fullName: leaseForm.fullName.trim(),
+          phone: leaseForm.phone.trim(),
+          idNumber: leaseForm.idNumber.trim(),
+          unitId: unit.id,
+          monthlyRent: Number(leaseForm.monthlyRent) || unit.monthlyRent,
+          leaseStart: leaseForm.leaseStart,
+          leaseEnd: leaseForm.leaseEnd || undefined,
+        });
+      } else {
+        await rentalApi.createBusiness({
+          ...leaseForm,
+          unitId: unit.id,
+          roomId: unit.id,
+          expectedUsage: unitCommercialType(unit),
+        });
+      }
       toast.success('Lease created');
       setLeaseOpen(false);
       setTab('lease');
@@ -432,30 +513,67 @@ export default function UnitProfile() {
     );
   }
 
+  const goBack = () => {
+    if (typeof window !== 'undefined' && window.history.length > 1) {
+      navigate(-1);
+      return;
+    }
+    if (unit?.building?.id) {
+      navigate(`/buildings/${unit.building.id}`);
+      return;
+    }
+    if (isCommercialLeaseUnit(unit)) {
+      navigate('/commercial-spaces');
+      return;
+    }
+    if (isApartmentUnit(unit)) {
+      navigate('/apartments');
+      return;
+    }
+    navigate('/dashboard');
+  };
+
   if (!profile || !unit) {
     return (
       <div>
         <PageHeader title="Profile not found" />
-        <Button onClick={() => navigate(-1)}>Go back</Button>
+        <Button variant="secondary" className="mt-2 gap-1.5" onClick={() => navigate(-1)}>
+          <MdArrowBack className="h-4 w-4" />
+          Go back
+        </Button>
       </div>
     );
   }
 
   const statusLabel =
-    profile.profileMode === 'LEASED_SHOP' || profile.profileMode === 'LEASED_APARTMENT'
+    profile.profileMode === 'LEASED_SHOP' ||
+    profile.profileMode === 'LEASED_OFFICE' ||
+    profile.profileMode === 'LEASED_APARTMENT'
       ? 'Leased'
-      : profile.profileMode === 'SOLD'
-        ? 'Sold'
-        : profile.profileMode === 'GUEST'
-          ? 'Guest unit'
-          : unit.status === 'AVAILABLE'
-            ? 'Available'
-            : unit.status;
+      : profile.profileMode === 'OCCUPIED_NO_LEASE'
+        ? 'Occupied — no lease'
+        : profile.profileMode === 'SOLD'
+          ? 'Sold'
+          : profile.profileMode === 'GUEST'
+            ? 'Guest unit'
+            : unit.status === 'AVAILABLE'
+              ? 'Available'
+              : unit.status;
 
   return (
     <div className="space-y-6">
+      <Button
+        type="button"
+        variant="ghost"
+        className="-mb-2 h-9 gap-1.5 px-2 text-sm text-[var(--text-muted)] hover:text-[var(--text)]"
+        onClick={goBack}
+      >
+        <MdArrowBack className="h-4 w-4" />
+        Back
+      </Button>
+
       <PageHeader
-        title={`${unit.usage === 'SHOP' ? 'Shop' : 'Unit'} ${unit.roomNumber}`}
+        title={`${unitTitleLabel(unit)} ${unit.roomNumber}`}
         subtitle={`${unit.building?.name || '—'} · ${unit.floor?.name || '—'} · ${profile.ownershipType}`}
         breadcrumbs={[
           { label: APP_NAME, to: '/dashboard' },
@@ -470,7 +588,7 @@ export default function UnitProfile() {
             {actions.includes('ADD_CHARGE') ? (
               <Button variant="secondary" className="h-11 px-4" onClick={openCharge}>Add Charge</Button>
             ) : null}
-            {actions.includes('CREATE_LEASE') && unit.usage === 'SHOP' ? (
+            {canCreateLease(actions, unit) ? (
               <Button className="h-11 px-4" onClick={openCreateLease}>Create Lease</Button>
             ) : null}
             {actions.includes('RENEW_LEASE') ? (
@@ -626,7 +744,7 @@ export default function UnitProfile() {
           ) : (
             <Card>
               <p className="text-sm text-[var(--text-muted)]">No active lease on this unit.</p>
-              {actions.includes('CREATE_LEASE') && unit.usage === 'SHOP' ? (
+              {canCreateLease(actions, unit) ? (
                 <Button className="mt-3 h-11 px-4" onClick={openCreateLease}>Create Lease</Button>
               ) : null}
             </Card>
@@ -805,7 +923,8 @@ export default function UnitProfile() {
                     <th className="pb-2 pr-3 font-medium">Total due</th>
                     <th className="pb-2 pr-3 font-medium">Paid</th>
                     <th className="pb-2 pr-3 font-medium">Balance</th>
-                    <th className="pb-2 font-medium">Status</th>
+                    <th className="pb-2 pr-3 font-medium">Status</th>
+                    <th className="pb-2 font-medium">Docs</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -817,10 +936,34 @@ export default function UnitProfile() {
                       <td className="py-2.5 pr-3">{formatCurrency(p.amountDue)}</td>
                       <td className="py-2.5 pr-3">{formatCurrency(p.amountPaid)}</td>
                       <td className="py-2.5 pr-3">{formatCurrency(p.balance)}</td>
-                      <td className="py-2.5">
+                      <td className="py-2.5 pr-3">
                         <Badge status={paymentTone(p.status, p.balance)}>
                           {paymentTone(p.status, p.balance)}
                         </Badge>
+                      </td>
+                      <td className="py-2.5">
+                        <FinanceDocActions
+                          compact
+                          label={(Number(p.amountPaid) || 0) > 0 ? 'Receipt' : 'Invoice'}
+                          onPayload={() =>
+                            rentPaymentDocPayload(
+                              p,
+                              {
+                                customerName:
+                                  lease.tenantName ||
+                                  lease.businessName ||
+                                  lease.contactName ||
+                                  'Tenant',
+                                customerPhone: lease.phone || null,
+                                unitId: unit?.id,
+                                buildingName: unit?.building?.name,
+                                floorName: unit?.floor?.name,
+                                unitNumber: unit?.unitNumber || unit?.roomNumber,
+                              },
+                              (Number(p.amountPaid) || 0) > 0 ? 'RECEIPT' : 'INVOICE',
+                            )
+                          }
+                        />
                       </td>
                     </tr>
                   ))}
@@ -1106,10 +1249,27 @@ export default function UnitProfile() {
           <Input label="Total due (auto)" value={String(payTotalDue)} readOnly />
           <Input label="Amount paid" type="number" value={payForm.amountPaid} onChange={(e) => setPayForm({ ...payForm, amountPaid: e.target.value })} />
           <Input label="Payment date" type="date" value={payForm.paymentDate} onChange={(e) => setPayForm({ ...payForm, paymentDate: e.target.value })} />
-          <Select label="Method" value={payForm.method} onChange={(e) => setPayForm({ ...payForm, method: e.target.value })}>
-            {PAYMENT_METHODS.map((m) => <option key={m} value={m}>{m}</option>)}
-          </Select>
-          <Input label="Reference / comment" value={payForm.notes} onChange={(e) => setPayForm({ ...payForm, notes: e.target.value })} />
+          <div className="sm:col-span-2">
+            <PaymentMethodFields
+              value={payForm}
+              onChange={(next) =>
+                setPayForm({
+                  ...payForm,
+                  method: next.method,
+                  reference: next.reference,
+                  receivedByName: next.receivedByName,
+                  agentName: next.agentName,
+                  officeMpesaNumber: next.officeMpesaNumber,
+                })
+              }
+            />
+          </div>
+          <Input
+            className="sm:col-span-2"
+            label="Comment (optional)"
+            value={payForm.notes}
+            onChange={(e) => setPayForm({ ...payForm, notes: e.target.value })}
+          />
         </div>
       </Modal>
 
@@ -1188,7 +1348,9 @@ export default function UnitProfile() {
         }
       >
         <p className="mb-4 text-sm text-[var(--text-muted)]">
-          The current lease term is closed and kept in history. A new active lease is created with the details below.
+          {lease?.kind === 'BUSINESS'
+            ? 'The current lease term is closed and kept in history. A new active lease is created with the details below.'
+            : 'Update the lease term dates and rent for the active tenant.'}
         </p>
         <div className="grid gap-4 sm:grid-cols-2">
           <Input label="New start" type="date" value={renewForm.leaseStart} onChange={(e) => setRenewForm({ ...renewForm, leaseStart: e.target.value })} />
@@ -1211,20 +1373,33 @@ export default function UnitProfile() {
         }
       >
         <div className="grid gap-4 sm:grid-cols-2">
-          <Input label="Business / tenant name" value={leaseForm.businessName} onChange={(e) => setLeaseForm({ ...leaseForm, businessName: e.target.value })} />
-          <Input label="Contact name" value={leaseForm.contactName} onChange={(e) => setLeaseForm({ ...leaseForm, contactName: e.target.value })} />
-          <Input label="Phone" value={leaseForm.phone} onChange={(e) => setLeaseForm({ ...leaseForm, phone: e.target.value })} />
-          <Input label="ID / license" value={leaseForm.idNumber} onChange={(e) => setLeaseForm({ ...leaseForm, idNumber: e.target.value })} />
-          <Input label="Monthly rent" type="number" value={leaseForm.monthlyRent} onChange={(e) => setLeaseForm({ ...leaseForm, monthlyRent: e.target.value })} />
-          <Input label="Security deposit" type="number" value={leaseForm.securityDeposit} onChange={(e) => setLeaseForm({ ...leaseForm, securityDeposit: e.target.value })} />
-          <Input label="Lease start" type="date" value={leaseForm.leaseStart} onChange={(e) => setLeaseForm({ ...leaseForm, leaseStart: e.target.value })} />
-          <Input label="Lease end" type="date" value={leaseForm.leaseEnd} onChange={(e) => setLeaseForm({ ...leaseForm, leaseEnd: e.target.value })} />
-          <Select label="Payment frequency" value={leaseForm.paymentFrequency} onChange={(e) => setLeaseForm({ ...leaseForm, paymentFrequency: e.target.value })}>
-            <option value="MONTHLY">Monthly</option>
-            <option value="QUARTERLY">Quarterly</option>
-            <option value="YEARLY">Yearly</option>
-          </Select>
-          <Input label="Grace period (days)" type="number" value={leaseForm.gracePeriodDays} onChange={(e) => setLeaseForm({ ...leaseForm, gracePeriodDays: e.target.value })} />
+          {isApartmentUnit(unit) ? (
+            <>
+              <Input label="Tenant name" value={leaseForm.fullName} onChange={(e) => setLeaseForm({ ...leaseForm, fullName: e.target.value })} />
+              <Input label="Phone" value={leaseForm.phone} onChange={(e) => setLeaseForm({ ...leaseForm, phone: e.target.value })} />
+              <Input label="ID number" value={leaseForm.idNumber} onChange={(e) => setLeaseForm({ ...leaseForm, idNumber: e.target.value })} />
+              <Input label="Monthly rent" type="number" value={leaseForm.monthlyRent} onChange={(e) => setLeaseForm({ ...leaseForm, monthlyRent: e.target.value })} />
+              <Input label="Lease start" type="date" value={leaseForm.leaseStart} onChange={(e) => setLeaseForm({ ...leaseForm, leaseStart: e.target.value })} />
+              <Input label="Lease end" type="date" value={leaseForm.leaseEnd} onChange={(e) => setLeaseForm({ ...leaseForm, leaseEnd: e.target.value })} />
+            </>
+          ) : (
+            <>
+              <Input label="Business name" value={leaseForm.businessName} onChange={(e) => setLeaseForm({ ...leaseForm, businessName: e.target.value })} />
+              <Input label="Contact name" value={leaseForm.contactName} onChange={(e) => setLeaseForm({ ...leaseForm, contactName: e.target.value })} />
+              <Input label="Phone" value={leaseForm.phone} onChange={(e) => setLeaseForm({ ...leaseForm, phone: e.target.value })} />
+              <Input label="ID / license" value={leaseForm.idNumber} onChange={(e) => setLeaseForm({ ...leaseForm, idNumber: e.target.value })} />
+              <Input label="Monthly rent" type="number" value={leaseForm.monthlyRent} onChange={(e) => setLeaseForm({ ...leaseForm, monthlyRent: e.target.value })} />
+              <Input label="Security deposit" type="number" value={leaseForm.securityDeposit} onChange={(e) => setLeaseForm({ ...leaseForm, securityDeposit: e.target.value })} />
+              <Input label="Lease start" type="date" value={leaseForm.leaseStart} onChange={(e) => setLeaseForm({ ...leaseForm, leaseStart: e.target.value })} />
+              <Input label="Lease end" type="date" value={leaseForm.leaseEnd} onChange={(e) => setLeaseForm({ ...leaseForm, leaseEnd: e.target.value })} />
+              <Select label="Payment frequency" value={leaseForm.paymentFrequency} onChange={(e) => setLeaseForm({ ...leaseForm, paymentFrequency: e.target.value })}>
+                <option value="MONTHLY">Monthly</option>
+                <option value="QUARTERLY">Quarterly</option>
+                <option value="YEARLY">Yearly</option>
+              </Select>
+              <Input label="Grace period (days)" type="number" value={leaseForm.gracePeriodDays} onChange={(e) => setLeaseForm({ ...leaseForm, gracePeriodDays: e.target.value })} />
+            </>
+          )}
           <Input className="sm:col-span-2" label="Notes" value={leaseForm.notes} onChange={(e) => setLeaseForm({ ...leaseForm, notes: e.target.value })} />
         </div>
       </Modal>

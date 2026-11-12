@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { useAuth } from '../../context/AuthContext.jsx';
@@ -7,18 +8,28 @@ import { APP_NAME } from '../../utils/constants.js';
 
 export default function Login() {
   const { login, loading } = useAuth();
+  const [mfaStep, setMfaStep] = useState(null);
   const {
     register,
     handleSubmit,
     formState: { errors },
   } = useForm({
-    defaultValues: { email: '', password: '' },
+    defaultValues: { email: '', password: '', mfaCode: '', recoveryCode: '' },
   });
 
   const onSubmit = async (values) => {
     try {
-      await login(values);
-    } catch {
+      await login({
+        email: values.email,
+        password: values.password,
+        mfaCode: values.mfaCode || undefined,
+        recoveryCode: values.recoveryCode || undefined,
+      });
+    } catch (err) {
+      if (err?.mfaRequired) {
+        setMfaStep(err.pendingUser || { email: values.email });
+        return;
+      }
       /* toast handled in context */
     }
   };
@@ -31,44 +42,72 @@ export default function Login() {
       </p>
 
       <form onSubmit={handleSubmit(onSubmit)} className="mt-8 space-y-4">
-        <Input
-          label="Email"
-          type="email"
-          autoComplete="email"
-          error={errors.email?.message}
-          {...register('email', {
-            required: 'Email is required',
-            pattern: {
-              value: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
-              message: 'Enter a valid email',
-            },
-          })}
-        />
-        <Input
-          label="Password"
-          type="password"
-          autoComplete="current-password"
-          error={errors.password?.message}
-          {...register('password', {
-            required: 'Password is required',
-            minLength: { value: 6, message: 'At least 6 characters' },
-          })}
-        />
+        {!mfaStep ? (
+          <>
+            <Input
+              label="Email"
+              type="email"
+              autoComplete="email"
+              error={errors.email?.message}
+              {...register('email', {
+                required: 'Email is required',
+                pattern: {
+                  value: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
+                  message: 'Enter a valid email',
+                },
+              })}
+            />
+            <Input
+              label="Password"
+              type="password"
+              autoComplete="current-password"
+              error={errors.password?.message}
+              {...register('password', {
+                required: 'Password is required',
+                minLength: { value: 6, message: 'At least 6 characters' },
+              })}
+            />
 
-        <div className="flex justify-end">
-          <Link
-            to="/forgot-password"
-            className="text-sm font-medium text-brand-700 hover:underline dark:text-brand-300"
-          >
-            Forgot password?
-          </Link>
-        </div>
+            <div className="flex justify-end">
+              <Link
+                to="/forgot-password"
+                className="text-sm font-medium text-brand-700 hover:underline dark:text-brand-300"
+              >
+                Forgot password?
+              </Link>
+            </div>
+          </>
+        ) : (
+          <>
+            <p className="text-sm text-[var(--text-muted)]">
+              Enter the 6-digit code from your authenticator app
+              {mfaStep.email ? ` for ${mfaStep.email}` : ''}.
+            </p>
+            <Input
+              label="Authenticator code"
+              autoComplete="one-time-code"
+              inputMode="numeric"
+              error={errors.mfaCode?.message}
+              {...register('mfaCode')}
+            />
+            <Input
+              label="Recovery code (optional)"
+              {...register('recoveryCode')}
+            />
+            <button
+              type="button"
+              className="text-sm text-brand-700 hover:underline"
+              onClick={() => setMfaStep(null)}
+            >
+              Back to password
+            </button>
+          </>
+        )}
 
         <Button type="submit" className="w-full" loading={loading}>
-          Sign in
+          {mfaStep ? 'Verify and sign in' : 'Sign in'}
         </Button>
       </form>
-
     </div>
   );
 }

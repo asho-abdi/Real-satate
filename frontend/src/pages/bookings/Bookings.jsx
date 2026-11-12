@@ -9,10 +9,13 @@ import Select from '../../components/ui/Select.jsx';
 import Badge from '../../components/ui/Badge.jsx';
 import Modal from '../../components/ui/Modal.jsx';
 import Spinner from '../../components/ui/Spinner.jsx';
-import { PAYMENT_METHODS } from '../../utils/constants.js';
 import { calcBookingTotal } from '../../utils/rentCalc.js';
 import { formatCurrency, formatDate, formatRoomLocation, cn } from '../../utils/format.js';
 import { rentalApi, resolveIdentityAttachment } from '../../services/rentalApi.js';
+import IdentityDocumentField from '../../components/ui/IdentityDocumentField.jsx';
+import PaymentMethodFields from '../../components/payments/PaymentMethodFields.jsx';
+import FinanceDocActions from '../../components/finance/FinanceDocActions.jsx';
+import { bookingDocPayload } from '../../utils/financeDocs.js';
 import PaymentStatusBadge from '../../components/realty/PaymentStatusBadge.jsx';
 import NewBooking from './NewBooking.jsx';
 
@@ -68,7 +71,15 @@ export default function Bookings() {
   const [editIdentityFile, setEditIdentityFile] = useState(null);
   const [clearIdentity, setClearIdentity] = useState(false);
   const [savingEdit, setSavingEdit] = useState(false);
-  const [payForm, setPayForm] = useState({ amountPaid: '', paymentMethod: 'Cash', comment: '', reference: '' });
+  const [payForm, setPayForm] = useState({
+    amountPaid: '',
+    method: 'CASH',
+    reference: '',
+    receivedByName: '',
+    agentName: '',
+    officeMpesaNumber: '',
+    comment: '',
+  });
   const [savingPay, setSavingPay] = useState(false);
 
   useEffect(() => {
@@ -155,14 +166,19 @@ export default function Bookings() {
 
   const openPayModal = (booking, action) => {
     const balance = Math.max(0, Number(booking.total) - Number(booking.amountPaid || 0));
+    // Close booking details so the payment modal is not hidden underneath it
+    setDetailModal(null);
     setPayModal({ booking, action });
     setPayForm({
       amountPaid: String(
         action === 'payment' || action === 'checkout' ? balance || booking.total : balance || booking.total,
       ),
-      paymentMethod: booking.paymentMethod || 'Cash',
-      comment: '',
+      method: 'CASH',
       reference: '',
+      receivedByName: '',
+      agentName: '',
+      officeMpesaNumber: '',
+      comment: '',
     });
   };
 
@@ -175,26 +191,33 @@ export default function Bookings() {
       return;
     }
 
+    const methodPayload = {
+      paymentMethod: payForm.method || 'CASH',
+      reference: payForm.reference || null,
+      receivedByName: payForm.receivedByName || null,
+      agentName: payForm.agentName || null,
+      officeMpesaNumber: payForm.officeMpesaNumber || null,
+    };
+
     setSavingPay(true);
     try {
       if (action === 'payment') {
         await rentalApi.addBookingPayment(booking.id, {
           amount: amountPaid,
-          paymentMethod: payForm.paymentMethod,
           comment: payForm.comment || null,
-          reference: payForm.reference || null,
+          ...methodPayload,
         });
         toast.success('Payment recorded');
       } else if (action === 'checkin') {
         await rentalApi.checkInBooking(booking.id, {
           amountPaid,
-          paymentMethod: payForm.paymentMethod,
+          ...methodPayload,
         });
         toast.success('Guest checked in');
       } else {
         await rentalApi.checkOutBooking(booking.id, {
           amountPaid,
-          paymentMethod: payForm.paymentMethod,
+          ...methodPayload,
         });
         toast.success('Guest checked out');
       }
@@ -577,30 +600,16 @@ export default function Bookings() {
               value={payForm.amountPaid}
               onChange={(e) => setPayForm({ ...payForm, amountPaid: e.target.value })}
             />
-            <Select
-              label="Payment method"
-              value={payForm.paymentMethod}
-              onChange={(e) => setPayForm({ ...payForm, paymentMethod: e.target.value })}
-            >
-              {PAYMENT_METHODS.map((m) => (
-                <option key={m} value={m}>
-                  {m}
-                </option>
-              ))}
-            </Select>
+            <PaymentMethodFields
+              value={payForm}
+              onChange={(next) => setPayForm({ ...payForm, ...next })}
+            />
             {payModal.action === 'payment' ? (
-              <>
-                <Input
-                  label="Reference"
-                  value={payForm.reference || ''}
-                  onChange={(e) => setPayForm({ ...payForm, reference: e.target.value })}
-                />
-                <Input
-                  label="Comment"
-                  value={payForm.comment || ''}
-                  onChange={(e) => setPayForm({ ...payForm, comment: e.target.value })}
-                />
-              </>
+              <Input
+                label="Comment"
+                value={payForm.comment || ''}
+                onChange={(e) => setPayForm({ ...payForm, comment: e.target.value })}
+              />
             ) : null}
             <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2.5 text-sm">
               {payModal.action === 'payment' ? (
@@ -771,14 +780,36 @@ export default function Bookings() {
                   ))}
                 </div>
               ) : null}
-              {detailBalance > 0 ? (
-                <Button
-                  className="mt-3 h-9 w-full text-sm"
-                  onClick={() => openPayModal(detailModal, 'payment')}
-                >
-                  Record payment
-                </Button>
-              ) : null}
+              <div className="mt-3 flex flex-col gap-2">
+                {detailBalance > 0 ? (
+                  <Button
+                    className="h-9 w-full text-sm"
+                    onClick={() => openPayModal(detailModal, 'payment')}
+                  >
+                    Record payment
+                  </Button>
+                ) : null}
+                <p className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+                  Invoice
+                </p>
+                <FinanceDocActions
+                  compact
+                  label="Invoice"
+                  onPayload={() => bookingDocPayload(detailModal, 'INVOICE')}
+                />
+                {(Number(detailModal.amountPaid) || 0) > 0 ? (
+                  <>
+                    <p className="mt-1 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+                      Receipt
+                    </p>
+                    <FinanceDocActions
+                      compact
+                      label="Receipt"
+                      onPayload={() => bookingDocPayload(detailModal, 'RECEIPT')}
+                    />
+                  </>
+                ) : null}
+              </div>
             </div>
           </div>
         ) : null}

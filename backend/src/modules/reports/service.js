@@ -1,6 +1,7 @@
 import { AppError } from '../../utils/AppError.js';
 import { exportExcel, exportPdf } from '../../utils/export.js';
-import * as repo from './repository.js';
+/** Orphan stack — not mounted; repository quarantined under HOLD_ARCHIVED. */
+import * as repo from '../../HOLD_ARCHIVED/reports-repository.js';
 
 const EXPORT_TYPES = new Set([
   'dashboard',

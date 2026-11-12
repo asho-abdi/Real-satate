@@ -333,10 +333,6 @@ export default function BuildingDetail() {
       toast.error('Monthly rent is required');
       return;
     }
-    if ((usage === 'SHOP' || usage === 'OFFICE') && !roomForm.areaSqm) {
-      toast.error('Floor area (m²) is required for shops and offices');
-      return;
-    }
     if (usage === 'APARTMENT' && (!roomForm.roomsCount || !roomForm.bathroomsCount)) {
       toast.error('Apartment rooms and bathrooms are required');
       return;
@@ -358,7 +354,10 @@ export default function BuildingDetail() {
         salePrice: roomForm.salePrice === '' ? null : Number(roomForm.salePrice),
         discount: Number(roomForm.discount) || 0,
         status: roomForm.status,
-        areaSqm: usage === 'SHOP' || usage === 'OFFICE' ? Number(roomForm.areaSqm) : null,
+        areaSqm:
+          (usage === 'SHOP' || usage === 'OFFICE') && roomForm.areaSqm !== ''
+            ? Number(roomForm.areaSqm)
+            : null,
         roomsCount: usage === 'APARTMENT' ? Number(roomForm.roomsCount) : null,
         bathroomsCount: usage === 'APARTMENT' ? Number(roomForm.bathroomsCount) : null,
       };
@@ -765,28 +764,28 @@ export default function BuildingDetail() {
                 hint="The label on the door or in your listings."
               />
             </div>
+            <UsageChoiceCards
+              value={roomForm.usage}
+              shopOnly={roomForm.unitType === 'Commercial Shop'}
+              onChange={(usage) =>
+                setRoomForm({
+                  ...roomForm,
+                  usage,
+                  areaSqm: usage === 'shop' || usage === 'office' ? roomForm.areaSqm : '',
+                  roomsCount: usage === 'apartment' ? roomForm.roomsCount : '',
+                  bathroomsCount: usage === 'apartment' ? roomForm.bathroomsCount : '',
+                  dailyRate: usage === 'guest' ? roomForm.dailyRate : '',
+                  weeklyRent: usage === 'guest' ? roomForm.weeklyRent : '',
+                  monthlyRent: roomForm.monthlyRent,
+                  salePrice: usage === 'shop' || usage === 'office' ? roomForm.salePrice : '',
+                })
+              }
+            />
             {editingRoomId ? (
-              <p className="inline-flex rounded-full bg-[var(--surface)] px-3 py-1.5 text-sm font-medium text-[var(--text)] ring-1 ring-[var(--border)]">
-                {UNIT_USAGES.find((u) => u.value === roomForm.usage)?.label || roomForm.usage}
+              <p className="mt-2 text-xs text-[var(--text-muted)]">
+                You can correct usage here (e.g. Residential → Guest / Airbnb). Save to apply.
               </p>
-            ) : (
-              <UsageChoiceCards
-                value={roomForm.usage}
-                shopOnly={roomForm.unitType === 'Commercial Shop'}
-                onChange={(usage) =>
-                  setRoomForm({
-                    ...roomForm,
-                    usage,
-                    areaSqm: '',
-                    roomsCount: '',
-                    bathroomsCount: '',
-                    dailyRate: '',
-                    weeklyRent: '',
-                    monthlyRent: '',
-                  })
-                }
-              />
-            )}
+            ) : null}
           </FormSection>
 
           <FormSection
@@ -825,8 +824,8 @@ export default function BuildingDetail() {
                   step="0.01"
                   value={roomForm.areaSqm}
                   onChange={(e) => setRoomForm({ ...roomForm, areaSqm: e.target.value })}
-                  placeholder="45"
-                  hint="Unit size in square metres."
+                  placeholder="Optional"
+                  hint="Optional — unit size in square metres."
                 />
               ) : null}
 

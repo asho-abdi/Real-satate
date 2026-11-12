@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import * as authController from '../controllers/auth.controller.js';
+import * as mfaController from '../controllers/mfa.controller.js';
 import {
   loginValidators,
   logoutValidators,
@@ -40,5 +41,11 @@ router.post(
 );
 router.get('/me', authenticate, authController.me);
 router.patch('/me', authenticate, authController.updateProfile);
+
+// Administrator MFA (opt-in; does not lock existing admins)
+router.get('/mfa/status', authenticate, mfaController.status);
+router.post('/mfa/enroll', authenticate, mfaController.begin);
+router.post('/mfa/confirm', authenticate, mfaController.confirm);
+router.post('/mfa/disable', authenticate, mfaController.disable);
 
 export default router;

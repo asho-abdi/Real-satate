@@ -17,10 +17,13 @@ const BuildingDetail = lazy(() => import('../pages/setup/BuildingDetail.jsx'));
 const Rooms = lazy(() => import('../pages/setup/Rooms.jsx'));
 const Bookings = lazy(() => import('../pages/bookings/Bookings.jsx'));
 const Apartments = lazy(() => import('../pages/apartments/Apartments.jsx'));
+const CommercialSpaces = lazy(() => import('../pages/commercial/CommercialSpaces.jsx'));
 const Shops = lazy(() => import('../pages/shops/Shops.jsx'));
 const Offices = lazy(() => import('../pages/offices/Offices.jsx'));
 const Payments = lazy(() => import('../pages/payments/Payments.jsx'));
 const Outstanding = lazy(() => import('../pages/payments/Outstanding.jsx'));
+const Deposits = lazy(() => import('../pages/finance/Deposits.jsx'));
+const Statements = lazy(() => import('../pages/finance/Statements.jsx'));
 const Reports = lazy(() => import('../pages/reports/Reports.jsx'));
 const Expenses = lazy(() => import('../pages/Expenses.jsx'));
 const Maintenance = lazy(() => import('../pages/Maintenance.jsx'));
@@ -65,11 +68,14 @@ export default function AppRoutes() {
             <Route path="/bookings" element={<Bookings />} />
 
             <Route path="/apartments" element={<Apartments />} />
+            <Route path="/commercial-spaces" element={<CommercialSpaces />} />
             <Route path="/shops" element={<Shops />} />
             <Route path="/offices" element={<Offices />} />
 
             <Route path="/payments" element={<Payments />} />
             <Route path="/outstanding" element={<Outstanding />} />
+            <Route path="/deposits" element={<Deposits />} />
+            <Route path="/statements" element={<Statements />} />
             <Route path="/reports" element={<Reports />} />
             <Route path="/expenses" element={<Expenses />} />
             <Route path="/maintenance" element={<Maintenance />} />

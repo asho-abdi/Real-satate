@@ -19,7 +19,7 @@ function dateStr(v) {
 }
 
 /**
- * Stream a professional invoice or receipt PDF.
+ * Stream a compact invoice/receipt PDF sized for small slip / thermal paper (~80mm).
  */
 export function streamFinanceDocumentPdf(res, docMeta, company = {}) {
   const isReceipt = docMeta.type === 'RECEIPT';
@@ -31,29 +31,53 @@ export function streamFinanceDocumentPdf(res, docMeta, company = {}) {
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
 
-  const doc = new PDFDocument({ size: 'A4', margin: 48 });
+  // ~80mm wide slip (thermal / small paper). Tall enough for typical booking invoice.
+  const pageW = 226.77; // 80mm
+  const pageH = 480;
+  const m = 14;
+  const contentW = pageW - m * 2;
+
+  const doc = new PDFDocument({
+    size: [pageW, pageH],
+    margin: m,
+  });
   doc.pipe(res);
 
-  doc.rect(0, 0, doc.page.width, 72).fill(BRAND.navy);
-  doc.fillColor('#ffffff').fontSize(18).font('Helvetica-Bold').text(companyName, 48, 28);
-  doc.fontSize(10).font('Helvetica').text(title, 48, 50);
+  let y = m;
 
-  doc.fillColor(BRAND.ink);
-  let y = 100;
-  doc.fontSize(11).font('Helvetica-Bold').text(isReceipt ? 'Receipt No.' : 'Invoice No.', 48, y);
-  doc.font('Helvetica').text(docMeta.number || '—', 160, y);
-  doc.font('Helvetica-Bold').text('Date', 340, y);
-  doc.font('Helvetica').text(dateStr(docMeta.paymentDate || docMeta.createdAt), 400, y);
-  y += 22;
+  doc.fillColor(BRAND.navy).fontSize(11).font('Helvetica-Bold').text(companyName, m, y, {
+    width: contentW,
+    align: 'center',
+  });
+  y += 14;
+  doc.fillColor(BRAND.ink).fontSize(9).font('Helvetica-Bold').text(title, m, y, {
+    width: contentW,
+    align: 'center',
+  });
+  y += 12;
+  doc
+    .moveTo(m, y)
+    .lineTo(pageW - m, y)
+    .strokeColor(BRAND.border)
+    .lineWidth(0.8)
+    .stroke();
+  y += 10;
 
-  doc.font('Helvetica-Bold').text('Customer', 48, y);
-  doc.font('Helvetica').text(docMeta.customerName || '—', 160, y);
-  y += 16;
-  if (docMeta.customerPhone) {
-    doc.font('Helvetica-Bold').text('Phone', 48, y);
-    doc.font('Helvetica').text(docMeta.customerPhone, 160, y);
-    y += 16;
-  }
+  const line = (label, value, opts = {}) => {
+    const labelW = 78;
+    doc.font('Helvetica').fontSize(7).fillColor(BRAND.muted).text(label, m, y, { width: labelW });
+    doc
+      .font(opts.bold ? 'Helvetica-Bold' : 'Helvetica')
+      .fontSize(opts.bold ? 8 : 7)
+      .fillColor(BRAND.ink)
+      .text(String(value ?? '—'), m + labelW, y, { width: contentW - labelW, align: 'right' });
+    y += opts.tall ? 14 : 11;
+  };
+
+  line(isReceipt ? 'Receipt No.' : 'Invoice No.', docMeta.number || '—', { bold: true });
+  line('Date', dateStr(docMeta.paymentDate || docMeta.createdAt));
+  line('Customer', docMeta.customerName || '—', { bold: true });
+  if (docMeta.customerPhone) line('Phone', docMeta.customerPhone);
 
   const loc = [
     docMeta.buildingName,
@@ -62,53 +86,60 @@ export function streamFinanceDocumentPdf(res, docMeta, company = {}) {
   ]
     .filter(Boolean)
     .join(' · ');
-  if (loc) {
-    doc.font('Helvetica-Bold').text('Property', 48, y);
-    doc.font('Helvetica').text(loc, 160, y, { width: 360 });
-    y += 20;
-  }
+  if (loc) line('Property', loc, { tall: true });
 
+  y += 2;
+  doc
+    .moveTo(m, y)
+    .lineTo(pageW - m, y)
+    .strokeColor(BRAND.border)
+    .stroke();
   y += 8;
-  doc.moveTo(48, y).lineTo(547, y).strokeColor(BRAND.border).stroke();
-  y += 16;
 
-  doc.font('Helvetica-Bold').text('Description', 48, y);
-  y += 16;
-  doc.font('Helvetica').fillColor(BRAND.muted).text(docMeta.description || '—', 48, y, { width: 500 });
-  y += 36;
-  doc.fillColor(BRAND.ink);
-
-  const rows = [
-    ['Billing period', docMeta.billingPeriod || '—'],
-    ['Previous balance', money(docMeta.previousBalance, currency)],
-    ['Current charges', money(docMeta.currentCharges ?? docMeta.amount, currency)],
-    ['Amount paid', money(docMeta.amountPaid, currency)],
-    ['Remaining balance', money(docMeta.remainingBalance, currency)],
-  ];
-  if (docMeta.method) rows.push(['Payment method', String(docMeta.methodLabel || docMeta.method)]);
-  if (docMeta.reference) rows.push(['Reference', docMeta.reference]);
-  if (docMeta.receivedBy) rows.push(['Received by', docMeta.receivedBy]);
-  if (docMeta.dueDate) rows.push(['Due date', dateStr(docMeta.dueDate)]);
-
-  for (const [label, value] of rows) {
-    doc.font('Helvetica').fillColor(BRAND.muted).text(label, 48, y, { width: 160 });
-    doc.fillColor(BRAND.ink).font('Helvetica-Bold').text(String(value), 220, y, { width: 300 });
-    y += 18;
+  if (docMeta.description) {
+    doc.font('Helvetica-Bold').fontSize(7).fillColor(BRAND.ink).text('Description', m, y);
+    y += 10;
+    const descH = doc.heightOfString(docMeta.description, { width: contentW, fontSize: 7 });
+    doc.font('Helvetica').fontSize(7).fillColor(BRAND.muted).text(docMeta.description, m, y, {
+      width: contentW,
+    });
+    y += Math.max(12, descH + 4);
   }
+
+  line('Period', docMeta.billingPeriod || '—');
+  if (Number(docMeta.previousBalance) > 0) {
+    line('Previous balance', money(docMeta.previousBalance, currency));
+  }
+  line('Charges', money(docMeta.currentCharges ?? docMeta.amount, currency));
+  line('Amount paid', money(docMeta.amountPaid, currency), { bold: true });
+  line('Balance due', money(docMeta.remainingBalance, currency), { bold: true });
+  if (docMeta.method) line('Method', String(docMeta.methodLabel || docMeta.method));
+  if (docMeta.reference) line('Reference', docMeta.reference);
+  if (docMeta.receivedBy) line('Received by', docMeta.receivedBy);
+  if (docMeta.dueDate) line('Due date', dateStr(docMeta.dueDate));
 
   if (docMeta.notes) {
+    y += 4;
+    doc.font('Helvetica-Bold').fontSize(7).fillColor(BRAND.ink).text('Notes', m, y);
     y += 10;
-    doc.font('Helvetica-Bold').text('Notes', 48, y);
-    y += 14;
-    doc.font('Helvetica').fillColor(BRAND.muted).text(docMeta.notes, 48, y, { width: 500 });
+    doc.font('Helvetica').fontSize(7).fillColor(BRAND.muted).text(String(docMeta.notes), m, y, {
+      width: contentW,
+    });
+    y += 16;
   }
 
-  doc.fillColor(BRAND.muted).fontSize(9).text(
-    'Generated by RJK Realty · This document is a formal record of the listed transaction.',
-    48,
-    doc.page.height - 60,
-    { width: 500, align: 'center' },
-  );
+  y += 6;
+  doc
+    .moveTo(m, y)
+    .lineTo(pageW - m, y)
+    .strokeColor(BRAND.border)
+    .stroke();
+  y += 8;
+  doc
+    .fillColor(BRAND.muted)
+    .fontSize(6)
+    .font('Helvetica')
+    .text('Thank you · RJK Realty', m, y, { width: contentW, align: 'center' });
 
   doc.end();
 }

@@ -6,8 +6,9 @@ import Button from '../../components/ui/Button.jsx';
 import Input from '../../components/ui/Input.jsx';
 import Select from '../../components/ui/Select.jsx';
 import IdentityDocumentField from '../../components/ui/IdentityDocumentField.jsx';
+import PaymentMethodFields from '../../components/payments/PaymentMethodFields.jsx';
 import { FormSection } from '../../components/units/FlatFormLayout.jsx';
-import { PAYMENT_METHODS, BOOKING_PERIODS, DISCOUNT_TYPES } from '../../utils/constants.js';
+import { BOOKING_PERIODS, DISCOUNT_TYPES } from '../../utils/constants.js';
 import { calcDailyRent, calcPeriodBookingTotal } from '../../utils/rentCalc.js';
 import { formatCurrency } from '../../utils/format.js';
 import { rentalApi, resolveIdentityAttachment } from '../../services/rentalApi.js';
@@ -68,7 +69,13 @@ export default function NewBooking({ onSuccess } = {}) {
   const [discountValue, setDiscountValue] = useState(0);
   const [servicesAmount, setServicesAmount] = useState(0);
   const [taxesAmount, setTaxesAmount] = useState(0);
-  const [paymentMethod, setPaymentMethod] = useState('Cash');
+  const [payMethodForm, setPayMethodForm] = useState({
+    method: 'CASH',
+    reference: '',
+    receivedByName: '',
+    agentName: '',
+    officeMpesaNumber: '',
+  });
   const [amountPaid, setAmountPaid] = useState('');
   const [markedPaid, setMarkedPaid] = useState(false);
   const [notes, setNotes] = useState('');
@@ -232,7 +239,11 @@ export default function NewBooking({ onSuccess } = {}) {
         discount: totals.discountAmount,
         servicesAmount: Number(servicesAmount) || 0,
         taxesAmount: Number(taxesAmount) || 0,
-        paymentMethod,
+        paymentMethod: payMethodForm.method || 'CASH',
+        reference: payMethodForm.reference || null,
+        receivedByName: payMethodForm.receivedByName || null,
+        agentName: payMethodForm.agentName || null,
+        officeMpesaNumber: payMethodForm.officeMpesaNumber || null,
         amountPaid: paidNow,
         notes: notes.trim() || null,
       });
@@ -592,17 +603,7 @@ export default function NewBooking({ onSuccess } = {}) {
                 />
               </div>
 
-              <Select
-                label="Payment method"
-                value={paymentMethod}
-                onChange={(e) => setPaymentMethod(e.target.value)}
-              >
-                {PAYMENT_METHODS.map((m) => (
-                  <option key={m} value={m}>
-                    {m}
-                  </option>
-                ))}
-              </Select>
+              <PaymentMethodFields value={payMethodForm} onChange={setPayMethodForm} />
 
               <Input
                 label="Amount paid now"

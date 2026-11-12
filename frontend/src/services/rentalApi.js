@@ -99,6 +99,12 @@ function mapUnit(u) {
     unitTypeRaw: u.unitType,
     usage: labelUsage(u.usage),
     usageRaw: u.usage,
+    commercialType:
+      u.commercialType ||
+      (String(u.usage || '').toUpperCase() === 'SHOP' ||
+      String(u.usage || '').toUpperCase() === 'OFFICE'
+        ? String(u.usage).toUpperCase()
+        : null),
     transactionType: u.transactionType || 'FOR_RENT',
     transactionLabel: labelStatus(u.transactionType || 'FOR_RENT'),
     monthlyRent: Number(u.monthlyRent),
@@ -224,6 +230,10 @@ function mapBusiness(b) {
     roomNumber: b.unit?.roomNumber,
     usage: labelUsage(b.unit?.usage),
     usageRaw: b.unit?.usage || null,
+    commercialType:
+      b.commercialType ||
+      b.unit?.commercialType ||
+      (b.unit?.usage === 'SHOP' || b.unit?.usage === 'OFFICE' ? b.unit.usage : null),
     buildingId: b.unit?.building?.id,
     floorId: b.unit?.floor?.id,
     building: b.unit?.building?.name,
@@ -370,6 +380,10 @@ export const rentalApi = {
       periodRate: payload.periodRate !== undefined ? Number(payload.periodRate) : undefined,
       notes: payload.notes || null,
       paymentMethod: METHOD_VALUES[payload.paymentMethod] || payload.paymentMethod,
+      reference: payload.reference || null,
+      receivedByName: payload.receivedByName || null,
+      agentName: payload.agentName || null,
+      officeMpesaNumber: payload.officeMpesaNumber || null,
       amountPaid:
         payload.amountPaid !== undefined && payload.amountPaid !== null
           ? Number(payload.amountPaid)
@@ -381,6 +395,9 @@ export const rentalApi = {
       paymentMethod: METHOD_VALUES[data.paymentMethod] || data.paymentMethod || 'CASH',
       paymentDate: data.paymentDate || undefined,
       reference: data.reference || null,
+      receivedByName: data.receivedByName || null,
+      agentName: data.agentName || null,
+      officeMpesaNumber: data.officeMpesaNumber || null,
       comment: data.comment || null,
     }).then(mapBooking),
   listBookingPayments: (id) => get(`/bookings/${id}/payments`),
@@ -410,13 +427,20 @@ export const rentalApi = {
       paymentMethod: METHOD_VALUES[data.paymentMethod] || data.paymentMethod || 'CASH',
       paymentDate: data.paymentDate || undefined,
       reference: data.reference || null,
-      comment: data.comment || null,
+      receivedByName: data.receivedByName || null,
+      agentName: data.agentName || null,
+      officeMpesaNumber: data.officeMpesaNumber || null,
+      comment: data.comment || data.notes || null,
     }),
   recordShopMaintenance: (id, data) =>
     post(`/shop-sales/${id}/maintenance`, {
       ...data,
       amountPaid: Number(data.amountPaid),
       paymentMethod: METHOD_VALUES[data.paymentMethod] || data.paymentMethod || 'CASH',
+      reference: data.reference || null,
+      receivedByName: data.receivedByName || null,
+      agentName: data.agentName || null,
+      officeMpesaNumber: data.officeMpesaNumber || null,
     }),
   updateShopSale: (id, data) => patch(`/shop-sales/${id}`, data),
 
@@ -551,6 +575,7 @@ export const rentalApi = {
       monthlyRent: Number(payload.monthlyRent),
       discount: Number(payload.discount) || 0,
       leaseStart: payload.leaseStart,
+      ...(payload.leaseEnd ? { leaseEnd: payload.leaseEnd } : {}),
     }).then(mapTenant),
   terminateTenant: (id, { leaseEnd, notes } = {}) =>
     patch(`/tenants/${id}`, {
@@ -720,6 +745,8 @@ export const rentalApi = {
       }),
       ...(payload.notes !== undefined && { notes: payload.notes }),
     }).then(mapPayment),
+  voidPayment: (id, payload) =>
+    patch(`/payments/${id}/void`, { reason: payload?.reason || '' }).then(mapPayment),
 
   listLeaseCharges: (params) => get('/lease-charges', params),
   createLeaseCharge: (payload) =>

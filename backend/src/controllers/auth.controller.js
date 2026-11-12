@@ -1,6 +1,11 @@
 import * as authService from '../services/auth.service.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { success } from '../utils/apiResponse.js';
+import {
+  clearAuthCookies,
+  readRefreshCookie,
+  setAuthCookies,
+} from '../utils/authCookies.js';
 
 function clientMeta(req) {
   return {
@@ -10,20 +15,36 @@ function clientMeta(req) {
 }
 
 export const login = asyncHandler(async (req, res) => {
-  const { email, password } = req.body;
-  const result = await authService.login({ email, password }, clientMeta(req));
+  const { email, password, mfaCode, recoveryCode } = req.body;
+  const result = await authService.login(
+    { email, password, mfaCode, recoveryCode },
+    clientMeta(req),
+  );
+  if (result?.accessToken && result?.refreshToken) {
+    setAuthCookies(res, {
+      accessToken: result.accessToken,
+      refreshToken: result.refreshToken,
+    });
+  }
   return success(res, result);
 });
 
 export const logout = asyncHandler(async (req, res) => {
-  const refreshToken = req.body.refreshToken;
+  const refreshToken = req.body.refreshToken || readRefreshCookie(req);
   const result = await authService.logout(refreshToken, clientMeta(req));
+  clearAuthCookies(res);
   return success(res, result);
 });
 
 export const refresh = asyncHandler(async (req, res) => {
-  const refreshToken = req.body.refreshToken;
+  const refreshToken = req.body.refreshToken || readRefreshCookie(req);
   const result = await authService.refreshTokens(refreshToken, clientMeta(req));
+  if (result?.accessToken && result?.refreshToken) {
+    setAuthCookies(res, {
+      accessToken: result.accessToken,
+      refreshToken: result.refreshToken,
+    });
+  }
   return success(res, result);
 });
 
