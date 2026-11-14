@@ -257,6 +257,9 @@ export default function BuildingDetail() {
       await rentalApi.deleteUnit(room.id);
       toast.success('Unit deleted');
       setConfirm(null);
+      setRoomOpen(false);
+      setEditingRoomId(null);
+      setPendingImages([]);
       await load();
     } catch (err) {
       toast.error(err.message || 'Could not delete unit');
@@ -629,9 +632,6 @@ export default function BuildingDetail() {
                             <Button variant="secondary" className="h-9 px-3 text-xs" onClick={() => openEditRoom(r)}>
                               Edit
                             </Button>
-                            <Button variant="danger" className="h-9 px-3 text-xs" onClick={() => askDeleteRoom(r)}>
-                              Delete
-                            </Button>
                             {(r.images || []).length ? (
                               <Button variant="secondary" className="h-9 px-3 text-xs" onClick={() => setViewPhotosRoom(r)}>
                                 View photos
@@ -758,17 +758,39 @@ export default function BuildingDetail() {
               : 'Add a unit'
         }
         footer={
-          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-            <Button variant="secondary" className="h-12 px-5" onClick={() => {
-              setRoomOpen(false);
-              setEditingRoomId(null);
-              setPendingImages([]);
-            }}>
-              Cancel
-            </Button>
-            <Button className="h-12 px-6" onClick={addRoom}>
-              {editingRoomId ? 'Save changes' : 'Save this unit'}
-            </Button>
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between">
+            {editingRoomId ? (
+              <Button
+                variant="danger"
+                className="h-12 px-5"
+                onClick={() =>
+                  askDeleteRoom({
+                    id: editingRoomId,
+                    roomNumber: roomForm.roomNumber || 'this unit',
+                  })
+                }
+              >
+                Delete
+              </Button>
+            ) : (
+              <span className="hidden sm:block" />
+            )}
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <Button
+                variant="secondary"
+                className="h-12 px-5"
+                onClick={() => {
+                  setRoomOpen(false);
+                  setEditingRoomId(null);
+                  setPendingImages([]);
+                }}
+              >
+                Cancel
+              </Button>
+              <Button className="h-12 px-6" onClick={addRoom}>
+                {editingRoomId ? 'Save changes' : 'Save this unit'}
+              </Button>
+            </div>
           </div>
         }
       >
