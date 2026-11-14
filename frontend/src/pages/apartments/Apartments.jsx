@@ -7,6 +7,7 @@ import Card from '../../components/ui/Card.jsx';
 import Button from '../../components/ui/Button.jsx';
 import Input from '../../components/ui/Input.jsx';
 import Select from '../../components/ui/Select.jsx';
+import SearchableSelect from '../../components/ui/SearchableSelect.jsx';
 import Modal from '../../components/ui/Modal.jsx';
 import Badge from '../../components/ui/Badge.jsx';
 import Spinner from '../../components/ui/Spinner.jsx';
@@ -308,51 +309,51 @@ export default function Apartments() {
       {tab === 'register' ? (
         <Card title="Register Tenant">
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <Select
+            <SearchableSelect
               label="Building"
               value={regBuildingId}
-              onChange={(e) => {
-                setRegBuildingId(e.target.value);
+              placeholder="Select"
+              searchPlaceholder="Search building…"
+              options={buildings.map((b) => ({
+                value: b.id,
+                label: b.name,
+                searchText: `${b.code || ''} ${b.name || ''}`,
+              }))}
+              onChange={(next) => {
+                setRegBuildingId(next);
                 setRegFloorId('');
                 setRoomId('');
               }}
-            >
-              <option value="">Select</option>
-              {buildings.map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.name}
-                </option>
-              ))}
-            </Select>
-            <Select
+            />
+            <SearchableSelect
               label="Floor"
               value={regFloorId}
+              placeholder="Select"
+              searchPlaceholder="Search floor…"
               disabled={!regBuildingId}
-              onChange={(e) => {
-                setRegFloorId(e.target.value);
+              options={regFloors.map((f) => ({
+                value: f.id,
+                label: f.name,
+                searchText: `${f.name || ''} ${f.level ?? ''}`,
+              }))}
+              onChange={(next) => {
+                setRegFloorId(next);
                 setRoomId('');
               }}
-            >
-              <option value="">Select</option>
-              {regFloors.map((f) => (
-                <option key={f.id} value={f.id}>
-                  {f.name}
-                </option>
-              ))}
-            </Select>
-            <Select
+            />
+            <SearchableSelect
               label="Apartment (Available)"
               value={roomId}
+              placeholder="Select"
+              searchPlaceholder="Search apartment…"
               disabled={!regBuildingId}
-              onChange={(e) => onRoom(e.target.value)}
-            >
-              <option value="">Select</option>
-              {apartments.map((r) => (
-                <option key={r.id} value={r.id}>
-                  {r.roomNumber} · {formatCurrency(r.monthlyRent)}
-                </option>
-              ))}
-            </Select>
+              options={apartments.map((r) => ({
+                value: r.id,
+                label: `${r.roomNumber} · ${formatCurrency(r.monthlyRent)}`,
+                searchText: `${r.roomNumber || ''} ${r.unitType || ''}`,
+              }))}
+              onChange={(next) => onRoom(next)}
+            />
             {regBuildingId && regFloorId && apartments.length === 0 ? (
               <p className="col-span-full mt-1 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-100">
                 No available apartment rooms on this floor.

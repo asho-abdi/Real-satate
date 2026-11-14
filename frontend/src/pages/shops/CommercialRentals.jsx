@@ -7,6 +7,7 @@ import Card from '../../components/ui/Card.jsx';
 import Button from '../../components/ui/Button.jsx';
 import Input from '../../components/ui/Input.jsx';
 import Select from '../../components/ui/Select.jsx';
+import SearchableSelect from '../../components/ui/SearchableSelect.jsx';
 import Modal from '../../components/ui/Modal.jsx';
 import Badge from '../../components/ui/Badge.jsx';
 import Spinner from '../../components/ui/Spinner.jsx';
@@ -508,51 +509,51 @@ export default function CommercialRentals({ initialFilter = 'ALL' }) {
                 <option key={d.value} value={d.value}>{d.label}</option>
               ))}
             </Select>
-            <Select
+            <SearchableSelect
               label="Building"
               value={regBuildingId}
-              onChange={(e) => {
-                setRegBuildingId(e.target.value);
+              placeholder="Select"
+              searchPlaceholder="Search building…"
+              options={buildings.map((b) => ({
+                value: b.id,
+                label: b.name,
+                searchText: `${b.code || ''} ${b.name || ''}`,
+              }))}
+              onChange={(next) => {
+                setRegBuildingId(next);
                 setRegFloorId('');
                 setRoomId('');
               }}
-            >
-              <option value="">Select</option>
-              {buildings.map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.name}
-                </option>
-              ))}
-            </Select>
-            <Select
+            />
+            <SearchableSelect
               label="Floor"
               value={regFloorId}
+              placeholder="Select"
+              searchPlaceholder="Search floor…"
               disabled={!regBuildingId}
-              onChange={(e) => {
-                setRegFloorId(e.target.value);
+              options={regFloors.map((f) => ({
+                value: f.id,
+                label: f.name,
+                searchText: `${f.name || ''} ${f.level ?? ''}`,
+              }))}
+              onChange={(next) => {
+                setRegFloorId(next);
                 setRoomId('');
               }}
-            >
-              <option value="">Select</option>
-              {regFloors.map((f) => (
-                <option key={f.id} value={f.id}>
-                  {f.name}
-                </option>
-              ))}
-            </Select>
-            <Select
+            />
+            <SearchableSelect
               label={copy.unitLabel}
               value={roomId}
+              placeholder="Select"
+              searchPlaceholder="Search unit…"
               disabled={!regBuildingId}
-              onChange={(e) => onRoom(e.target.value)}
-            >
-              <option value="">Select</option>
-              {availableUnits.map((r) => (
-                <option key={r.id} value={r.id}>
-                  {r.roomNumber} · {formatCurrency(r.monthlyRent || r.salePrice || 0)}
-                </option>
-              ))}
-            </Select>
+              options={availableUnits.map((r) => ({
+                value: r.id,
+                label: `${r.roomNumber} · ${formatCurrency(r.monthlyRent || r.salePrice || 0)}`,
+                searchText: `${r.roomNumber || ''} ${r.unitType || ''} ${r.usage || ''}`,
+              }))}
+              onChange={(next) => onRoom(next)}
+            />
             <Input
               label={form.dealType === 'SALE' ? 'Buyer / owner name' : copy.nameLabel}
               value={form.businessName}
@@ -647,34 +648,36 @@ export default function CommercialRentals({ initialFilter = 'ALL' }) {
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
-              <Select
+              <SearchableSelect
                 label="Building"
                 value={filterBuildingId}
-                onChange={(e) => {
-                  setFilterBuildingId(e.target.value);
+                placeholder="All Buildings"
+                searchPlaceholder="Search building…"
+                allowClear
+                options={buildings.map((b) => ({
+                  value: b.id,
+                  label: b.name,
+                  searchText: `${b.code || ''} ${b.name || ''}`,
+                }))}
+                onChange={(next) => {
+                  setFilterBuildingId(next);
                   setFilterFloorId('');
                 }}
-              >
-                <option value="">All Buildings</option>
-                {buildings.map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {b.name}
-                  </option>
-                ))}
-              </Select>
-              <Select
+              />
+              <SearchableSelect
                 label="Floor"
                 value={filterFloorId}
-                onChange={(e) => setFilterFloorId(e.target.value)}
+                placeholder="All Floors"
+                searchPlaceholder="Search floor…"
+                allowClear
                 disabled={filterFloors.length === 0}
-              >
-                <option value="">All Floors</option>
-                {filterFloors.map((f) => (
-                  <option key={f.id} value={f.id}>
-                    {f.name}
-                  </option>
-                ))}
-              </Select>
+                options={filterFloors.map((f) => ({
+                  value: f.id,
+                  label: f.name,
+                  searchText: `${f.name || ''} ${f.level ?? ''}`,
+                }))}
+                onChange={(next) => setFilterFloorId(next)}
+              />
               <div className="flex items-end">
                 {(search || filterBuildingId || filterFloorId) ? (
                   <button
