@@ -7,7 +7,6 @@ import Card from '../../components/ui/Card.jsx';
 import Button from '../../components/ui/Button.jsx';
 import Input from '../../components/ui/Input.jsx';
 import Modal from '../../components/ui/Modal.jsx';
-import ConfirmDialog from '../../components/ui/ConfirmDialog.jsx';
 import Spinner from '../../components/ui/Spinner.jsx';
 import { rentalApi } from '../../services/rentalApi.js';
 import Select from '../../components/ui/Select.jsx';
@@ -31,8 +30,6 @@ export default function Buildings() {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(emptyForm);
-  const [confirm, setConfirm] = useState(null);
-  const [deleting, setDeleting] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -108,32 +105,6 @@ export default function Buildings() {
     }
   };
 
-  const askDelete = (b) => {
-    const floors = b._count?.floors ?? 0;
-    const rooms = b._count?.units ?? 0;
-    setConfirm({
-      title: 'Delete Building?',
-      message:
-        floors > 0 || rooms > 0
-          ? `Are you sure you want to delete "${b.name}" (${b.code})? Its ${floors} floor${floors === 1 ? '' : 's'} and ${rooms} unit${rooms === 1 ? '' : 's'} will also be removed from the active list. This cannot be undone.`
-          : `Are you sure you want to delete "${b.name}" (${b.code})? This cannot be undone.`,
-      confirmLabel: 'Delete Building',
-      onConfirm: async () => {
-        setDeleting(true);
-        try {
-          await rentalApi.deleteBuilding(b.id);
-          toast.success('Building deleted');
-          setConfirm(null);
-          await load();
-        } catch (err) {
-          toast.error(err.message || 'Could not delete building');
-        } finally {
-          setDeleting(false);
-        }
-      },
-    });
-  };
-
   return (
     <div>
       <PageHeader
@@ -183,13 +154,6 @@ export default function Buildings() {
                 <div className="flex shrink-0 flex-wrap gap-2">
                   <Button variant="secondary" className="h-10 px-3 text-sm" onClick={() => openEdit(b)}>
                     Edit
-                  </Button>
-                  <Button
-                    variant="danger"
-                    className="h-10 px-3 text-sm"
-                    onClick={() => askDelete(b)}
-                  >
-                    Delete
                   </Button>
                   <Link to={`/buildings/${b.id}`}>
                     <Button variant="secondary" className="h-12 px-4">
@@ -275,17 +239,6 @@ export default function Buildings() {
           />
         </div>
       </Modal>
-
-      <ConfirmDialog
-        open={Boolean(confirm)}
-        onClose={() => !deleting && setConfirm(null)}
-        onConfirm={confirm?.onConfirm}
-        title={confirm?.title}
-        message={confirm?.message}
-        confirmLabel={confirm?.confirmLabel || 'Delete Building'}
-        danger
-        loading={deleting}
-      />
     </div>
   );
 }
