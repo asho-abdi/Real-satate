@@ -232,7 +232,7 @@ export default function UnitImageGallery({
           />
           <Button
             variant="secondary"
-            className="h-10 px-4 text-sm"
+
             disabled={uploading}
             onClick={() => inputRef.current?.click()}
           >

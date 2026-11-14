@@ -1,3 +1,5 @@
+import EmptyState from '../components/ui/EmptyState.jsx';
+import { MdConstruction as MdConstructionIcon } from 'react-icons/md';
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
@@ -87,7 +89,7 @@ function ProjectList() {
       <PageHeader
         title="Working Progress"
         subtitle="Private project workspace for construction and other RJK REALTY business activities — separate from property maintenance."
-        actions={<Button className="h-11 px-5" onClick={() => { setForm(emptyProject); setOpen(true); }}>New Project</Button>}
+        actions={<Button onClick={() => { setForm(emptyProject); setOpen(true); }}>New Project</Button>}
       />
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -122,7 +124,7 @@ function ProjectList() {
         {loading ? (
           <div className="flex justify-center py-12"><Spinner /></div>
         ) : rows.length === 0 ? (
-          <p className="py-8 text-center text-sm text-[var(--text-muted)]">No projects yet. Create a construction or business project to get started.</p>
+          <EmptyState compact className="border-0" icon={MdConstructionIcon} title="No projects yet" description="Create a construction or business project to get started." />
         ) : (
           <div className="space-y-3">
             {rows.map((p) => (
@@ -296,10 +298,10 @@ function ProjectWorkspace() {
         subtitle={project.description || 'Working Progress project workspace'}
         actions={
           <div className="flex gap-2">
-            <Button variant="secondary" className="h-11 px-4" onClick={() => navigate('/work-progress')}>
+            <Button variant="secondary" onClick={() => navigate('/work-progress')}>
               All projects
             </Button>
-            <Button className="h-11 px-4" onClick={() => setSectionOpen(true)}>Add section</Button>
+            <Button onClick={() => setSectionOpen(true)}>Add section</Button>
           </div>
         }
       />
@@ -331,7 +333,7 @@ function ProjectWorkspace() {
 
       <Card
         title={section?.name || 'Section'}
-        action={<Button className="h-9 px-3 text-sm" onClick={openAddRecord}>Add record</Button>}
+        action={<Button onClick={openAddRecord}>Add record</Button>}
       >
         {!section ? (
           <p className="text-sm text-[var(--text-muted)]">No sections yet.</p>

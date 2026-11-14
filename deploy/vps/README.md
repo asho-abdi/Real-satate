@@ -133,6 +133,24 @@ sudo chmod -R u+rwX /var/www/rjk-realty/backend/uploads
 
 ## Updates later
 
+Look before you deploy (read-only, prints no secrets):
+
+```bash
+bash deploy/vps/inspect-server.sh > ~/rjk-inspect.txt
+```
+
+Then deploy. The script backs up Postgres + uploads first, saves any code edited
+directly on the server as a patch, runs `prisma migrate deploy` (never reset),
+rebuilds the UI, restarts the API and checks `/health`:
+
+```bash
+REF=origin/main bash deploy/vps/update.sh
+```
+
+Backups land in `/var/backups/rjk-realty/`; the script prints rollback commands.
+
+Manual equivalent:
+
 ```bash
 cd /var/www/rjk-realty
 git pull   # or upload a new release
@@ -142,6 +160,9 @@ npm run build
 sudo systemctl restart rjk-realty-api
 sudo systemctl reload nginx
 ```
+
+Invoice / receipt PDFs are A4 by default; add `?format=slip` to
+`/api/v1/finance/documents/:id/pdf` for the 80mm thermal slip.
 
 ---
 

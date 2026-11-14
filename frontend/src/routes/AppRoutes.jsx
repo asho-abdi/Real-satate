@@ -3,7 +3,7 @@ import { Navigate, Route, Routes } from 'react-router-dom';
 import AuthLayout from '../layouts/AuthLayout.jsx';
 import DashboardLayout from '../layouts/DashboardLayout.jsx';
 import ProtectedRoute from './ProtectedRoute.jsx';
-import Spinner from '../components/ui/Spinner.jsx';
+import BrandLoader from '../components/brand/BrandLoader.jsx';
 
 const Login = lazy(() => import('../pages/auth/Login.jsx'));
 const ForgotPassword = lazy(() => import('../pages/auth/ForgotPassword.jsx'));
@@ -34,11 +34,7 @@ const UsersAdmin = lazy(() => import('../pages/UsersAdmin.jsx'));
 const NotFound = lazy(() => import('../pages/NotFound.jsx'));
 
 function FallBack() {
-  return (
-    <div className="flex min-h-[40vh] items-center justify-center">
-      <Spinner />
-    </div>
-  );
+  return <BrandLoader />;
 }
 
 export default function AppRoutes() {

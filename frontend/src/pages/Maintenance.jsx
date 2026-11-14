@@ -1,3 +1,5 @@
+import EmptyState from '../components/ui/EmptyState.jsx';
+import { MdBuild as MdBuildIcon } from 'react-icons/md';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
@@ -273,10 +275,10 @@ export default function Maintenance() {
         subtitle="Record repair and maintenance work on properties. Costs reduce net revenue automatically."
         actions={
           <div className="flex flex-wrap gap-2">
-            <Button variant="secondary" className="h-11 px-4" onClick={() => setFieldsOpen(true)}>
+            <Button variant="secondary" onClick={() => setFieldsOpen(true)}>
               Custom fields
             </Button>
-            <Button className="h-11 px-5" onClick={openCreate}>
+            <Button onClick={openCreate}>
               + Add Maintenance
             </Button>
           </div>
@@ -330,10 +332,10 @@ export default function Maintenance() {
           type="button"
           onClick={() => setView('list')}
           className={cn(
-            'h-10 rounded-xl px-4 text-sm font-medium',
+            'h-10 rounded-lg px-4 text-sm font-semibold transition-colors',
             view === 'list'
               ? 'bg-brand-700 text-white'
-              : 'bg-[var(--surface)] text-[var(--text-muted)] ring-1 ring-[var(--border)]',
+              : 'bg-[var(--surface)] text-[var(--text-secondary)] shadow-xs ring-1 ring-[var(--border)] hover:text-[var(--text)] hover:ring-[var(--border-strong)]',
           )}
         >
           Records
@@ -342,10 +344,10 @@ export default function Maintenance() {
           type="button"
           onClick={() => setView('report')}
           className={cn(
-            'h-10 rounded-xl px-4 text-sm font-medium',
+            'h-10 rounded-lg px-4 text-sm font-semibold transition-colors',
             view === 'report'
               ? 'bg-brand-700 text-white'
-              : 'bg-[var(--surface)] text-[var(--text-muted)] ring-1 ring-[var(--border)]',
+              : 'bg-[var(--surface)] text-[var(--text-secondary)] shadow-xs ring-1 ring-[var(--border)] hover:text-[var(--text)] hover:ring-[var(--border-strong)]',
           )}
         >
           Report
@@ -428,7 +430,7 @@ export default function Maintenance() {
           <div className="flex items-end">
             <Button
               variant="secondary"
-              className="h-11"
+
               onClick={() =>
                 setFilters({
                   search: '',
@@ -510,9 +512,7 @@ export default function Maintenance() {
       ) : (
         <Card>
           {rows.length === 0 ? (
-            <p className="py-8 text-center text-sm text-[var(--text-muted)]">
-              No maintenance records yet. Click <strong>+ Add Maintenance</strong> to create one.
-            </p>
+            <EmptyState compact className="border-0" icon={MdBuildIcon} title="No maintenance records yet" description="Click + Add Maintenance to log repairs and their costs." />
           ) : (
             <div className="grid gap-3">
               {rows.map((r) => (
@@ -569,10 +569,10 @@ export default function Maintenance() {
         title={editingId ? 'Edit maintenance' : 'Add maintenance'}
         footer={
           <div className="flex justify-end gap-2">
-            <Button variant="secondary" className="h-11 px-4" onClick={() => setOpen(false)} disabled={saving}>
+            <Button variant="secondary" onClick={() => setOpen(false)} disabled={saving}>
               Cancel
             </Button>
-            <Button className="h-11 px-5" onClick={save} disabled={saving}>
+            <Button onClick={save} disabled={saving}>
               {saving ? 'Saving…' : editingId ? 'Save changes' : 'Save maintenance'}
             </Button>
           </div>
@@ -693,10 +693,10 @@ export default function Maintenance() {
         title={detail?.subject || 'Maintenance'}
         footer={
           <div className="flex justify-end gap-2">
-            <Button variant="secondary" className="h-11 px-4" onClick={() => setDetail(null)}>
+            <Button variant="secondary" onClick={() => setDetail(null)}>
               Close
             </Button>
-            <Button className="h-11 px-4" onClick={() => openEdit(detail)}>
+            <Button onClick={() => openEdit(detail)}>
               Edit
             </Button>
           </div>
@@ -770,7 +770,7 @@ export default function Maintenance() {
         title="Custom maintenance fields"
         footer={
           <div className="flex justify-end">
-            <Button variant="secondary" className="h-11 px-4" onClick={() => setFieldsOpen(false)}>
+            <Button variant="secondary" onClick={() => setFieldsOpen(false)}>
               Done
             </Button>
           </div>
@@ -808,7 +808,7 @@ export default function Maintenance() {
             />
           ) : null}
         </div>
-        <Button className="mb-6 h-11" onClick={saveField} disabled={savingField}>
+        <Button className="mb-6" onClick={saveField} disabled={savingField}>
           {savingField ? 'Adding…' : 'Add field'}
         </Button>
         <ul className="space-y-2">

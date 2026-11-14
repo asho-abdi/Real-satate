@@ -111,7 +111,7 @@ export default function Buildings() {
         title="Buildings"
         subtitle="Register buildings, then floors and units. You choose shop, apartment, or guest per unit."
         actions={
-          <Button className="h-12 px-5 text-base" onClick={openCreate}>
+          <Button onClick={openCreate}>
             Add Building
           </Button>
         }
@@ -152,11 +152,11 @@ export default function Buildings() {
                   </p>
                 </div>
                 <div className="flex shrink-0 flex-wrap gap-2">
-                  <Button variant="secondary" className="h-10 px-3 text-sm" onClick={() => openEdit(b)}>
+                  <Button variant="secondary" onClick={() => openEdit(b)}>
                     Edit
                   </Button>
                   <Link to={`/buildings/${b.id}`}>
-                    <Button variant="secondary" className="h-12 px-4">
+                    <Button variant="secondary">
                       Manage floors
                       <MdChevronRight className="h-5 w-5" />
                     </Button>
@@ -179,7 +179,7 @@ export default function Buildings() {
           <div className="flex justify-end gap-2">
             <Button
               variant="secondary"
-              className="h-12 px-5"
+
               onClick={() => {
                 setOpen(false);
                 setEditing(null);
@@ -187,7 +187,7 @@ export default function Buildings() {
             >
               Cancel
             </Button>
-            <Button className="h-12 px-5 text-base" onClick={save}>
+            <Button onClick={save}>
               {editing ? 'Save Changes' : 'Save Building'}
             </Button>
           </div>

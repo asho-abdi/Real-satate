@@ -8,6 +8,9 @@ import Select from '../../components/ui/Select.jsx';
 import Modal from '../../components/ui/Modal.jsx';
 import Badge from '../../components/ui/Badge.jsx';
 import Spinner from '../../components/ui/Spinner.jsx';
+import EmptyState from '../../components/ui/EmptyState.jsx';
+import { SkeletonTable } from '../../components/ui/Skeleton.jsx';
+import { MdAccountBalanceWallet, MdAdd, MdLock, MdPendingActions, MdSearch, MdUndo } from 'react-icons/md';
 import PaymentMethodFields from '../../components/payments/PaymentMethodFields.jsx';
 import { formatCurrency, formatDate, formatRoomLocation } from '../../utils/format.js';
 import { rentalApi } from '../../services/rentalApi.js';
@@ -269,45 +272,57 @@ export default function Deposits() {
     return businesses.filter((b) => b.unitId === createForm.unitId);
   }, [businesses, createForm.unitId]);
 
+  const SUMMARY_ICONS = [MdAccountBalanceWallet, MdUndo, MdLock, MdPendingActions];
+
   return (
     <div>
       <PageHeader
+        icon={<MdAccountBalanceWallet />}
         title="Security Deposits"
-        subtitle="Held deposits (liability), returns, and checkout deductions."
+        subtitle="Deposits held on behalf of tenants (a liability), returns and checkout deductions."
         actions={
-          <Button className="h-10 px-4" onClick={() => setCreateOpen(true)}>
-            Record deposit
+          <Button onClick={() => setCreateOpen(true)}>
+            <MdAdd className="h-4 w-4" /> Record deposit
           </Button>
         }
       />
 
-      {summaryCards.length ? (
-        <div className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          {summaryCards.map((c) => (
-            <div
-              key={c.label}
-              className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4"
-            >
-              <p className="text-xs font-medium uppercase tracking-wide text-[var(--text-muted)]">
-                {c.label}
+      <div className="mb-5 grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
+        {(summaryCards.length ? summaryCards : [{}, {}, {}, {}]).map((c, i) => {
+          const Icon = SUMMARY_ICONS[i];
+          const isCount = c.label === 'Deposits held' || c.label === 'Partially settled';
+          return (
+            <div key={c.label || i} className="dashboard-stat-card relative overflow-hidden p-4 sm:p-5">
+              <div className="flex items-start justify-between gap-2">
+                <p className="text-[12px] font-medium text-[var(--text-muted)] sm:text-[12.5px]">{c.label || 'Loading…'}</p>
+                <span
+                  className={
+                    'hidden h-9 w-9 shrink-0 items-center justify-center rounded-lg sm:flex ' +
+                    (i === 0 ? 'bg-[var(--gold-soft)] text-[var(--accent)]' : 'bg-[var(--primary-light)] text-[var(--navy)] dark:text-[var(--primary)]')
+                  }
+                >
+                  <Icon className="h-[18px] w-[18px]" />
+                </span>
+              </div>
+              <p className="mt-2 truncate font-display text-[17px] font-bold text-[var(--text)] sm:text-[22px]">
+                {c.label ? (isCount ? c.value ?? 0 : formatCurrency(c.value)) : '—'}
               </p>
-              <p className="mt-1 text-xl font-semibold text-[var(--text)]">
-                {c.label === 'Deposits held' || c.label === 'Partially settled'
-                  ? c.value
-                  : formatCurrency(c.value)}
-              </p>
+              {i === 0 ? <span className="absolute inset-x-0 bottom-0 h-[3px] bg-[var(--gold)]" aria-hidden="true" /> : null}
             </div>
-          ))}
-        </div>
-      ) : null}
+          );
+        })}
+      </div>
 
       <Card className="mb-4">
         <div className="grid gap-3 sm:grid-cols-3">
-          <Select
-            label="Building"
-            value={buildingId}
-            onChange={(e) => setBuildingId(e.target.value)}
-          >
+          <Input
+            label="Search"
+            icon={<MdSearch />}
+            placeholder="Customer, unit, notes…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+          <Select label="Building" value={buildingId} onChange={(e) => setBuildingId(e.target.value)}>
             <option value="">All buildings</option>
             {buildings.map((b) => (
               <option key={b.id} value={b.id}>
@@ -322,41 +337,44 @@ export default function Deposits() {
               </option>
             ))}
           </Select>
-          <Input
-            label="Search"
-            placeholder="Customer, unit, notes…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
         </div>
       </Card>
 
-      <Card>
-        {loading ? (
-          <div className="flex justify-center py-12">
-            <Spinner />
-          </div>
-        ) : filtered.length === 0 ? (
-          <p className="py-8 text-center text-sm text-[var(--text-muted)]">No deposits found.</p>
-        ) : (
+      {loading ? (
+        <SkeletonTable rows={5} columns={6} />
+      ) : filtered.length === 0 ? (
+        <EmptyState
+          icon={MdAccountBalanceWallet}
+          title="No deposits found"
+          description={search || status || buildingId ? 'Try clearing the filters.' : 'Record a deposit when a tenant moves in.'}
+          action={
+            !search && !status && !buildingId ? (
+              <Button onClick={() => setCreateOpen(true)}>
+                <MdAdd className="h-4 w-4" /> Record deposit
+              </Button>
+            ) : null
+          }
+        />
+      ) : (
+        <Card className="!p-0 overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full min-w-[960px] text-left text-sm">
               <thead>
-                <tr className="border-b border-[var(--border)] text-[var(--text-muted)]">
-                  <th className="pb-2 font-medium">Customer</th>
-                  <th className="pb-2 font-medium">Unit</th>
-                  <th className="pb-2 font-medium">Received</th>
-                  <th className="pb-2 font-medium">Amount</th>
-                  <th className="pb-2 font-medium">Remaining</th>
-                  <th className="pb-2 font-medium">Status</th>
-                  <th className="pb-2 font-medium">Actions</th>
+                <tr>
+                  <th className="!rounded-none pl-5">Customer</th>
+                  <th className="!rounded-none">Unit</th>
+                  <th className="!rounded-none">Received</th>
+                  <th className="!rounded-none text-right">Amount</th>
+                  <th className="!rounded-none text-right">Remaining</th>
+                  <th className="!rounded-none">Status</th>
+                  <th className="!rounded-none pr-5 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {filtered.map((r) => (
-                  <tr key={r.id} className="border-b border-[var(--border)]/60">
-                    <td className="py-3 font-medium">{customerName(r)}</td>
-                    <td className="py-3">
+                  <tr key={r.id}>
+                    <td className="pl-5 font-semibold text-[var(--text)]">{customerName(r)}</td>
+                    <td>
                       <span className="font-medium">{r.unit?.roomNumber || '—'}</span>
                       <span className="block text-xs text-[var(--text-muted)]">
                         {formatRoomLocation({
@@ -365,29 +383,21 @@ export default function Deposits() {
                         })}
                       </span>
                     </td>
-                    <td className="py-3">{r.dateReceived ? formatDate(r.dateReceived) : '—'}</td>
-                    <td className="py-3">{formatCurrency(num(r, 'amount'))}</td>
-                    <td className="py-3 font-semibold">
+                    <td className="text-[var(--text-secondary)]">{r.dateReceived ? formatDate(r.dateReceived) : '—'}</td>
+                    <td className="text-right tabular-nums">{formatCurrency(num(r, 'amount'))}</td>
+                    <td className="text-right font-semibold tabular-nums text-[var(--text)]">
                       {formatCurrency(num(r, 'remainingAmount'))}
                     </td>
-                    <td className="py-3">
+                    <td>
                       <Badge status={statusLabel(r.status)}>{statusLabel(r.status)}</Badge>
                     </td>
-                    <td className="py-3">
-                      <div className="flex flex-wrap gap-2">
-                        <Button
-                          variant="secondary"
-                          className="h-8 px-3 text-xs"
-                          onClick={() => openDetail(r)}
-                        >
+                    <td className="pr-5">
+                      <div className="flex justify-end gap-1.5">
+                        <Button size="sm" variant="ghost" onClick={() => openDetail(r)}>
                           View
                         </Button>
                         {num(r, 'remainingAmount') > 0 ? (
-                          <Button
-                            variant="secondary"
-                            className="h-8 px-3 text-xs"
-                            onClick={() => openSettle(r)}
-                          >
+                          <Button size="sm" variant="secondary" onClick={() => openSettle(r)}>
                             Settle
                           </Button>
                         ) : null}
@@ -398,8 +408,8 @@ export default function Deposits() {
               </tbody>
             </table>
           </div>
-        )}
-      </Card>
+        </Card>
+      )}
 
       <Modal
         open={Boolean(detail)}

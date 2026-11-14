@@ -1,26 +1,57 @@
 import { forwardRef } from 'react';
 import { cn } from '../../utils/format.js';
+import { FieldLabel, FieldMessage, fieldBase, fieldError } from './Field.jsx';
 
 const Input = forwardRef(function Input(
-  { label, error, className, hint, ...props },
+  { label, error, className, hint, icon, trailing, wrapperClassName, ...props },
   ref,
 ) {
   return (
-    <label className="block space-y-1.5">
-      {label ? <span className="text-sm font-medium text-[var(--text)]">{label}</span> : null}
-      <input
-        ref={ref}
-        className={cn(
-          'h-11 w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 text-sm text-[var(--text)] outline-none transition placeholder:text-[var(--text-muted)] focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20',
-          error && 'border-rose-500 focus:border-rose-500 focus:ring-rose-500/20',
-          className,
-        )}
-        {...props}
-      />
-      {error ? <span className="text-xs text-rose-500">{error}</span> : null}
-      {!error && hint ? <span className="text-xs text-[var(--text-muted)]">{hint}</span> : null}
+    <label className={cn('block space-y-1.5', wrapperClassName)}>
+      <FieldLabel required={props.required}>{label}</FieldLabel>
+      <span className="relative block">
+        {icon ? (
+          <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)] [&_svg]:h-4 [&_svg]:w-4">
+            {icon}
+          </span>
+        ) : null}
+        <input
+          ref={ref}
+          aria-invalid={error ? 'true' : undefined}
+          className={cn(
+            fieldBase,
+            'px-3',
+            props.type === 'file'
+              ? 'py-1.5 file:mr-3 file:rounded-md file:border-0 file:bg-[var(--primary-light)] file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-[var(--navy)] dark:file:text-[var(--text)]'
+              : 'h-10',
+            icon && 'pl-9',
+            trailing && 'pr-10',
+            error && fieldError,
+            className,
+          )}
+          {...props}
+        />
+        {trailing ? <span className="absolute right-1.5 top-1/2 -translate-y-1/2">{trailing}</span> : null}
+      </span>
+      <FieldMessage error={error} hint={hint} />
     </label>
   );
 });
 
 export default Input;
+
+export const Textarea = forwardRef(function Textarea({ label, error, hint, className, rows = 3, ...props }, ref) {
+  return (
+    <label className="block space-y-1.5">
+      <FieldLabel required={props.required}>{label}</FieldLabel>
+      <textarea
+        ref={ref}
+        rows={rows}
+        aria-invalid={error ? 'true' : undefined}
+        className={cn(fieldBase, 'px-3 py-2.5 leading-relaxed', error && fieldError, className)}
+        {...props}
+      />
+      <FieldMessage error={error} hint={hint} />
+    </label>
+  );
+});

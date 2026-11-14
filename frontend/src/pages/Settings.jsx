@@ -136,7 +136,7 @@ export default function Settings() {
               onChange={(e) => setAgentAccountReference(e.target.value)}
               hint="Optional default reference for agent payments."
             />
-            <Button className="h-12 px-6 text-base" onClick={save} loading={saving}>
+            <Button onClick={save} loading={saving}>
               Save Settings
             </Button>
           </div>

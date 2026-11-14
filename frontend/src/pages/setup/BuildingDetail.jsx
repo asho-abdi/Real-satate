@@ -438,7 +438,7 @@ export default function BuildingDetail() {
       <div>
         <PageHeader title="Building not found" />
         <Link to="/buildings">
-          <Button className="h-12 px-5">Back to buildings</Button>
+          <Button>Back to buildings</Button>
         </Link>
       </div>
     );
@@ -452,16 +452,16 @@ export default function BuildingDetail() {
         actions={
           <div className="flex flex-wrap gap-2">
             <Link to="/buildings">
-              <Button variant="secondary" className="h-12 px-5">
+              <Button variant="secondary">
                 All buildings
               </Button>
             </Link>
             <Link to={`/maintenance?buildingId=${building.id}`}>
-              <Button variant="secondary" className="h-12 px-5">
+              <Button variant="secondary">
                 Maintenance
               </Button>
             </Link>
-            <Button variant="secondary" className="h-12 px-5" onClick={() => {
+            <Button variant="secondary" onClick={() => {
               setBuildingForm({
                 name: building.name || '',
                 code: building.code || '',
@@ -473,10 +473,10 @@ export default function BuildingDetail() {
             }}>
               Edit Building
             </Button>
-            <Button variant="secondary" className="h-12 px-5" onClick={openCreateFloor}>
+            <Button variant="secondary" onClick={openCreateFloor}>
               Add Floor
             </Button>
-            <Button className="h-12 px-5 text-base" onClick={openCreateRoom}>
+            <Button onClick={openCreateRoom}>
               Add Unit
             </Button>
           </div>
@@ -494,8 +494,8 @@ export default function BuildingDetail() {
                   className={cn(
                     'inline-flex h-10 items-stretch overflow-hidden rounded-xl border transition-all duration-150',
                     isSelected
-                      ? 'border-[#F05A28] bg-[#F05A28] text-white shadow-sm shadow-[#F05A28]/20'
-                      : 'border-[var(--border)] bg-[var(--surface)] text-[var(--text)] hover:border-[#F05A28]/35 hover:shadow-sm',
+                      ? 'border-[var(--navy)] bg-[var(--navy)] text-white shadow-sm dark:border-[var(--gold)] dark:bg-[var(--gold)] dark:text-[var(--on-gold)]'
+                      : 'border-[var(--border)] bg-[var(--surface)] text-[var(--text)] hover:border-[var(--gold)] hover:shadow-sm',
                   )}
                 >
                   <button
@@ -629,11 +629,11 @@ export default function BuildingDetail() {
                             >
                               Open profile
                             </Link>
-                            <Button variant="secondary" className="h-9 px-3 text-xs" onClick={() => openEditRoom(r)}>
+                            <Button size="sm" variant="secondary" onClick={() => openEditRoom(r)}>
                               Edit
                             </Button>
                             {(r.images || []).length ? (
-                              <Button variant="secondary" className="h-9 px-3 text-xs" onClick={() => setViewPhotosRoom(r)}>
+                              <Button size="sm" variant="secondary" onClick={() => setViewPhotosRoom(r)}>
                                 View photos
                               </Button>
                             ) : null}
@@ -658,10 +658,10 @@ export default function BuildingDetail() {
         title="Edit Building"
         footer={
           <div className="flex justify-end gap-2">
-            <Button variant="secondary" className="h-12 px-5" onClick={() => setBuildingOpen(false)}>
+            <Button variant="secondary" onClick={() => setBuildingOpen(false)}>
               Cancel
             </Button>
-            <Button className="h-12 px-5" onClick={saveBuilding}>
+            <Button onClick={saveBuilding}>
               Save Changes
             </Button>
           </div>
@@ -705,7 +705,7 @@ export default function BuildingDetail() {
             <div className="flex gap-2">
               <Button
                 variant="secondary"
-                className="h-12 px-5"
+
                 onClick={() => {
                   setFloorOpen(false);
                   setEditingFloorId(null);
@@ -713,7 +713,7 @@ export default function BuildingDetail() {
               >
                 Cancel
               </Button>
-              <Button className="h-12 px-5" onClick={addFloor}>
+              <Button onClick={addFloor}>
                 {editingFloorId ? 'Save Changes' : 'Save Floor'}
               </Button>
             </div>
@@ -762,7 +762,6 @@ export default function BuildingDetail() {
             {editingRoomId ? (
               <Button
                 variant="danger"
-                className="h-12 px-5"
                 onClick={() =>
                   askDeleteRoom({
                     id: editingRoomId,
@@ -778,7 +777,6 @@ export default function BuildingDetail() {
             <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
               <Button
                 variant="secondary"
-                className="h-12 px-5"
                 onClick={() => {
                   setRoomOpen(false);
                   setEditingRoomId(null);
@@ -787,7 +785,7 @@ export default function BuildingDetail() {
               >
                 Cancel
               </Button>
-              <Button className="h-12 px-6" onClick={addRoom}>
+              <Button onClick={addRoom}>
                 {editingRoomId ? 'Save changes' : 'Save this unit'}
               </Button>
             </div>
@@ -980,12 +978,12 @@ export default function BuildingDetail() {
         title={viewPhotosRoom ? `Room ${viewPhotosRoom.roomNumber} · Photos` : 'Photos'}
         footer={
           <div className="flex justify-end gap-2">
-            <Button variant="secondary" className="h-11 px-4" onClick={() => setViewPhotosRoom(null)}>
+            <Button variant="secondary" onClick={() => setViewPhotosRoom(null)}>
               Close
             </Button>
             {viewPhotosRoom ? (
               <Button
-                className="h-11 px-4"
+
                 onClick={() => {
                   const room = viewPhotosRoom;
                   setViewPhotosRoom(null);

@@ -1,3 +1,5 @@
+import EmptyState from '../components/ui/EmptyState.jsx';
+import { MdSwapHoriz as MdSwapHorizIcon } from 'react-icons/md';
 import { useCallback, useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import PageHeader from '../components/ui/PageHeader.jsx';
@@ -118,7 +120,7 @@ export default function Expenses() {
         title="Money Movements"
         subtitle="Track where RJK REALTY revenue goes — bank deposits, transfers, exchange, suppliers, and cash."
         actions={
-          <Button className="h-11 px-5" onClick={() => { setForm(emptyForm); setOpen(true); }}>
+          <Button onClick={() => { setForm(emptyForm); setOpen(true); }}>
             Record Movement
           </Button>
         }
@@ -158,7 +160,7 @@ export default function Expenses() {
         {loading ? (
           <div className="flex justify-center py-12"><Spinner /></div>
         ) : rows.length === 0 ? (
-          <p className="py-8 text-center text-sm text-[var(--text-muted)]">No money movements yet.</p>
+          <EmptyState compact className="border-0" icon={MdSwapHorizIcon} title="No money movements yet" description="Bank deposits, transfers, exchanges and supplier payments will be listed here." />
         ) : (
           <div className="grid gap-3">
             {rows.map((r) => (

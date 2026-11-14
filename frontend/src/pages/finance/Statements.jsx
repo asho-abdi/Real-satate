@@ -5,7 +5,11 @@ import Card from '../../components/ui/Card.jsx';
 import Button from '../../components/ui/Button.jsx';
 import Input from '../../components/ui/Input.jsx';
 import Select from '../../components/ui/Select.jsx';
-import Spinner from '../../components/ui/Spinner.jsx';
+import Badge from '../../components/ui/Badge.jsx';
+import EmptyState from '../../components/ui/EmptyState.jsx';
+import { SkeletonTable } from '../../components/ui/Skeleton.jsx';
+import { initialsOf } from '../../components/layout/Sidebar.jsx';
+import { MdApartment, MdDescription, MdPeople, MdRefresh, MdSearch, MdSell, MdStorefront } from 'react-icons/md';
 import StatementModal from '../../components/finance/StatementModal.jsx';
 import { rentalApi } from '../../services/rentalApi.js';
 
@@ -100,17 +104,66 @@ export default function Statements() {
     });
   }, [tenants, businesses, sales, search, buildingId, kind]);
 
+  const counts = useMemo(
+    () => ({ tenants: tenants.length, businesses: businesses.length, buyers: sales.length }),
+    [tenants, businesses, sales],
+  );
+
+  const KIND_TONE = {
+    'Apartment tenant': 'Rent',
+    'Shop rental': 'Shop',
+    'Office rental': 'Office',
+    'Shop buyer': 'Sold',
+    'Office buyer': 'Sold',
+  };
+
   return (
     <div>
       <PageHeader
+        icon={<MdDescription />}
         title="Statements"
-        subtitle="Tenant and customer statements from live ledgers — opening balance, charges, payments, and closing balance."
+        subtitle="Tenant and customer statements from live ledgers — opening balance, charges, payments and closing balance."
+        actions={
+          <Button variant="secondary" onClick={load} loading={loading}>
+            <MdRefresh className="h-4 w-4" /> Refresh
+          </Button>
+        }
       />
 
+      <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+        {[
+          { label: 'Apartment tenants', value: counts.tenants, icon: MdApartment, kindKey: 'TENANT' },
+          { label: 'Commercial rentals', value: counts.businesses, icon: MdStorefront, kindKey: 'BUSINESS' },
+          { label: 'Buyers / owners', value: counts.buyers, icon: MdSell, kindKey: 'BUYER' },
+        ].map(({ label, value, icon: Icon, kindKey }) => (
+          <button
+            key={kindKey}
+            type="button"
+            onClick={() => setKind((k) => (k === kindKey ? 'ALL' : kindKey))}
+            aria-pressed={kind === kindKey}
+            className={
+              'dashboard-stat-card flex items-center gap-3 p-4 text-left ' +
+              (kind === kindKey ? '!border-[var(--gold)] ring-2 ring-[var(--gold)]/25' : '')
+            }
+          >
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[var(--primary-light)] text-[var(--navy)] dark:text-[var(--primary)]">
+              <Icon className="h-5 w-5" />
+            </span>
+            <span>
+              <span className="block text-[12.5px] text-[var(--text-muted)]">{label}</span>
+              <span className="block font-display text-[22px] font-bold leading-tight text-[var(--text)]">
+                {loading ? '—' : value}
+              </span>
+            </span>
+          </button>
+        ))}
+      </div>
+
       <Card className="mb-4">
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <Input
             label="Search"
+            icon={<MdSearch />}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Name, phone, unit…"
@@ -129,49 +182,57 @@ export default function Statements() {
             <option value="BUSINESS">Commercial rentals</option>
             <option value="BUYER">Buyers / owners</option>
           </Select>
-          <div className="flex items-end">
-            <Button variant="secondary" className="h-11 w-full" onClick={load}>
-              Refresh
-            </Button>
-          </div>
         </div>
       </Card>
 
-      <Card>
-        {loading ? (
-          <div className="flex justify-center py-16">
-            <Spinner />
+      {loading ? (
+        <SkeletonTable rows={6} columns={5} />
+      ) : rows.length === 0 ? (
+        <EmptyState
+          icon={MdPeople}
+          title="No customers match"
+          description="Try a different name, property or customer type."
+        />
+      ) : (
+        <Card className="!p-0 overflow-hidden">
+          <div className="flex items-center justify-between border-b border-[var(--border)] px-5 py-3">
+            <p className="text-[13px] text-[var(--text-muted)]">
+              <span className="font-semibold text-[var(--text)]">{rows.length}</span> customer{rows.length === 1 ? '' : 's'}
+            </p>
           </div>
-        ) : rows.length === 0 ? (
-          <p className="py-8 text-center text-sm text-[var(--text-muted)]">No customers match.</p>
-        ) : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[720px] text-left text-sm">
               <thead>
-                <tr className="border-b border-[var(--border)] text-[var(--text-muted)]">
-                  <th className="pb-2 font-medium">Type</th>
-                  <th className="pb-2 font-medium">Name</th>
-                  <th className="pb-2 font-medium">Property / unit</th>
-                  <th className="pb-2 font-medium">Phone</th>
-                  <th className="pb-2 font-medium">Action</th>
+                <tr>
+                  <th className="!rounded-none pl-5">Customer</th>
+                  <th className="!rounded-none">Type</th>
+                  <th className="!rounded-none">Property / unit</th>
+                  <th className="!rounded-none pr-5 text-right">Statement</th>
                 </tr>
               </thead>
               <tbody>
                 {rows.map((r) => (
-                  <tr key={r.key} className="border-b border-[var(--border)]/60">
-                    <td className="py-3">{r.kind}</td>
-                    <td className="py-3 font-medium">{r.name}</td>
-                    <td className="py-3">
+                  <tr key={r.key}>
+                    <td className="pl-5">
+                      <div className="flex items-center gap-3">
+                        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--surface-2)] text-xs font-bold text-[var(--text-secondary)]">
+                          {initialsOf(r.name)}
+                        </span>
+                        <span>
+                          <span className="block font-semibold text-[var(--text)]">{r.name || '—'}</span>
+                          <span className="block text-xs text-[var(--text-muted)]">{r.phone || 'No phone'}</span>
+                        </span>
+                      </div>
+                    </td>
+                    <td>
+                      <Badge status={KIND_TONE[r.kind]}>{r.kind}</Badge>
+                    </td>
+                    <td className="text-[var(--text-secondary)]">
                       {[r.building, r.unit && `Unit ${r.unit}`].filter(Boolean).join(' · ') || '—'}
                     </td>
-                    <td className="py-3">{r.phone || '—'}</td>
-                    <td className="py-3">
-                      <Button
-                        variant="secondary"
-                        className="h-9 px-3 text-sm"
-                        onClick={() => setParty(r.party)}
-                      >
-                        View statement
+                    <td className="pr-5 text-right">
+                      <Button size="sm" variant="secondary" onClick={() => setParty(r.party)}>
+                        <MdDescription className="h-3.5 w-3.5" /> View statement
                       </Button>
                     </td>
                   </tr>
@@ -179,8 +240,8 @@ export default function Statements() {
               </tbody>
             </table>
           </div>
-        )}
-      </Card>
+        </Card>
+      )}
 
       <StatementModal open={Boolean(party)} onClose={() => setParty(null)} party={party} />
     </div>

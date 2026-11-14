@@ -1,6 +1,6 @@
 import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
-import Spinner from '../components/ui/Spinner.jsx';
+import BrandLoader from '../components/brand/BrandLoader.jsx';
 import { ROUTE_PAGE_KEY, userCanAccessRoute } from '../utils/pageAccess.js';
 
 function pageKeyForPath(pathname) {
@@ -23,11 +23,7 @@ export default function ProtectedRoute() {
   const location = useLocation();
 
   if (loading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center">
-        <Spinner label="Checking session…" />
-      </div>
-    );
+    return <BrandLoader />;
   }
 
   if (!isAuthenticated) {

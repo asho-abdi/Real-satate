@@ -392,10 +392,10 @@ export default function Bookings() {
             type="button"
             onClick={() => switchTab(t.id)}
             className={cn(
-              'h-12 rounded-xl px-5 text-base font-medium transition',
+              'h-10 rounded-lg px-4 text-sm font-semibold transition-colors',
               tab === t.id
                 ? 'bg-brand-700 text-white dark:bg-brand-400 dark:text-ink-950'
-                : 'bg-[var(--surface)] text-[var(--text-muted)] ring-1 ring-[var(--border)]',
+                : 'bg-[var(--surface)] text-[var(--text-secondary)] shadow-xs ring-1 ring-[var(--border)] hover:text-[var(--text)] hover:ring-[var(--border-strong)]',
             )}
           >
             {t.label}
@@ -452,7 +452,7 @@ export default function Bookings() {
                       setBuildingFilter('');
                       setFloorFilter('');
                     }}
-                    className="h-11 rounded-xl border border-[var(--border)] px-4 text-sm text-[var(--text-muted)] hover:bg-[var(--surface-2)]"
+                    className="h-10 rounded-xl border border-[var(--border)] px-4 text-sm text-[var(--text-muted)] hover:bg-[var(--surface-2)]"
                   >
                     Clear filters
                   </button>
@@ -512,7 +512,7 @@ export default function Bookings() {
                         ) : null}
                         {isUpcoming ? (
                           <>
-                            <Button className="h-8 px-3 text-xs" onClick={() => openPayModal(b, 'checkin')}>
+                            <Button size="sm" onClick={() => openPayModal(b, 'checkin')}>
                               Check In
                             </Button>
                             <button
@@ -525,7 +525,7 @@ export default function Bookings() {
                           </>
                         ) : null}
                         {isActive ? (
-                          <Button className="h-8 px-3 text-xs" onClick={() => openPayModal(b, 'checkout')}>
+                          <Button size="sm" onClick={() => openPayModal(b, 'checkout')}>
                             Check Out
                           </Button>
                         ) : null}
@@ -571,10 +571,10 @@ export default function Bookings() {
         }
         footer={
           <div className="flex justify-end gap-2">
-            <Button variant="secondary" className="h-12 px-5" onClick={() => setPayModal(null)} disabled={savingPay}>
+            <Button variant="secondary" onClick={() => setPayModal(null)} disabled={savingPay}>
               Cancel
             </Button>
-            <Button className="h-12 px-5" onClick={submitPaymentAction} disabled={savingPay}>
+            <Button onClick={submitPaymentAction} disabled={savingPay}>
               {payModal?.action === 'checkout'
                 ? 'Confirm paid & check out'
                 : payModal?.action === 'payment'
@@ -653,10 +653,10 @@ export default function Bookings() {
                 detailModal.status === 'Reserved' ||
                 detailModal.status === 'CheckedIn') && (
                 <>
-                  <Button variant="secondary" className="h-12 px-5" onClick={() => openExtendStay(detailModal)}>
+                  <Button variant="secondary" onClick={() => openExtendStay(detailModal)}>
                     Extend Stay
                   </Button>
-                  <Button variant="secondary" className="h-12 px-5" onClick={() => openEditBooking(detailModal)}>
+                  <Button variant="secondary" onClick={() => openEditBooking(detailModal)}>
                     Edit
                   </Button>
                 </>
@@ -665,7 +665,7 @@ export default function Bookings() {
                 <>
                   <Button
                     variant="secondary"
-                    className="h-12 px-5"
+
                     onClick={() => {
                       runAction(detailModal.id, 'cancel');
                       setDetailModal(null);
@@ -674,7 +674,7 @@ export default function Bookings() {
                     Cancel
                   </Button>
                   <Button
-                    className="h-12 px-5"
+
                     onClick={() => {
                       setDetailModal(null);
                       openPayModal(detailModal, 'checkin');
@@ -686,7 +686,7 @@ export default function Bookings() {
               ) : null}
               {detailModal.status === 'CheckedIn' ? (
                 <Button
-                  className="h-12 px-5"
+
                   onClick={() => {
                     setDetailModal(null);
                     openPayModal(detailModal, 'checkout');
@@ -695,7 +695,7 @@ export default function Bookings() {
                   Check Out
                 </Button>
               ) : null}
-              <Button variant="secondary" className="h-12 px-5" onClick={() => setDetailModal(null)}>
+              <Button variant="secondary" onClick={() => setDetailModal(null)}>
                 Close
               </Button>
             </div>
@@ -783,7 +783,7 @@ export default function Bookings() {
               <div className="mt-3 flex flex-col gap-2">
                 {detailBalance > 0 ? (
                   <Button
-                    className="h-9 w-full text-sm"
+                    className="w-full"
                     onClick={() => openPayModal(detailModal, 'payment')}
                   >
                     Record payment
@@ -821,10 +821,10 @@ export default function Bookings() {
         title={editBooking ? `Edit Booking · ${editBooking.code}` : 'Edit Booking'}
         footer={
           <div className="flex justify-end gap-2">
-            <Button variant="secondary" className="h-12 px-5" onClick={() => setEditBooking(null)} disabled={savingEdit}>
+            <Button variant="secondary" onClick={() => setEditBooking(null)} disabled={savingEdit}>
               Cancel
             </Button>
-            <Button className="h-12 px-5" onClick={saveEditBooking} disabled={savingEdit}>
+            <Button onClick={saveEditBooking} disabled={savingEdit}>
               {savingEdit ? 'Saving…' : 'Save Changes'}
             </Button>
           </div>
@@ -898,10 +898,10 @@ export default function Bookings() {
         title={extendModal ? `Extend Stay · ${extendModal.code}` : 'Extend Stay'}
         footer={
           <div className="flex justify-end gap-2">
-            <Button variant="secondary" className="h-12 px-5" onClick={() => setExtendModal(null)} disabled={savingExtend}>
+            <Button variant="secondary" onClick={() => setExtendModal(null)} disabled={savingExtend}>
               Cancel
             </Button>
-            <Button className="h-12 px-5" onClick={saveExtendStay} disabled={savingExtend}>
+            <Button onClick={saveExtendStay} disabled={savingExtend}>
               {savingExtend ? 'Saving…' : 'Save Extension'}
             </Button>
           </div>

@@ -45,7 +45,7 @@ const emptyCustomer = {
 };
 
 const fieldClass =
-  'h-11 w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20';
+  'h-10 w-full rounded-lg border border-[var(--border)] bg-[var(--surface)] text-sm text-[var(--text)] shadow-xs outline-none transition-[border-color,box-shadow] hover:border-[var(--border-strong)] focus:border-[var(--navy)] focus:ring-[3px] focus:ring-[var(--ring)] dark:focus:border-[var(--gold)]';
 
 /** Guest booking form — sectioned stay / guest / pricing layout. */
 export default function NewBooking({ onSuccess } = {}) {
@@ -657,7 +657,7 @@ export default function NewBooking({ onSuccess } = {}) {
               </div>
 
               <Button
-                className="h-11 w-full text-base"
+                className="w-full"
                 onClick={save}
                 disabled={saving || !room}
               >

@@ -1,22 +1,20 @@
 import { forwardRef } from 'react';
 import { cn } from '../../utils/format.js';
+import { FieldLabel, FieldMessage, fieldBase, fieldError } from './Field.jsx';
 
-const Select = forwardRef(function Select({ label, error, children, className, ...props }, ref) {
+const Select = forwardRef(function Select({ label, error, hint, children, className, ...props }, ref) {
   return (
     <label className="block space-y-1.5">
-      {label ? <span className="text-sm font-medium text-[var(--text)]">{label}</span> : null}
+      <FieldLabel required={props.required}>{label}</FieldLabel>
       <select
         ref={ref}
-        className={cn(
-          'h-11 w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 text-sm text-[var(--text)] outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20',
-          error && 'border-rose-500',
-          className,
-        )}
+        aria-invalid={error ? 'true' : undefined}
+        className={cn(fieldBase, 'h-10 px-3', error && fieldError, className)}
         {...props}
       >
         {children}
       </select>
-      {error ? <span className="text-xs text-rose-500">{error}</span> : null}
+      <FieldMessage error={error} hint={hint} />
     </label>
   );
 });

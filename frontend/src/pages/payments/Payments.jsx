@@ -266,14 +266,14 @@ export default function Payments() {
                     </td>
                     <td className="py-3">{r.date ? formatDate(r.date) : '—'}</td>
                     <td className="py-3">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Button variant="secondary" className="h-8 px-3 text-xs" onClick={() => openEdit(r)}>
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <Button size="sm" variant="ghost" onClick={() => openEdit(r)}>
                           Edit
                         </Button>
                         {r.recordType === 'monthly' && (Number(r.amountPaid) || 0) > 0 ? (
                           <Button
-                            variant="secondary"
-                            className="h-8 px-3 text-xs text-red-600"
+                            size="sm"
+                            variant="danger-soft"
                             onClick={() => {
                               setVoidModal(r);
                               setVoidReason('');
@@ -342,10 +342,10 @@ export default function Payments() {
         title="Edit Payment"
         footer={
           <div className="flex justify-end gap-2">
-            <Button variant="secondary" className="h-11 px-4" onClick={() => setEditModal(null)} disabled={saving}>
+            <Button variant="secondary" onClick={() => setEditModal(null)} disabled={saving}>
               Cancel
             </Button>
-            <Button className="h-11 px-4" onClick={saveEdit} disabled={saving}>
+            <Button onClick={saveEdit} disabled={saving}>
               {saving ? 'Saving…' : 'Save Changes'}
             </Button>
           </div>
@@ -397,10 +397,10 @@ export default function Payments() {
         title="Void payment"
         footer={
           <div className="flex justify-end gap-2">
-            <Button variant="secondary" className="h-11 px-4" onClick={() => setVoidModal(null)} disabled={voiding}>
+            <Button variant="secondary"  onClick={() => setVoidModal(null)} disabled={voiding}>
               Cancel
             </Button>
-            <Button className="h-11 px-4" onClick={confirmVoid} disabled={voiding}>
+            <Button  onClick={confirmVoid} disabled={voiding}>
               {voiding ? 'Voiding…' : 'Void payment'}
             </Button>
           </div>

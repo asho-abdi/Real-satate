@@ -44,6 +44,23 @@ export function errorHandler(err, req, res, _next) {
     code = env.isProduction ? 'DB_ERROR' : err.code;
   }
 
+  // Multer rejects oversized uploads as a generic error. Surface a client error
+  // so the booking form does not show "Internal server error".
+  if (
+    err.name === 'MulterError' ||
+    err.code === 'LIMIT_FILE_SIZE' ||
+    err.code === 'LIMIT_FILE_COUNT' ||
+    err.code === 'LIMIT_UNEXPECTED_FILE'
+  ) {
+    const tooBig = err.code === 'LIMIT_FILE_SIZE';
+    statusCode = tooBig ? 413 : 400;
+    code = err.code || 'UPLOAD_ERROR';
+    message = tooBig
+      ? `File is too large. Maximum size is ${env.MAX_FILE_SIZE_MB} MB`
+      : 'Could not upload that file';
+    details = null;
+  }
+
   if (statusCode >= 500 && env.isProduction) {
     message = 'Internal server error';
     details = null;

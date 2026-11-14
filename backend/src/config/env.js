@@ -125,8 +125,8 @@ const env = Object.freeze({
   RATE_LIMIT_MAX: int('RATE_LIMIT_MAX', 200),
 
   UPLOAD_DIR: optional('UPLOAD_DIR', 'uploads'),
-  MAX_FILE_SIZE_MB: int('MAX_FILE_SIZE_MB', 10),
-  MAX_FILE_SIZE_BYTES: int('MAX_FILE_SIZE_MB', 10) * 1024 * 1024,
+  MAX_FILE_SIZE_MB: int('MAX_FILE_SIZE_MB', 25),
+  MAX_FILE_SIZE_BYTES: int('MAX_FILE_SIZE_MB', 25) * 1024 * 1024,
 
   SMTP_HOST: optional('SMTP_HOST', ''),
   SMTP_PORT: int('SMTP_PORT', 587),

@@ -41,31 +41,28 @@ export default function FinanceDocActions({
     }
   };
 
-  const btnClass = compact ? 'h-9 px-3 text-sm' : 'h-11 px-4';
+  const size = compact ? 'sm' : 'md';
 
   return (
-    <div className={`flex flex-wrap gap-2 ${className}`}>
+    <div className={`flex flex-wrap gap-1.5 ${className}`}>
       <Button
         variant="secondary"
-        className={btnClass}
+        size={size}
         disabled={Boolean(busy)}
         onClick={() => run('print')}
       >
-        <span className="inline-flex items-center gap-1.5">
-          <MdPrint className="h-4 w-4" />
-          {busy === 'print' ? 'Preparing…' : `Print ${label}`}
-        </span>
+        <MdPrint className="h-4 w-4" />
+        {busy === 'print' ? 'Preparing…' : `Print ${label}`}
       </Button>
       <Button
         variant="secondary"
-        className={btnClass}
+        size={size}
         disabled={Boolean(busy)}
         onClick={() => run('download')}
+        aria-label={`Download ${label}`}
       >
-        <span className="inline-flex items-center gap-1.5">
-          <MdDownload className="h-4 w-4" />
-          {busy === 'download' ? 'Preparing…' : 'Download'}
-        </span>
+        <MdDownload className="h-4 w-4" />
+        {busy === 'download' ? 'Preparing…' : 'Download'}
       </Button>
     </div>
   );

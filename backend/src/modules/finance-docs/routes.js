@@ -122,7 +122,7 @@ router.get(
     });
     if (!statement) throw new AppError('Party not found', 404);
     const company = await companySettings();
-    return streamStatementPdf(res, statement, company);
+    return streamStatementPdf(res, statement, company, { from: req.query.from, to: req.query.to });
   }),
 );
 
@@ -294,6 +294,7 @@ router.get(
         createdAt: row.createdAt,
       },
       company,
+      { format: req.query.format === 'slip' ? 'slip' : 'a4' },
     );
   }),
 );

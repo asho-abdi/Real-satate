@@ -38,7 +38,7 @@ export default function PropertyCard({ property }) {
         ) : null}
         <Link
           to={href}
-          className="mt-4 inline-flex h-11 items-center justify-center rounded-2xl bg-[var(--primary)] px-4 text-sm font-semibold text-white transition hover:bg-[var(--primary-dark)]"
+          className="mt-4 inline-flex h-10 items-center justify-center rounded-2xl bg-[var(--primary)] px-4 text-sm font-semibold text-white transition hover:bg-[var(--primary-dark)]"
         >
           View Property
         </Link>

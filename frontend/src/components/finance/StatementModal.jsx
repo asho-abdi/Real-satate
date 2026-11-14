@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
+import { MdDownload, MdPrint } from 'react-icons/md';
 import Modal from '../ui/Modal.jsx';
 import Button from '../ui/Button.jsx';
 import Input from '../ui/Input.jsx';
@@ -7,6 +8,7 @@ import Spinner from '../ui/Spinner.jsx';
 import { rentalApi } from '../../services/rentalApi.js';
 import { formatCurrency } from '../../utils/format.js';
 import { labelMethod } from '../../utils/labels.js';
+import { openPdfBlob } from '../../utils/financeDocs.js';
 
 function downloadBlob(blob, filename) {
   const url = URL.createObjectURL(blob);
@@ -71,11 +73,32 @@ export default function StatementModal({ open, onClose, party }) {
   const statementParams = queryParams(party, appliedFrom, appliedTo);
 
   const downloadPdf = async () => {
+    setDownloading(true);
     try {
       const blob = await rentalApi.downloadStatementPdf(statementParams);
       downloadBlob(blob, `statement-${statement?.customer?.name || 'customer'}.pdf`);
     } catch (err) {
       toast.error(err.message || 'PDF download failed');
+    } finally {
+      setDownloading(false);
+    }
+  };
+
+  const [printing, setPrinting] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+
+  // Print the branded A4 statement PDF rather than the app screen behind the dialog.
+  const printPdf = async () => {
+    setPrinting(true);
+    try {
+      const blob = await rentalApi.downloadStatementPdf(statementParams);
+      const { opened } = await openPdfBlob(blob);
+      if (!opened) downloadBlob(blob, `statement-${statement?.customer?.name || 'customer'}.pdf`);
+      else toast.success('Statement opened — use Print in the PDF viewer');
+    } catch (err) {
+      toast.error(err.message || 'Could not open the statement PDF');
+    } finally {
+      setPrinting(false);
     }
   };
 
@@ -89,11 +112,11 @@ export default function StatementModal({ open, onClose, party }) {
       title="Customer statement"
       footer={
         <div className="flex flex-wrap justify-end gap-2">
-          <Button variant="secondary" className="h-11 px-4" onClick={() => window.print()}>
-            Print
+          <Button variant="secondary" onClick={printPdf} loading={printing} disabled={!statement}>
+            <MdPrint className="h-4 w-4" /> Print
           </Button>
-          <Button variant="secondary" className="h-11 px-4" onClick={downloadPdf}>
-            Download PDF
+          <Button onClick={downloadPdf} loading={downloading} disabled={!statement}>
+            <MdDownload className="h-4 w-4" /> Download PDF
           </Button>
         </div>
       }
@@ -114,11 +137,11 @@ export default function StatementModal({ open, onClose, party }) {
             onChange={(e) => setTo(e.target.value)}
             className="min-w-[10rem]"
           />
-          <Button className="h-11 px-4" onClick={applyRange}>
+          <Button  onClick={applyRange}>
             Apply
           </Button>
           {appliedFrom || appliedTo ? (
-            <Button variant="secondary" className="h-11 px-4" onClick={clearRange}>
+            <Button variant="secondary"  onClick={clearRange}>
               All history
             </Button>
           ) : null}
