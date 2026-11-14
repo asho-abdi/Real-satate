@@ -434,34 +434,36 @@ export default function Apartments() {
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
-              <Select
+              <SearchableSelect
                 label="Building"
                 value={filterBuildingId}
-                onChange={(e) => {
-                  setFilterBuildingId(e.target.value);
+                placeholder="All Buildings"
+                searchPlaceholder="Search building…"
+                allowClear
+                options={buildings.map((b) => ({
+                  value: b.id,
+                  label: b.name,
+                  searchText: `${b.code || ''} ${b.name || ''}`,
+                }))}
+                onChange={(next) => {
+                  setFilterBuildingId(next);
                   setFilterFloorId('');
                 }}
-              >
-                <option value="">All Buildings</option>
-                {buildings.map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {b.name}
-                  </option>
-                ))}
-              </Select>
-              <Select
+              />
+              <SearchableSelect
                 label="Floor"
                 value={filterFloorId}
-                onChange={(e) => setFilterFloorId(e.target.value)}
+                placeholder="All Floors"
+                searchPlaceholder="Search floor…"
+                allowClear
                 disabled={filterFloors.length === 0}
-              >
-                <option value="">All Floors</option>
-                {filterFloors.map((f) => (
-                  <option key={f.id} value={f.id}>
-                    {f.name}
-                  </option>
-                ))}
-              </Select>
+                options={filterFloors.map((f) => ({
+                  value: f.id,
+                  label: f.name,
+                  searchText: `${f.name || ''} ${f.level ?? ''}`,
+                }))}
+                onChange={(next) => setFilterFloorId(next)}
+              />
               <div className="flex items-end">
                 {(search || filterBuildingId || filterFloorId) ? (
                   <button
