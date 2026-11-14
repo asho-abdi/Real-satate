@@ -340,6 +340,7 @@ export const rentalApi = {
         status: STATUS_VALUES[data.status] || data.status,
       }),
     }).then(mapUnit),
+  deleteUnit: (id) => del(`/units/${id}`),
 
   listBookings: (search) =>
     get('/bookings', search ? { search } : undefined).then((rows) =>

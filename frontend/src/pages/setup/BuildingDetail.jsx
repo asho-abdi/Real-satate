@@ -252,6 +252,26 @@ export default function BuildingDetail() {
     });
   };
 
+  const runDeleteRoom = async (room) => {
+    try {
+      await rentalApi.deleteUnit(room.id);
+      toast.success('Unit deleted');
+      setConfirm(null);
+      await load();
+    } catch (err) {
+      toast.error(err.message || 'Could not delete unit');
+    }
+  };
+
+  const askDeleteRoom = (room) => {
+    setConfirm({
+      title: 'Delete Unit?',
+      message: `Are you sure you want to delete unit "${room.roomNumber}"? It will be removed from the active list.`,
+      confirmLabel: 'Delete Unit',
+      onConfirm: () => runDeleteRoom(room),
+    });
+  };
+
   const saveBuilding = async () => {
     if (!buildingForm.name.trim() || !buildingForm.code.trim()) {
       toast.error('Name and code required');
@@ -608,6 +628,9 @@ export default function BuildingDetail() {
                             </Link>
                             <Button variant="secondary" className="h-9 px-3 text-xs" onClick={() => openEditRoom(r)}>
                               Edit
+                            </Button>
+                            <Button variant="danger" className="h-9 px-3 text-xs" onClick={() => askDeleteRoom(r)}>
+                              Delete
                             </Button>
                             {(r.images || []).length ? (
                               <Button variant="secondary" className="h-9 px-3 text-xs" onClick={() => setViewPhotosRoom(r)}>
