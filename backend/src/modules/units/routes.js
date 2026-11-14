@@ -316,46 +316,57 @@ router.post(
       ? String(transactionType).toUpperCase()
       : building.transactionType || 'FOR_RENT';
 
-    const unit = await prisma.unit.create({
-      data: {
-        buildingId,
-        floorId,
-        roomNumber: String(roomNumber).trim(),
-        unitType: resolved.unitType || String(unitType).toUpperCase(),
-        usage: usageUpper,
-        commercialType: resolved.commercialType ?? null,
-        transactionType: txType,
-        monthlyRent,
-        weeklyRent:
-          usageUpper === 'GUEST' && weeklyRentIn !== undefined && weeklyRentIn !== ''
-            ? Number(weeklyRentIn)
-            : null,
-        dailyRate:
-          usageUpper === 'GUEST' && dailyRate !== undefined && dailyRate !== ''
-            ? Number(dailyRate)
-            : null,
-        salePrice: salePrice !== undefined && salePrice !== '' ? Number(salePrice) : null,
-        discount,
-        status: String(status).toUpperCase(),
-        description: description ? String(description).trim() : null,
-        notes: notes ? String(notes).trim() : null,
-        areaSqm:
-          (usageUpper === 'SHOP' || usageUpper === 'OFFICE') &&
-          areaSqm !== undefined &&
-          areaSqm !== ''
-            ? Number(areaSqm)
-            : null,
-        roomsCount:
-          usageUpper === 'APARTMENT' && roomsCount !== undefined && roomsCount !== ''
-            ? Number(roomsCount)
-            : null,
-        bathroomsCount:
-          usageUpper === 'APARTMENT' && bathroomsCount !== undefined && bathroomsCount !== ''
-            ? Number(bathroomsCount)
-            : null,
-      },
-      include: unitInclude,
-    });
+    let unit;
+    try {
+      unit = await prisma.unit.create({
+        data: {
+          buildingId,
+          floorId,
+          roomNumber: String(roomNumber).trim(),
+          unitType: resolved.unitType || String(unitType).toUpperCase(),
+          usage: usageUpper,
+          commercialType: resolved.commercialType ?? null,
+          transactionType: txType,
+          monthlyRent,
+          weeklyRent:
+            usageUpper === 'GUEST' && weeklyRentIn !== undefined && weeklyRentIn !== ''
+              ? Number(weeklyRentIn)
+              : null,
+          dailyRate:
+            usageUpper === 'GUEST' && dailyRate !== undefined && dailyRate !== ''
+              ? Number(dailyRate)
+              : null,
+          salePrice: salePrice !== undefined && salePrice !== '' ? Number(salePrice) : null,
+          discount,
+          status: String(status).toUpperCase(),
+          description: description ? String(description).trim() : null,
+          notes: notes ? String(notes).trim() : null,
+          areaSqm:
+            (usageUpper === 'SHOP' || usageUpper === 'OFFICE') &&
+            areaSqm !== undefined &&
+            areaSqm !== ''
+              ? Number(areaSqm)
+              : null,
+          roomsCount:
+            usageUpper === 'APARTMENT' && roomsCount !== undefined && roomsCount !== ''
+              ? Number(roomsCount)
+              : null,
+          bathroomsCount:
+            usageUpper === 'APARTMENT' && bathroomsCount !== undefined && bathroomsCount !== ''
+              ? Number(bathroomsCount)
+              : null,
+        },
+        include: unitInclude,
+      });
+    } catch (err) {
+      if (err?.code === 'P2002') {
+        throw new AppError(
+          `Unit number "${String(roomNumber).trim()}" already exists in this building`,
+          409,
+        );
+      }
+      throw err;
+    }
     return success(res, withDaily(unit), 201);
   }),
 );
@@ -614,14 +625,40 @@ router.delete(
   asyncHandler(async (req, res) => {
     const existing = await prisma.unit.findFirst({
       where: { id: req.params.id, deletedAt: null },
+      include: {
+        _count: {
+          select: {
+            bookings: true,
+            tenants: true,
+            businesses: true,
+            shopSales: true,
+            expenses: true,
+            leaseCharges: true,
+            securityDeposits: true,
+            financeDocuments: true,
+            maintenanceRecords: true,
+            workProgress: true,
+          },
+        },
+      },
     });
     if (!existing) throw new AppError('Unit not found', 404);
     await assertUnitBuildingAccess(req.user, existing.id, req.user.buildingIds);
+
+    const related = Object.values(existing._count || {}).reduce((sum, n) => sum + Number(n || 0), 0);
+    if (related === 0) {
+      // No linked history — remove the row so the room number can be reused immediately.
+      await prisma.unit.delete({ where: { id: existing.id } });
+      return success(res, { id: existing.id, deleted: true, hard: true });
+    }
+
+    // Keep financial/tenant history, but free the room number for a new active unit
+    // via the partial unique index (deletedAt IS NULL).
     await prisma.unit.update({
       where: { id: existing.id },
       data: { deletedAt: new Date() },
     });
-    return success(res, { id: existing.id, deleted: true });
+    return success(res, { id: existing.id, deleted: true, hard: false });
   }),
 );
 

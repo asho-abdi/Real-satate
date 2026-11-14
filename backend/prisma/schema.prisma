@@ -366,7 +366,8 @@ model Unit {
   securityDeposits   SecurityDeposit[]
   financeDocuments   FinanceDocument[]
 
-  @@unique([buildingId, roomNumber])
+  /// Active units only — partial unique index in migration 8_unit_room_active_unique
+  @@index([buildingId, roomNumber])
   @@index([floorId])
   @@index([status])
   @@index([usage])
