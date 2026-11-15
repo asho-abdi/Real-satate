@@ -2,7 +2,12 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import { useAuth } from './AuthContext.jsx';
 import { settingsService } from '../services/settingsService.js';
 import { APP_NAME } from '../utils/constants.js';
-import { setAppCurrency, setAppName } from '../utils/format.js';
+import {
+  DEFAULT_USD_KES_RATE,
+  setAppCurrency,
+  setAppName,
+  setUsdKesRate,
+} from '../utils/format.js';
 
 const SettingsContext = createContext(null);
 
@@ -11,14 +16,18 @@ export function SettingsProvider({ children }) {
   const [settings, setSettings] = useState({
     companyName: APP_NAME,
     currency: 'KES',
+    usdKesRate: DEFAULT_USD_KES_RATE,
     nightsNote: 'Guest stays are billed as nights × (monthly rent ÷ 30).',
   });
   const [loading, setLoading] = useState(false);
 
   const applySettings = useCallback((map = {}) => {
+    const rateRaw = map['currency.usdKesRate'];
+    const rate = Number(rateRaw);
     const next = {
       companyName: map['app.name'] || APP_NAME,
-      currency: map.currency || 'KES',
+      currency: 'KES',
+      usdKesRate: Number.isFinite(rate) && rate > 0 ? rate : DEFAULT_USD_KES_RATE,
       nightsNote:
         map['billing.nightsNote'] ||
         'Guest stays are billed as nights × (monthly rent ÷ 30).',
@@ -26,6 +35,7 @@ export function SettingsProvider({ children }) {
     setSettings(next);
     setAppName(next.companyName);
     setAppCurrency(next.currency);
+    setUsdKesRate(next.usdKesRate);
     return next;
   }, []);
 
@@ -53,14 +63,18 @@ export function SettingsProvider({ children }) {
   }, [isAuthenticated, applySettings]);
 
   const saveSettings = async (nextSettings) => {
+    const rate = Number(nextSettings.usdKesRate);
+    const safeRate = Number.isFinite(rate) && rate > 0 ? rate : DEFAULT_USD_KES_RATE;
     await Promise.all([
       settingsService.updateSetting('app.name', nextSettings.companyName),
-      settingsService.updateSetting('currency', nextSettings.currency),
+      settingsService.updateSetting('currency', 'KES'),
+      settingsService.updateSetting('currency.usdKesRate', String(safeRate)),
       settingsService.updateSetting('billing.nightsNote', nextSettings.nightsNote),
     ]);
     applySettings({
       'app.name': nextSettings.companyName,
-      currency: nextSettings.currency,
+      currency: 'KES',
+      'currency.usdKesRate': String(safeRate),
       'billing.nightsNote': nextSettings.nightsNote,
     });
   };
@@ -71,6 +85,7 @@ export function SettingsProvider({ children }) {
       loading,
       saveSettings,
       currency: settings.currency,
+      usdKesRate: settings.usdKesRate,
       companyName: settings.companyName,
     }),
     [settings, loading],

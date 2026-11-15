@@ -4,6 +4,7 @@
  * with page numbers. Plain on purpose — white page, no gradients.
  */
 import { fileURLToPath } from 'node:url';
+import { formatMoney as formatMoneyDual, DEFAULT_USD_KES_RATE } from './currency.js';
 
 export const BRAND = {
   navy: '#002b50',
@@ -62,9 +63,10 @@ export function prettyCompany(name) {
   return name === name.toUpperCase() ? name.replace(/\bREALTY\b/, 'Realty') : name;
 }
 
-export function money(n, currency = 'KES') {
-  const v = Number(n || 0);
-  return `${currency} ${v.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+export function money(n, currency = 'KES', opts = {}) {
+  const rate = opts.usdKesRate ?? opts.rate ?? DEFAULT_USD_KES_RATE;
+  const dual = opts.dual !== false;
+  return formatMoneyDual(n, { currency, dual, usdKesRate: rate });
 }
 
 export function longDate(v) {

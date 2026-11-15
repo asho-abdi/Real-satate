@@ -1,6 +1,6 @@
 import { MdCalendarMonth, MdCalendarToday, MdDateRange } from 'react-icons/md';
-import Input from '../ui/Input.jsx';
 import { cn } from '../../utils/format.js';
+import MoneyKesField from './MoneyKesField.jsx';
 
 const RATE_ROWS = [
   {
@@ -51,14 +51,11 @@ export default function GuestPricingFields({ form, onChange, className }) {
                 <p className="text-xs text-[var(--text-muted)]">{row.subtitle}</p>
               </div>
             </div>
-            <div className="w-full sm:max-w-[200px]">
-              <Input
+            <div className="w-full sm:max-w-[240px]">
+              <MoneyKesField
                 label="Price (KES)"
-                type="number"
-                min={0}
-                step="0.01"
                 value={form[row.field]}
-                onChange={(e) => set({ [row.field]: e.target.value })}
+                onChange={(v) => set({ [row.field]: v })}
                 placeholder={row.placeholder}
               />
             </div>

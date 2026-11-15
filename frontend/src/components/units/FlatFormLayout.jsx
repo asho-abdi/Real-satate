@@ -1,6 +1,6 @@
 import { MdApartment, MdHotel, MdStorefront } from 'react-icons/md';
 import { cn } from '../../utils/format.js';
-import Input from '../ui/Input.jsx';
+import MoneyKesField from './MoneyKesField.jsx';
 
 export function FormSection({ step, title, description, children, className }) {
   return (
@@ -94,15 +94,13 @@ export function UsageChoiceCards({ value, onChange, shopOnly = false, disabled =
 
 export function LeasePricingFields({ form, onChange }) {
   return (
-    <Input
+    <MoneyKesField
       className="max-w-sm"
-      label="Monthly rent"
-      type="number"
-      min={0}
+      label="Monthly rent (KES)"
       value={form.monthlyRent}
-      onChange={(e) => onChange({ ...form, monthlyRent: e.target.value })}
+      onChange={(monthlyRent) => onChange({ ...form, monthlyRent })}
       placeholder="e.g. 45000"
-      hint="Apartments and shops use monthly rent only."
+      hint="Apartments and shops use monthly rent only. USD shown from Settings rate."
     />
   );
 }

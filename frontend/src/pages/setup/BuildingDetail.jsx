@@ -25,6 +25,7 @@ import { rentalApi } from '../../services/rentalApi.js';
 import api from '../../services/api.js';
 import UnitImageGallery from '../../components/ui/UnitImageGallery.jsx';
 import GuestPricingFields, { guestPricingError } from '../../components/units/GuestPricingFields.jsx';
+import MoneyKesField from '../../components/units/MoneyKesField.jsx';
 import {
   FormSection,
   LeasePricingFields,
@@ -809,7 +810,7 @@ export default function BuildingDetail() {
             </div>
             <UsageChoiceCards
               value={roomForm.usage}
-              shopOnly={roomForm.unitType === 'Commercial Space' || roomForm.unitType === 'Commercial Shop'}
+              shopOnly={roomForm.unitType === 'Commercial Shop'}
               onChange={(usage) =>
                 setRoomForm({
                   ...roomForm,
@@ -922,12 +923,10 @@ export default function BuildingDetail() {
               <div className="space-y-4">
                 <LeasePricingFields form={roomForm} onChange={setRoomForm} />
                 {roomForm.usage === 'shop' || roomForm.usage === 'office' ? (
-                  <Input
-                    label="Sale price (optional)"
-                    type="number"
-                    min={0}
+                  <MoneyKesField
+                    label="Sale price (optional, KES)"
                     value={roomForm.salePrice}
-                    onChange={(e) => setRoomForm({ ...roomForm, salePrice: e.target.value })}
+                    onChange={(salePrice) => setRoomForm({ ...roomForm, salePrice })}
                     hint="Only if this unit is for sale, not just rent."
                   />
                 ) : null}

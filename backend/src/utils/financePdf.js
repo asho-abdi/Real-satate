@@ -1,6 +1,7 @@
 import { fileURLToPath } from 'node:url';
 import PDFDocument from 'pdfkit';
 import { BRAND as RJK, footers, label, letterhead, pdfText } from './pdfBrand.js';
+import { DEFAULT_USD_KES_RATE, formatMoney } from './currency.js';
 
 const BRAND = {
   navy: '#1a4a6e',
@@ -10,9 +11,12 @@ const BRAND = {
   soft: '#eef3f8',
 };
 
-function money(n, currency = 'KES') {
-  const v = Number(n || 0);
-  return `${currency} ${v.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+function money(n, currency = 'KES', company = {}) {
+  return formatMoney(n, {
+    currency,
+    dual: true,
+    usdKesRate: company.usdKesRate ?? DEFAULT_USD_KES_RATE,
+  });
 }
 
 function dateStr(v) {
@@ -68,7 +72,7 @@ function streamFinanceA4Pdf(res, docMeta, company = {}) {
   const title = isReceipt ? 'RECEIPT' : 'INVOICE';
   const companyName = prettyCompany(company.companyName || company['app.name']);
   const currency = company.currency || 'KES';
-  const fmt = (v) => money(v, currency);
+  const fmt = (v) => money(v, currency, company);
 
   const filename = `${docMeta.number || title}.pdf`.replace(/[^\w.-]+/g, '_');
   res.setHeader('Content-Type', 'application/pdf');
@@ -145,7 +149,13 @@ function streamFinanceA4Pdf(res, docMeta, company = {}) {
     metaRow('Due date', longDate(docMeta.dueDate), ry);
     ry += 15;
   }
-  metaRow('Currency', currency, ry);
+  metaRow(
+    'Currency',
+    company.usdKesRate
+      ? `KES · USD @ ${Number(company.usdKesRate).toLocaleString('en-KE', { maximumFractionDigits: 2 })}`
+      : currency,
+    ry,
+  );
   ry += 15;
 
   // ---------------------------------------------------------- items
@@ -358,11 +368,11 @@ function streamFinanceSlipPdf(res, docMeta, company = {}) {
 
   line('Period', docMeta.billingPeriod || '—');
   if (Number(docMeta.previousBalance) > 0) {
-    line('Previous balance', money(docMeta.previousBalance, currency));
+    line('Previous balance', money(docMeta.previousBalance, currency, company));
   }
-  line('Charges', money(docMeta.currentCharges ?? docMeta.amount, currency));
-  line('Amount paid', money(docMeta.amountPaid, currency), { bold: true });
-  line('Balance due', money(docMeta.remainingBalance, currency), { bold: true });
+  line('Charges', money(docMeta.currentCharges ?? docMeta.amount, currency, company));
+  line('Amount paid', money(docMeta.amountPaid, currency, company), { bold: true });
+  line('Balance due', money(docMeta.remainingBalance, currency, company), { bold: true });
   if (docMeta.method) line('Method', String(docMeta.methodLabel || docMeta.method));
   if (docMeta.reference) line('Reference', docMeta.reference);
   if (docMeta.receivedBy) line('Received by', docMeta.receivedBy);
@@ -417,8 +427,12 @@ export function streamStatementPdf(res, statement, company = {}, opts = {}) {
   const CW = W - margin * 2;
   const bottomLimit = doc.page.height - 60;
   const amount = (v) => Number(v || 0).toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const fmt = (v) => money(v, currency, company);
   const s = statement.summary || {};
   const lines = (statement.lines || []).map((l) => ({ ...l, description: pdfText(l.description), reference: pdfText(l.reference) }));
+  const rateNote = company.usdKesRate
+    ? `KES with USD at ${Number(company.usdKesRate).toLocaleString('en-KE', { maximumFractionDigits: 2 })} KES/USD`
+    : `Amounts in ${currency}`;
 
   const period =
     opts.from || opts.to
@@ -430,11 +444,11 @@ export function streamStatementPdf(res, statement, company = {}, opts = {}) {
     margin,
     title: 'Statement of account',
     subtitle: period,
-    metaLines: [`Statement date ${longDate(new Date())}`, `Amounts in ${currency}`],
+    metaLines: [`Statement date ${longDate(new Date())}`, rateNote],
   });
 
   // ---------------------------------------------------------- account holder + summary box
-  const boxW = 230;
+  const boxW = 250;
   const boxX = W - margin - boxW;
   label(doc, 'Account holder', margin, y);
   doc.font('Helvetica-Bold').fontSize(11).fillColor(RJK.ink).text(statement.customer?.name || '—', margin, y + 14, { width: boxX - margin - 20 });
@@ -447,34 +461,34 @@ export function streamStatementPdf(res, statement, company = {}, opts = {}) {
 
   const closing = Number(s.closingBalance ?? s.outstandingBalance ?? 0);
   const rows = [
-    ['Opening balance', amount(s.openingBalance)],
-    ['Charges', amount(s.totalDebit)],
-    ['Payments received', `- ${amount(s.totalCredit)}`],
+    ['Opening balance', fmt(s.openingBalance)],
+    ['Charges', fmt(s.totalDebit)],
+    ['Payments received', `- ${fmt(s.totalCredit)}`],
   ];
-  const boxH = 18 + rows.length * 15 + 40 + (Number(s.depositsHeld) > 0 || Number(s.creditBalance) > 0 ? 16 : 0);
+  const boxH = 18 + rows.length * 22 + 48 + (Number(s.depositsHeld) > 0 || Number(s.creditBalance) > 0 ? 16 : 0);
   doc.roundedRect(boxX, y - 4, boxW, boxH, 6).lineWidth(0.7).strokeColor(RJK.line).stroke();
   let by = y + 8;
   label(doc, 'Account summary', boxX + 12, by);
   by += 16;
   rows.forEach(([k, v]) => {
-    doc.font('Helvetica').fontSize(9).fillColor(RJK.muted).text(k, boxX + 12, by, { width: boxW - 24 });
-    doc.font('Helvetica-Bold').fillColor(RJK.ink).text(v, boxX + 12, by, { width: boxW - 24, align: 'right' });
-    by += 15;
+    doc.font('Helvetica').fontSize(8).fillColor(RJK.muted).text(k, boxX + 12, by, { width: boxW - 24 });
+    doc.font('Helvetica-Bold').fontSize(7.5).fillColor(RJK.ink).text(v, boxX + 12, by + 10, { width: boxW - 24, align: 'right' });
+    by += 22;
   });
   doc.rect(boxX + 12, by + 2, boxW - 24, 1).fill(RJK.ink);
   by += 10;
-  doc.font('Helvetica-Bold').fontSize(9.5).fillColor(RJK.ink).text(closing > 0 ? 'Balance due' : 'Closing balance', boxX + 12, by + 3, { width: boxW - 24 });
+  doc.font('Helvetica-Bold').fontSize(9).fillColor(RJK.ink).text(closing > 0 ? 'Balance due' : 'Closing balance', boxX + 12, by + 3, { width: boxW - 24 });
   doc
     .font('Helvetica-Bold')
-    .fontSize(14)
+    .fontSize(9)
     .fillColor(closing > 0 ? RJK.navy : RJK.green)
-    .text(`${currency} ${amount(closing)}`, boxX + 12, by, { width: boxW - 24, align: 'right' });
-  by += 22;
+    .text(fmt(closing), boxX + 12, by + 14, { width: boxW - 24, align: 'right' });
+  by += 28;
   if (Number(s.creditBalance) > 0) {
-    doc.font('Helvetica').fontSize(8).fillColor(RJK.green).text(`Credit available: ${currency} ${amount(s.creditBalance)}`, boxX + 12, by, { width: boxW - 24, align: 'right' });
+    doc.font('Helvetica').fontSize(7.5).fillColor(RJK.green).text(`Credit: ${fmt(s.creditBalance)}`, boxX + 12, by, { width: boxW - 24, align: 'right' });
     by += 12;
   } else if (Number(s.depositsHeld) > 0) {
-    doc.font('Helvetica').fontSize(8).fillColor(RJK.muted).text(`Deposit held: ${currency} ${amount(s.depositsHeld)}`, boxX + 12, by, { width: boxW - 24, align: 'right' });
+    doc.font('Helvetica').fontSize(7.5).fillColor(RJK.muted).text(`Deposit held: ${fmt(s.depositsHeld)}`, boxX + 12, by, { width: boxW - 24, align: 'right' });
     by += 12;
   }
 
@@ -548,9 +562,9 @@ export function streamStatementPdf(res, statement, company = {}, opts = {}) {
   doc.font('Helvetica-Bold').fontSize(10).fillColor(RJK.ink).text(closing > 0 ? 'Balance due' : 'Closing balance', margin, y + 2, { width: CW - 180, align: 'right' });
   doc
     .font('Helvetica-Bold')
-    .fontSize(13)
+    .fontSize(11)
     .fillColor(closing > 0 ? RJK.navy : RJK.green)
-    .text(`${currency} ${amount(closing)}`, margin, y, { width: CW, align: 'right' });
+    .text(fmt(closing), margin, y, { width: CW, align: 'right' });
   y += 26;
   doc
     .font('Helvetica')

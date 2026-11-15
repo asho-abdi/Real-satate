@@ -28,6 +28,7 @@ async function companySettings() {
         in: [
           'app.name',
           'currency',
+          'currency.usdKesRate',
           'payments.officeMpesaNumber',
           'payments.agentAccountName',
           'payments.agentAccountReference',
@@ -37,9 +38,11 @@ async function companySettings() {
   });
   const map = {};
   for (const r of rows) map[r.key] = r.value;
+  const rate = Number(map['currency.usdKesRate']);
   return {
     companyName: map['app.name'] || 'RJK REALTY',
     currency: map.currency || 'KES',
+    usdKesRate: Number.isFinite(rate) && rate > 0 ? rate : 129.5,
     officeMpesaNumber: map['payments.officeMpesaNumber'] || null,
     agentAccountName: map['payments.agentAccountName'] || null,
     agentAccountReference: map['payments.agentAccountReference'] || null,

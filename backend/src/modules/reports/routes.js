@@ -7,6 +7,7 @@ import { success } from '../../utils/apiResponse.js';
 import { AppError } from '../../utils/AppError.js';
 import { currentMonthKey } from '../../utils/rent.js';
 import { exportExcel, exportPdf } from '../../utils/export.js';
+import { formatMoney } from '../../utils/currency.js';
 import {
   assertBuildingAccess,
   resourceBuildingFilter,
@@ -605,11 +606,15 @@ router.get(
       ]
         .filter(Boolean)
         .join(' · ');
-      const settingRows = await prisma.setting.findMany({ where: { key: { in: ['app.name', 'currency'] } } });
+      const settingRows = await prisma.setting.findMany({
+        where: { key: { in: ['app.name', 'currency', 'currency.usdKesRate'] } },
+      });
       const settings = Object.fromEntries(settingRows.map((r) => [r.key, r.value]));
       const currency = settings.currency || 'KES';
+      const rate = Number(settings['currency.usdKesRate']);
+      const usdKesRate = Number.isFinite(rate) && rate > 0 ? rate : 129.5;
       const sm = report.summary || {};
-      const amt = (v) => `${currency} ${Number(v || 0).toLocaleString('en-KE', { maximumFractionDigits: 0 })}`;
+      const amt = (v) => formatMoney(v, { currency: 'KES', dual: true, usdKesRate });
       const kpis = [
         { label: 'Gross revenue', value: amt(sm.revenueTotal), accent: true },
         { label: 'Net revenue', value: amt(sm.netRevenue) },
@@ -624,6 +629,7 @@ router.get(
         subtitle,
         kpis,
         currency,
+        usdKesRate,
         companyName: settings['app.name'],
       });
     }

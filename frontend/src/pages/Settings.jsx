@@ -9,12 +9,13 @@ import Spinner from '../components/ui/Spinner.jsx';
 import { useSettings } from '../context/SettingsContext.jsx';
 import { NAV_LAYOUTS, useLayout } from '../context/LayoutContext.jsx';
 import { settingsService } from '../services/settingsService.js';
+import { DEFAULT_USD_KES_RATE, formatCurrency, kesToUsd } from '../utils/format.js';
 
 export default function Settings() {
   const { settings, loading, saveSettings } = useSettings();
   const { navLayout, setNavLayout } = useLayout();
   const [companyName, setCompanyName] = useState(settings.companyName);
-  const [currency, setCurrency] = useState(settings.currency);
+  const [usdKesRate, setUsdKesRate] = useState(String(settings.usdKesRate ?? DEFAULT_USD_KES_RATE));
   const [nightsNote, setNightsNote] = useState(settings.nightsNote);
   const [officeMpesa, setOfficeMpesa] = useState('');
   const [agentAccountName, setAgentAccountName] = useState('');
@@ -23,7 +24,7 @@ export default function Settings() {
 
   useEffect(() => {
     setCompanyName(settings.companyName);
-    setCurrency(settings.currency);
+    setUsdKesRate(String(settings.usdKesRate ?? DEFAULT_USD_KES_RATE));
     setNightsNote(settings.nightsNote);
   }, [settings]);
 
@@ -41,6 +42,9 @@ export default function Settings() {
         setAgentAccountReference(
           typeof rawAgentRef === 'string' ? rawAgentRef : rawAgentRef != null ? String(rawAgentRef) : '',
         );
+        if (map['currency.usdKesRate'] != null && map['currency.usdKesRate'] !== '') {
+          setUsdKesRate(String(map['currency.usdKesRate']));
+        }
       })
       .catch(() => {});
     return () => {
@@ -51,7 +55,12 @@ export default function Settings() {
   const save = async () => {
     setSaving(true);
     try {
-      await saveSettings({ companyName, currency, nightsNote });
+      const rate = Number(usdKesRate);
+      if (!Number.isFinite(rate) || rate <= 0) {
+        toast.error('Enter a valid USD exchange rate (KES per 1 USD)');
+        return;
+      }
+      await saveSettings({ companyName, usdKesRate: rate, nightsNote });
       await settingsService.updateSetting('payments.officeMpesaNumber', officeMpesa.trim());
       await settingsService.updateSetting('payments.agentAccountName', agentAccountName.trim());
       await settingsService.updateSetting('payments.agentAccountReference', agentAccountReference.trim());
@@ -70,6 +79,17 @@ export default function Settings() {
       </div>
     );
   }
+
+  const previewKes = 10000;
+  const rateNum = Number(usdKesRate);
+  const previewUsd =
+    Number.isFinite(rateNum) && rateNum > 0
+      ? kesToUsd(previewKes, rateNum)
+      : null;
+  const preview =
+    previewUsd != null
+      ? `${formatCurrency(previewKes, { dual: false })} · ${formatCurrency(previewUsd, { currency: 'USD', dual: false })}`
+      : null;
 
   return (
     <div>
@@ -100,15 +120,25 @@ export default function Settings() {
               value={companyName}
               onChange={(e) => setCompanyName(e.target.value)}
             />
-            <Select
-              label="Currency"
-              value={currency}
-              onChange={(e) => setCurrency(e.target.value)}
-            >
-              <option value="KES">KES — Kenyan Shilling</option>
-              <option value="USD">USD</option>
-              <option value="AED">AED</option>
-            </Select>
+            <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-2)]/50 px-3 py-3">
+              <p className="text-sm font-medium text-[var(--text)]">Primary currency</p>
+              <p className="mt-1 text-sm text-[var(--text-muted)]">
+                Kenyan Shilling (KES) — all amounts are stored in KES. USD is shown as a live conversion.
+              </p>
+            </div>
+            <Input
+              label="USD exchange rate (KES per 1 USD)"
+              type="number"
+              min={0.01}
+              step="0.01"
+              value={usdKesRate}
+              onChange={(e) => setUsdKesRate(e.target.value)}
+              hint={
+                preview
+                  ? `Example: ${formatCurrency(previewKes, { dual: false })} → ${preview}. Changing this rate updates USD everywhere without editing units.`
+                  : 'e.g. 129.50'
+              }
+            />
             <label className="block space-y-1.5">
               <span className="text-sm font-medium text-[var(--text)]">Default nights note</span>
               <textarea

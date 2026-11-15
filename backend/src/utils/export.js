@@ -12,6 +12,7 @@ import {
   titleCase,
   pdfText,
 } from './pdfBrand.js';
+import { DEFAULT_USD_KES_RATE, formatMoney } from './currency.js';
 
 /**
  * Stream an Excel workbook download.
@@ -81,10 +82,10 @@ function toNumber(value) {
   return Number.isFinite(n) ? n : 0;
 }
 
-function formatAmount(value) {
+function formatAmount(value, usdKesRate = DEFAULT_USD_KES_RATE) {
   if (value === '' || value == null || value === '—') return '—';
   const n = toNumber(value);
-  return n.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return formatMoney(n, { currency: 'KES', dual: true, usdKesRate });
 }
 
 /**
@@ -94,7 +95,7 @@ function formatAmount(value) {
  * @param {string} title
  * @param {{ header: string, key: string, width?: number }[]} columns
  * @param {Record<string, unknown>[]} rows
- * @param {{ subtitle?: string, companyName?: string, currency?: string,
+ * @param {{ subtitle?: string, companyName?: string, currency?: string, usdKesRate?: number,
  *           kpis?: { label: string, value: string, accent?: boolean, color?: string }[],
  *           groupBy?: string }=} options
  *   Rows are grouped under headings when a `section` column exists (or `groupBy` is given).
@@ -106,6 +107,8 @@ export function exportPdf(res, filename, title, columns, rows, options = {}) {
 
   const companyName = prettyCompany(options.companyName);
   const currency = options.currency || 'KES';
+  const usdKesRate = Number(options.usdKesRate) > 0 ? Number(options.usdKesRate) : DEFAULT_USD_KES_RATE;
+  const fmtAmt = (v) => formatAmount(v, usdKesRate);
   const groupKey = options.groupBy || (columns.some((c) => c.key === 'section') ? 'section' : null);
   const visible = columns.filter((c) => c.key !== groupKey);
 
@@ -155,7 +158,7 @@ export function exportPdf(res, filename, title, columns, rows, options = {}) {
       if (isStatusColumn(col)) return;
       let v = cellText(row[col.key]);
       if (col.key === 'floor') v = normalizeFloor(v);
-      if (isAmountColumn(col)) v = formatAmount(v);
+      if (isAmountColumn(col)) v = fmtAmt(v);
       h = Math.max(h, doc.heightOfString(v || ' ', { width: Math.max(colW[i] - padX * 2, 10) }) + 10);
     });
     return h;
@@ -172,7 +175,7 @@ export function exportPdf(res, filename, title, columns, rows, options = {}) {
         statusPill(doc, v, x + padX, y + (h - 13) / 2, colW[i] - padX * 2);
       } else {
         const amount = isAmountColumn(col);
-        const text = amount ? formatAmount(v) : col.key === 'type' ? titleCase(v) : v || '—';
+        const text = amount ? fmtAmt(v) : col.key === 'type' ? titleCase(v) : v || '—';
         doc
           .font(amount || i === 0 ? 'Helvetica-Bold' : 'Helvetica')
           .fontSize(fontSize)
@@ -200,7 +203,12 @@ export function exportPdf(res, filename, title, columns, rows, options = {}) {
     margin,
     title,
     subtitle,
-    metaLines: [generatedStamp(), currency ? `Amounts in ${currency}` : null],
+    metaLines: [
+      generatedStamp(),
+      currency
+        ? `KES with USD at ${usdKesRate.toLocaleString('en-KE', { maximumFractionDigits: 2 })} KES/USD`
+        : null,
+    ],
   });
 
   if (Array.isArray(options.kpis) && options.kpis.length) {
@@ -236,7 +244,7 @@ export function exportPdf(res, filename, title, columns, rows, options = {}) {
         const meta = [`${group.rows.length} record${group.rows.length === 1 ? '' : 's'}`];
         if (amountCol) {
           const sum = group.rows.reduce((s, r) => s + toNumber(r[amountCol.key]), 0);
-          meta.push(`Total ${currency} ${formatAmount(sum)}`);
+          meta.push(`Total ${fmtAmt(sum)}`);
         }
         doc.font('Helvetica').fontSize(8.5).fillColor(BRAND.muted).text(meta.join(' · '), margin, y + 2, { width: CW, align: 'right' });
         y += 26;

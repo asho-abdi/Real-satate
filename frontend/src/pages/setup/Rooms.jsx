@@ -22,6 +22,7 @@ import { formatCurrency, cn } from '../../utils/format.js';
 import { usageToApi, usageAfterUnitTypeChange } from '../../utils/labels.js';
 import { rentalApi } from '../../services/rentalApi.js';
 import GuestPricingFields, { guestPricingError } from '../../components/units/GuestPricingFields.jsx';
+import MoneyKesField from '../../components/units/MoneyKesField.jsx';
 import {
   FormSection,
   LeasePricingFields,
@@ -714,7 +715,7 @@ export default function Rooms() {
             <div className="mb-4">
               <UsageChoiceCards
                 value={roomForm.usage}
-                shopOnly={roomForm.unitType === 'Commercial Space' || roomForm.unitType === 'Commercial Shop'}
+                shopOnly={roomForm.unitType === 'Commercial Shop'}
                 onChange={(usage) =>
                   setRoomForm({
                     ...roomForm,
@@ -785,7 +786,12 @@ export default function Rooms() {
               <LeasePricingFields form={roomForm} onChange={setRoomForm} />
             )}
             {roomForm.usage === 'shop' || roomForm.usage === 'office' ? (
-              <Input className="mt-4" label="Sale price (optional)" type="number" value={roomForm.salePrice} onChange={(e) => setRoomForm({ ...roomForm, salePrice: e.target.value })} />
+              <MoneyKesField
+                className="mt-4"
+                label="Sale price (optional, KES)"
+                value={roomForm.salePrice}
+                onChange={(salePrice) => setRoomForm({ ...roomForm, salePrice })}
+              />
             ) : null}
             <Input className="mt-4 max-w-xs" label="Standing discount (optional)" type="number" value={roomForm.discount} onChange={(e) => setRoomForm({ ...roomForm, discount: e.target.value })} />
           </FormSection>
