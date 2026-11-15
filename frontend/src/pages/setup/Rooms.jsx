@@ -787,8 +787,8 @@ export default function Rooms() {
             )}
             {roomForm.usage === 'shop' || roomForm.usage === 'office' ? (
               <MoneyKesField
-                className="mt-4"
-                label="Sale price (optional, KES)"
+                className="mt-4 max-w-xl"
+                label="Sale price (optional)"
                 value={roomForm.salePrice}
                 onChange={(salePrice) => setRoomForm({ ...roomForm, salePrice })}
               />

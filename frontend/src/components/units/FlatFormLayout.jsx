@@ -95,12 +95,12 @@ export function UsageChoiceCards({ value, onChange, shopOnly = false, disabled =
 export function LeasePricingFields({ form, onChange }) {
   return (
     <MoneyKesField
-      className="max-w-sm"
-      label="Monthly rent (KES)"
+      className="max-w-xl"
+      label="Monthly rent"
       value={form.monthlyRent}
       onChange={(monthlyRent) => onChange({ ...form, monthlyRent })}
       placeholder="e.g. 45000"
-      hint="Apartments and shops use monthly rent only. USD shown from Settings rate."
+      hint="Apartments and shops use monthly rent only."
     />
   );
 }

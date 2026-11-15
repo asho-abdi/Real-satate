@@ -51,9 +51,9 @@ export default function GuestPricingFields({ form, onChange, className }) {
                 <p className="text-xs text-[var(--text-muted)]">{row.subtitle}</p>
               </div>
             </div>
-            <div className="w-full sm:max-w-[240px]">
+            <div className="w-full sm:max-w-xl">
               <MoneyKesField
-                label="Price (KES)"
+                label="Price"
                 value={form[row.field]}
                 onChange={(v) => set({ [row.field]: v })}
                 placeholder={row.placeholder}

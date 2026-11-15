@@ -924,7 +924,8 @@ export default function BuildingDetail() {
                 <LeasePricingFields form={roomForm} onChange={setRoomForm} />
                 {roomForm.usage === 'shop' || roomForm.usage === 'office' ? (
                   <MoneyKesField
-                    label="Sale price (optional, KES)"
+                    className="max-w-xl"
+                    label="Sale price (optional)"
                     value={roomForm.salePrice}
                     onChange={(salePrice) => setRoomForm({ ...roomForm, salePrice })}
                     hint="Only if this unit is for sale, not just rent."
