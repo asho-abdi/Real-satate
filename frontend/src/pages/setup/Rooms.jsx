@@ -714,7 +714,7 @@ export default function Rooms() {
             <div className="mb-4">
               <UsageChoiceCards
                 value={roomForm.usage}
-                shopOnly={roomForm.unitType === 'Commercial Shop'}
+                shopOnly={roomForm.unitType === 'Commercial Space' || roomForm.unitType === 'Commercial Shop'}
                 onChange={(usage) =>
                   setRoomForm({
                     ...roomForm,

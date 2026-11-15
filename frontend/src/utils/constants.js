@@ -1,7 +1,7 @@
 export const APP_NAME = import.meta.env.VITE_APP_NAME || 'RJK REALTY';
 
 export const UNIT_TYPES = [
-  'Commercial Shop',
+  'Commercial Space',
   'Commercial Office',
   'Apartment',
   'Studio Apartment',

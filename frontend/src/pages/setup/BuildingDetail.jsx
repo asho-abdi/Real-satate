@@ -809,7 +809,7 @@ export default function BuildingDetail() {
             </div>
             <UsageChoiceCards
               value={roomForm.usage}
-              shopOnly={roomForm.unitType === 'Commercial Shop'}
+              shopOnly={roomForm.unitType === 'Commercial Space' || roomForm.unitType === 'Commercial Shop'}
               onChange={(usage) =>
                 setRoomForm({
                   ...roomForm,

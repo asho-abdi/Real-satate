@@ -1,7 +1,7 @@
 /** Map API enums ↔ friendly UI labels for the simple rental app. */
 
 export const UNIT_TYPE_LABELS = {
-  COMMERCIAL_SHOP: 'Commercial Shop',
+  COMMERCIAL_SHOP: 'Commercial Space',
   COMMERCIAL_OFFICE: 'Commercial Office',
   APARTMENT: 'Apartment',
   STUDIO_APARTMENT: 'Studio Apartment',
@@ -11,6 +11,7 @@ export const UNIT_TYPE_LABELS = {
 };
 
 export const UNIT_TYPE_VALUES = {
+  'Commercial Space': 'COMMERCIAL_SHOP',
   'Commercial Shop': 'COMMERCIAL_SHOP',
   'Commercial Office': 'COMMERCIAL_OFFICE',
   Apartment: 'APARTMENT',
@@ -136,7 +137,7 @@ export function isoDate(value) {
 
 /** Default usage when unit type changes — admin can override in the form. */
 export function defaultUsageForUnitType(unitTypeLabel) {
-  if (unitTypeLabel === 'Commercial Shop') return 'shop';
+  if (unitTypeLabel === 'Commercial Space' || unitTypeLabel === 'Commercial Shop') return 'shop';
   if (unitTypeLabel === 'Commercial Office') return 'office';
   return 'apartment';
 }
@@ -144,7 +145,7 @@ export function defaultUsageForUnitType(unitTypeLabel) {
 /** Keep Guest / Airbnb (and apartment) when changing bedroom type; shop/office force commercial. */
 export function usageAfterUnitTypeChange(unitTypeLabel, currentUsage) {
   const usage = String(currentUsage || '').toLowerCase();
-  if (unitTypeLabel === 'Commercial Shop') return 'shop';
+  if (unitTypeLabel === 'Commercial Space' || unitTypeLabel === 'Commercial Shop') return 'shop';
   if (unitTypeLabel === 'Commercial Office') return 'office';
   if (usage === 'shop' || usage === 'office') return 'apartment';
   if (usage === 'guest' || usage === 'apartment') return usage;
