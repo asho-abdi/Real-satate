@@ -95,12 +95,15 @@ export function rentPaymentDocPayload(payment, ctx = {}, type = 'RECEIPT') {
   };
 }
 
-/** Build a booking invoice/receipt payload from a mapped booking row. */
+/** Build a booking accommodation invoice/receipt payload from a mapped booking row. */
 export function bookingDocPayload(booking, type = 'INVOICE') {
-  const total = Number(booking.total) || 0;
-  const paid = Number(booking.amountPaid) || 0;
+  const fin = booking.financials || {};
+  const total = Number(fin.expectedAccommodation ?? booking.total) || 0;
+  const paid = Number(fin.accommodationPaid ?? booking.amountPaid) || 0;
   const balance = Math.max(0, Math.round((total - paid) * 100) / 100);
   const period = `${String(booking.checkIn || '').slice(0, 10)} → ${String(booking.checkOut || '').slice(0, 10)}`;
+  const nights = fin.expectedNights ?? booking.nights;
+  const rate = fin.nightlyRate ?? booking.periodRate ?? booking.dailyRent;
   return {
     type,
     customerName: booking.fullName,
@@ -108,22 +111,61 @@ export function bookingDocPayload(booking, type = 'INVOICE') {
     unitId: booking.roomId || booking.unitId || null,
     description:
       type === 'RECEIPT'
-        ? `Payment receipt · Guest booking ${booking.code}`
-        : `Guest booking ${booking.code}`,
+        ? `Accommodation payment · ${booking.code}`
+        : `Accommodation invoice · ${booking.code} · ${nights} nights × ${rate}`,
     billingPeriod: period,
     amount: total,
     previousBalance: 0,
-    currentCharges: total,
+    currentCharges: Number(fin.accruedAccommodation ?? total) || total,
     amountPaid: paid,
     remainingBalance: balance,
     method: booking.paymentMethod || null,
     dueDate: booking.checkOut || null,
     paymentDate: booking.checkIn || null,
-    sourceType: type === 'RECEIPT' ? 'BOOKING_PAYMENT' : 'BOOKING',
+    sourceType: type === 'RECEIPT' ? 'BOOKING_PAYMENT' : 'BOOKING_ACCOMMODATION',
     sourceId: booking.id,
     buildingName: booking.building || null,
     floorName: booking.floor || null,
     unitNumber: booking.roomNumber || null,
-    notes: booking.notes || null,
+    notes: [
+      `Rate per night: ${rate}`,
+      `Nights stayed: ${fin.nightsStayed ?? '—'} / expected ${nights}`,
+      `Security deposit is separate and is not applied to this balance.`,
+      booking.notes || '',
+    ]
+      .filter(Boolean)
+      .join('\n'),
+  };
+}
+
+/** Security deposit receipt payload (refundable — not accommodation revenue). */
+export function bookingDepositDocPayload(booking, deposit) {
+  const amount = Number(deposit?.amount ?? booking.depositSummary?.received ?? 0);
+  const remaining = Number(deposit?.remainingAmount ?? booking.depositSummary?.remaining ?? amount);
+  return {
+    type: 'RECEIPT',
+    customerName: booking.fullName,
+    customerPhone: booking.phone || null,
+    unitId: booking.roomId || booking.unitId || null,
+    description: `SECURITY DEPOSIT – REFUNDABLE · ${booking.code}`,
+    billingPeriod: `${String(booking.checkIn || '').slice(0, 10)} → ${String(booking.checkOut || '').slice(0, 10)}`,
+    amount,
+    previousBalance: 0,
+    currentCharges: amount,
+    amountPaid: amount,
+    remainingBalance: 0,
+    method: deposit?.method || booking.paymentMethod || null,
+    paymentDate: deposit?.dateReceived || null,
+    sourceType: 'SECURITY_DEPOSIT_TXN',
+    sourceId: deposit?.transactions?.[0]?.id || deposit?.id || booking.id,
+    buildingName: booking.building || null,
+    floorName: booking.floor || null,
+    unitNumber: booking.roomNumber || null,
+    notes: [
+      'SECURITY DEPOSIT – REFUNDABLE',
+      `Status: ${deposit?.status || booking.depositSummary?.status || 'HELD'}`,
+      `Refundable held: ${remaining}`,
+      'This is not accommodation revenue.',
+    ].join('\n'),
   };
 }

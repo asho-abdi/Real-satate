@@ -9,13 +9,13 @@ import Select from '../../components/ui/Select.jsx';
 import Badge from '../../components/ui/Badge.jsx';
 import Modal from '../../components/ui/Modal.jsx';
 import Spinner from '../../components/ui/Spinner.jsx';
-import { calcBookingTotal } from '../../utils/rentCalc.js';
+import { calcBookingFinancials, calcBookingTotal, roundMoney } from '../../utils/rentCalc.js';
 import { formatCurrency, formatDate, formatRoomLocation, cn } from '../../utils/format.js';
 import { rentalApi, resolveIdentityAttachment } from '../../services/rentalApi.js';
 import IdentityDocumentField from '../../components/ui/IdentityDocumentField.jsx';
 import PaymentMethodFields from '../../components/payments/PaymentMethodFields.jsx';
 import FinanceDocActions from '../../components/finance/FinanceDocActions.jsx';
-import { bookingDocPayload } from '../../utils/financeDocs.js';
+import { bookingDocPayload, bookingDepositDocPayload } from '../../utils/financeDocs.js';
 import PaymentStatusBadge from '../../components/realty/PaymentStatusBadge.jsx';
 import NewBooking from './NewBooking.jsx';
 
@@ -79,7 +79,12 @@ export default function Bookings() {
     agentName: '',
     officeMpesaNumber: '',
     comment: '',
+    deductAmount: '0',
+    depositReason: '',
+    depositNotes: '',
+    refundDeposit: true,
   });
+  const [payDepositHeld, setPayDepositHeld] = useState(0);
   const [savingPay, setSavingPay] = useState(false);
 
   useEffect(() => {
@@ -164,30 +169,44 @@ export default function Bookings() {
     floorFilter,
   ]);
 
+  const bookingFin = (booking) => booking?.financials || calcBookingFinancials(booking || {});
+
   const openPayModal = (booking, action) => {
-    const balance = Math.max(0, Number(booking.total) - Number(booking.amountPaid || 0));
+    const fin = bookingFin(booking);
+    const expected = Number(fin.expectedAccommodation ?? booking.total);
+    const paid = Number(fin.accommodationPaid ?? booking.amountPaid || 0);
+    const balance = Math.max(0, roundMoney(expected - paid));
+    const depositHeld = Number(
+      booking.depositSummary?.remaining ?? booking.deposit?.remainingAmount ?? 0,
+    );
     // Close booking details so the payment modal is not hidden underneath it
     setDetailModal(null);
     setPayModal({ booking, action });
     setPayForm({
-      amountPaid: String(
-        action === 'payment' || action === 'checkout' ? balance || booking.total : balance || booking.total,
-      ),
+      // check-in / check-out: absolute accommodation total collected; payment: delta
+      amountPaid: String(action === 'payment' ? balance : expected),
       method: 'CASH',
       reference: '',
       receivedByName: '',
       agentName: '',
       officeMpesaNumber: '',
       comment: '',
+      deductAmount: '0',
+      depositReason: '',
+      depositNotes: '',
+      refundDeposit: true,
     });
+    setPayDepositHeld(depositHeld);
   };
 
   const submitPaymentAction = async () => {
     if (!payModal) return;
     const { booking, action } = payModal;
+    const fin = bookingFin(booking);
+    const expectedTotal = Number(fin.expectedAccommodation ?? booking.total);
     const amountPaid = Number(payForm.amountPaid);
     if (Number.isNaN(amountPaid) || amountPaid < 0) {
-      toast.error('Enter a valid amount paid');
+      toast.error('Enter a valid accommodation amount');
       return;
     }
 
@@ -207,19 +226,46 @@ export default function Bookings() {
           comment: payForm.comment || null,
           ...methodPayload,
         });
-        toast.success('Payment recorded');
+        toast.success('Accommodation payment recorded');
       } else if (action === 'checkin') {
         await rentalApi.checkInBooking(booking.id, {
-          amountPaid,
+          amountPaid: Math.min(amountPaid, expectedTotal),
           ...methodPayload,
         });
         toast.success('Guest checked in');
       } else {
+        const requestedDeduct = Math.max(0, Number(payForm.deductAmount) || 0);
+        const held = payDepositHeld;
+        if (requestedDeduct > 0 && !String(payForm.depositReason || '').trim()) {
+          toast.error('Enter a reason for the maintenance deduction');
+          setSavingPay(false);
+          return;
+        }
+        const appliedDeduct = Math.min(requestedDeduct, held);
+        const additionalMaintenanceOwed = Math.max(0, roundMoney(requestedDeduct - held));
+        const refund = payForm.refundDeposit
+          ? Math.max(0, roundMoney(held - appliedDeduct))
+          : 0;
+        const depositNoteParts = [
+          payForm.depositNotes || payForm.depositReason || null,
+          additionalMaintenanceOwed > 0
+            ? `Additional maintenance owed beyond deposit: ${additionalMaintenanceOwed}`
+            : null,
+        ].filter(Boolean);
         await rentalApi.checkOutBooking(booking.id, {
-          amountPaid,
+          amountPaid: Math.min(amountPaid, expectedTotal),
+          returnAmount: refund,
+          deductAmount: appliedDeduct,
+          reason: payForm.depositReason || null,
+          depositNotes: depositNoteParts.join(' · ') || null,
+          skipDepositRefund: !payForm.refundDeposit && appliedDeduct <= 0,
           ...methodPayload,
         });
-        toast.success('Guest checked out');
+        toast.success(
+          additionalMaintenanceOwed > 0
+            ? `Checked out · additional maintenance owed ${formatCurrency(additionalMaintenanceOwed)}`
+            : 'Guest checked out',
+        );
       }
       setPayModal(null);
       setDetailModal(null);
@@ -357,13 +403,30 @@ export default function Bookings() {
     }
   };
 
+  const payFin = payModal ? bookingFin(payModal.booking) : null;
   const balanceDue = payModal
-    ? Math.max(0, Number(payModal.booking.total) - Number(payForm.amountPaid || 0))
+    ? Math.max(
+        0,
+        roundMoney(
+          Number(payFin?.expectedAccommodation ?? payModal.booking.total) -
+            Number(payForm.amountPaid || 0),
+        ),
+      )
+    : 0;
+  const checkoutDeduct = Math.max(0, Number(payForm.deductAmount) || 0);
+  const checkoutRefund = payForm.refundDeposit
+    ? Math.max(0, roundMoney(payDepositHeld - checkoutDeduct))
     : 0;
 
-  const detailBalance = detailModal
-    ? Math.max(0, Number(detailModal.total) - Number(detailModal.amountPaid || 0))
-    : 0;
+  const detailFin = detailModal
+    ? detailModal.financials || calcBookingFinancials(detailModal)
+    : null;
+  const detailDeposit = detailModal?.depositSummary || null;
+  const detailBalance = detailFin
+    ? Number(detailFin.outstandingExpected ?? 0)
+    : detailModal
+      ? Math.max(0, Number(detailModal.total) - Number(detailModal.amountPaid || 0))
+      : 0;
 
   if (loading) {
     return (
@@ -472,7 +535,12 @@ export default function Bookings() {
               </Card>
             ) : (
               displayedBookings.map((b) => {
-                const balance = Math.max(0, Number(b.total) - Number(b.amountPaid || 0));
+                const fin = bookingFin(b);
+                const balance = Number(
+                  fin.outstandingExpected ??
+                    Math.max(0, Number(b.total) - Number(b.amountPaid || 0)),
+                );
+                const depositHeld = Number(b.depositSummary?.remaining ?? 0);
                 const isUpcoming = b.status === 'Confirmed' || b.status === 'Reserved';
                 const isActive = b.status === 'CheckedIn';
 
@@ -535,11 +603,14 @@ export default function Bookings() {
                     <p className="mb-1 text-sm text-[var(--text-muted)]">
                       {b.code} · {formatRoomLocation({ building: b.building, floor: b.floor })} ·{' '}
                       {b.phone} · {formatDate(b.checkIn)} → {formatDate(b.checkOut)} ·{' '}
-                      {b.nights} {Number(b.nights) === 1 ? 'night' : 'nights'} · Total{' '}
-                      {formatCurrency(b.total)}
+                      {fin.nightsStayed ?? 0}/{fin.expectedNights ?? b.nights} nights · Rate{' '}
+                      {formatCurrency(fin.nightlyRate ?? b.periodRate || b.dailyRent || 0)}
+                      /night · Accrued {formatCurrency(fin.accruedAccommodation ?? 0)} · Expected{' '}
+                      {formatCurrency(fin.expectedAccommodation ?? b.total)}
                       {b.discount ? ` (−${formatCurrency(b.discount)})` : ''} · Paid{' '}
-                      {formatCurrency(b.amountPaid || 0)}
+                      {formatCurrency(fin.accommodationPaid ?? b.amountPaid || 0)}
                       {balance > 0 ? ` · Due ${formatCurrency(balance)}` : ''}
+                      {depositHeld > 0 ? ` · Deposit held ${formatCurrency(depositHeld)}` : ''}
                     </p>
                     <div className="mt-3 flex flex-wrap items-center gap-2">
                       <span className="inline-flex rounded-full bg-[var(--primary-light)] px-3 py-1 text-xs font-semibold text-[var(--primary-dark)]">
@@ -547,7 +618,8 @@ export default function Bookings() {
                       </span>
                       <PaymentStatusBadge status={b.paymentStatus || 'Unpaid'} />
                       <span className="text-sm text-[var(--text-muted)]">
-                        {formatCurrency(b.periodRate || b.dailyRent || 0)} per {String(b.bookingPeriodLabel || 'day').toLowerCase().replace(/ly$/, '')}
+                        {formatCurrency(fin.nightlyRate ?? b.periodRate || b.dailyRent || 0)} per
+                        night
                       </span>
                     </div>
                   </Card>
@@ -564,10 +636,10 @@ export default function Bookings() {
         onClose={() => !savingPay && setPayModal(null)}
         title={
           payModal?.action === 'checkout'
-            ? `Collect payment · ${payModal.booking.code}`
+            ? `Checkout settlement · ${payModal.booking.code}`
             : payModal?.action === 'payment'
-              ? `Record payment · ${payModal.booking.code}`
-              : `Check in & payment · ${payModal?.booking.code}`
+              ? `Accommodation payment · ${payModal.booking.code}`
+              : `Check in · ${payModal?.booking.code}`
         }
         footer={
           <div className="flex justify-end gap-2">
@@ -576,10 +648,10 @@ export default function Bookings() {
             </Button>
             <Button onClick={submitPaymentAction} disabled={savingPay}>
               {payModal?.action === 'checkout'
-                ? 'Confirm paid & check out'
+                ? 'Confirm checkout'
                 : payModal?.action === 'payment'
-                  ? 'Save payment'
-                  : 'Confirm paid & check in'}
+                  ? 'Save accommodation payment'
+                  : 'Confirm check in'}
             </Button>
           </div>
         }
@@ -589,14 +661,30 @@ export default function Bookings() {
             <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-2)] px-4 py-3 text-sm">
               <p className="font-medium text-[var(--text)]">{payModal.booking.fullName}</p>
               <p className="mt-1 text-[var(--text-muted)]">
-                Room {payModal.booking.roomNumber} · Total {formatCurrency(payModal.booking.total)} · Already
-                paid {formatCurrency(payModal.booking.amountPaid || 0)}
+                Room {payModal.booking.roomNumber} · {payFin?.nightsStayed ?? 0}/
+                {payFin?.expectedNights ?? payModal.booking.nights} nights · Rate{' '}
+                {formatCurrency(payFin?.nightlyRate ?? payModal.booking.periodRate || 0)}/night
               </p>
+              <p className="mt-1 text-[var(--text-muted)]">
+                Accrued {formatCurrency(payFin?.accruedAccommodation ?? 0)} · Expected stay{' '}
+                {formatCurrency(payFin?.expectedAccommodation ?? payModal.booking.total)} · Paid{' '}
+                {formatCurrency(payFin?.accommodationPaid ?? payModal.booking.amountPaid || 0)}
+              </p>
+              {payDepositHeld > 0 ? (
+                <p className="mt-1 text-[var(--text-muted)]">
+                  Security deposit held {formatCurrency(payDepositHeld)} (not accommodation revenue)
+                </p>
+              ) : null}
             </div>
             <Input
-              label={payModal.action === 'payment' ? 'Payment amount' : 'Amount paid (total collected)'}
+              label={
+                payModal.action === 'payment'
+                  ? 'Accommodation payment amount'
+                  : 'Accommodation paid (total collected)'
+              }
               type="number"
               min={0}
+              step="0.01"
               value={payForm.amountPaid}
               onChange={(e) => setPayForm({ ...payForm, amountPaid: e.target.value })}
             />
@@ -611,27 +699,76 @@ export default function Bookings() {
                 onChange={(e) => setPayForm({ ...payForm, comment: e.target.value })}
               />
             ) : null}
+            {payModal.action === 'checkout' && payDepositHeld > 0 ? (
+              <div className="grid gap-3 rounded-xl border border-[var(--border)] p-3">
+                <p className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+                  Security deposit settlement
+                </p>
+                <Input
+                  label="Maintenance deduction"
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={payForm.deductAmount}
+                  onChange={(e) => setPayForm({ ...payForm, deductAmount: e.target.value })}
+                />
+                {checkoutDeduct > 0 ? (
+                  <>
+                    <Input
+                      label="Reason for deduction"
+                      value={payForm.depositReason}
+                      onChange={(e) => setPayForm({ ...payForm, depositReason: e.target.value })}
+                    />
+                    <Input
+                      label="Maintenance / damage description"
+                      value={payForm.depositNotes}
+                      onChange={(e) => setPayForm({ ...payForm, depositNotes: e.target.value })}
+                    />
+                  </>
+                ) : null}
+                <label className="inline-flex items-center gap-2 text-sm text-[var(--text)]">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(payForm.refundDeposit)}
+                    onChange={(e) =>
+                      setPayForm({ ...payForm, refundDeposit: e.target.checked })
+                    }
+                  />
+                  Refund remaining deposit after deductions
+                </label>
+                <p className="text-xs text-[var(--text-muted)]">
+                  Refundable after settlement: {formatCurrency(checkoutRefund)}
+                  {checkoutDeduct > payDepositHeld
+                    ? ` · Additional maintenance owed: ${formatCurrency(checkoutDeduct - payDepositHeld)}`
+                    : ''}
+                </p>
+              </div>
+            ) : null}
             <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2.5 text-sm">
               {payModal.action === 'payment' ? (
                 <>
-                  Remaining balance:{' '}
+                  Remaining accommodation balance:{' '}
                   <strong>
                     {formatCurrency(
                       Math.max(
                         0,
-                        Number(payModal.booking.total) -
-                          Number(payModal.booking.amountPaid || 0) -
-                          Number(payForm.amountPaid || 0),
+                        roundMoney(
+                          Number(payFin?.expectedAccommodation ?? payModal.booking.total) -
+                            Number(payFin?.accommodationPaid ?? payModal.booking.amountPaid || 0) -
+                            Number(payForm.amountPaid || 0),
+                        ),
                       ),
                     )}
                   </strong>
                 </>
               ) : (
                 <>
-                  Balance after this payment: <strong>{formatCurrency(balanceDue)}</strong>
+                  Outstanding accommodation after this:{' '}
+                  <strong>{formatCurrency(balanceDue)}</strong>
                   {payModal.action === 'checkout' && balanceDue > 0 ? (
                     <span className="mt-1 block text-amber-700 dark:text-amber-300">
-                      Full payment is required before check-out.
+                      Full accommodation payment is required before check-out. The security deposit
+                      cannot cover this automatically.
                     </span>
                   ) : null}
                 </>
@@ -734,29 +871,54 @@ export default function Bookings() {
               <DetailRow label="Floor" value={detailModal.floor || '—'} />
               <DetailRow label="Room" value={detailModal.roomNumber} />
             </div>
-            <div className="rounded-xl border border-[var(--border)] p-4">
+            <div className="rounded-xl border border-[var(--border)] p-4 sm:col-span-2">
               <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
                 Booking Information
               </h4>
-              <DetailRow label="Booking Code" value={detailModal.code} />
-              <DetailRow label="Check-in" value={formatDate(detailModal.checkIn)} />
-              <DetailRow label="Check-out" value={formatDate(detailModal.checkOut)} />
-              <DetailRow
-                label="Period"
-                value={`${detailModal.bookingPeriodLabel || 'Daily'} · ${detailModal.periodQuantity || detailModal.nights} × ${formatCurrency(detailModal.periodRate || detailModal.dailyRent || 0)}`}
-              />
-              <DetailRow
-                label="Nights"
-                value={`${detailModal.nights} ${Number(detailModal.nights) === 1 ? 'night' : 'nights'}`}
-              />
+              <div className="grid gap-x-6 sm:grid-cols-2">
+                <DetailRow label="Booking Code" value={detailModal.code} />
+                <DetailRow label="Booking Type" value={detailModal.bookingPeriodLabel || 'Daily'} />
+                <DetailRow label="Check-in" value={formatDate(detailModal.checkIn)} />
+                <DetailRow label="Check-out" value={formatDate(detailModal.checkOut)} />
+                <DetailRow
+                  label="Rate per Night"
+                  value={formatCurrency(detailFin?.nightlyRate ?? detailModal.periodRate ?? detailModal.dailyRent ?? 0)}
+                />
+                <DetailRow
+                  label="Expected Nights"
+                  value={`${detailFin?.expectedNights ?? detailModal.nights} nights`}
+                />
+                <DetailRow
+                  label="Nights Stayed"
+                  value={`${detailFin?.nightsStayed ?? 0} nights`}
+                />
+                <DetailRow
+                  label="Accumulated Accommodation"
+                  value={formatCurrency(detailFin?.accruedAccommodation ?? 0)}
+                />
+              </div>
             </div>
+
             <div className="rounded-xl border border-[var(--border)] p-4">
               <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-                Payment Information
+                Accommodation Payment
               </h4>
-              <DetailRow label="Total amount" value={formatCurrency(detailModal.total)} />
-              <DetailRow label="Amount paid" value={formatCurrency(detailModal.amountPaid || 0)} />
-              <DetailRow label="Balance" value={formatCurrency(detailBalance)} />
+              <DetailRow
+                label="Total Accrued Accommodation"
+                value={formatCurrency(detailFin?.accruedAccommodation ?? 0)}
+              />
+              <DetailRow
+                label="Expected Full-Stay Total"
+                value={formatCurrency(detailFin?.expectedAccommodation ?? detailModal.total)}
+              />
+              <DetailRow
+                label="Accommodation Payments Received"
+                value={formatCurrency(detailFin?.accommodationPaid ?? detailModal.amountPaid ?? 0)}
+              />
+              <DetailRow
+                label="Outstanding Accommodation"
+                value={formatCurrency(detailBalance)}
+              />
               <DetailRow label="Payment method" value={detailModal.paymentMethod || '—'} />
               <div className="flex items-center justify-between gap-4 pt-2.5">
                 <span className="text-sm text-[var(--text-muted)]">Payment status</span>
@@ -764,43 +926,24 @@ export default function Bookings() {
                   {detailModal.paymentStatus || 'Unpaid'}
                 </Badge>
               </div>
-              {(detailModal.payments || []).length > 0 ? (
-                <div className="mt-3 space-y-2 border-t border-[var(--border)]/60 pt-3">
-                  <p className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-                    Payment history
-                  </p>
-                  {detailModal.payments.map((p) => (
-                    <div key={p.id} className="flex justify-between gap-2 text-xs">
-                      <span className="text-[var(--text-muted)]">
-                        {formatDate(p.paymentDate)} · {p.method}
-                        {p.comment ? ` · ${p.comment}` : ''}
-                      </span>
-                      <span className="font-medium text-[var(--text)]">{formatCurrency(p.amount)}</span>
-                    </div>
-                  ))}
-                </div>
-              ) : null}
               <div className="mt-3 flex flex-col gap-2">
                 {detailBalance > 0 ? (
-                  <Button
-                    className="w-full"
-                    onClick={() => openPayModal(detailModal, 'payment')}
-                  >
-                    Record payment
+                  <Button className="w-full" onClick={() => openPayModal(detailModal, 'payment')}>
+                    Record accommodation payment
                   </Button>
                 ) : null}
                 <p className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-                  Invoice
+                  Accommodation invoice
                 </p>
                 <FinanceDocActions
                   compact
                   label="Invoice"
                   onPayload={() => bookingDocPayload(detailModal, 'INVOICE')}
                 />
-                {(Number(detailModal.amountPaid) || 0) > 0 ? (
+                {(Number(detailFin?.accommodationPaid ?? detailModal.amountPaid) || 0) > 0 ? (
                   <>
                     <p className="mt-1 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-                      Receipt
+                      Accommodation receipt
                     </p>
                     <FinanceDocActions
                       compact
@@ -811,6 +954,82 @@ export default function Bookings() {
                 ) : null}
               </div>
             </div>
+
+            <div className="rounded-xl border border-[var(--border)] p-4">
+              <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+                Security Deposit
+              </h4>
+              <DetailRow
+                label="Deposit Received"
+                value={formatCurrency(detailDeposit?.received ?? 0)}
+              />
+              <DetailRow label="Deposit Held" value={formatCurrency(detailDeposit?.held ?? 0)} />
+              <DetailRow
+                label="Deposit Refunded"
+                value={formatCurrency(detailDeposit?.refunded ?? 0)}
+              />
+              <DetailRow
+                label="Maintenance Deductions"
+                value={formatCurrency(detailDeposit?.deducted ?? 0)}
+              />
+              <DetailRow
+                label="Remaining Refundable"
+                value={formatCurrency(detailDeposit?.remaining ?? 0)}
+              />
+              {detailDeposit?.status ? (
+                <div className="flex items-center justify-between gap-4 pt-2.5">
+                  <span className="text-sm text-[var(--text-muted)]">Deposit status</span>
+                  <Badge status={detailDeposit.status}>{detailDeposit.status}</Badge>
+                </div>
+              ) : (
+                <p className="mt-2 text-xs text-[var(--text-muted)]">
+                  No security deposit recorded. Deposit is held separately and is not accommodation
+                  revenue.
+                </p>
+              )}
+              {detailModal.deposit ? (
+                <div className="mt-3">
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+                    Deposit receipt
+                  </p>
+                  <FinanceDocActions
+                    compact
+                    label="Deposit receipt"
+                    onPayload={() => bookingDepositDocPayload(detailModal, detailModal.deposit)}
+                  />
+                </div>
+              ) : null}
+            </div>
+
+            {(detailModal.transactionHistory || detailModal.payments || []).length > 0 ? (
+              <div className="rounded-xl border border-[var(--border)] p-4 sm:col-span-2">
+                <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+                  Transaction History
+                </h4>
+                <div className="space-y-2">
+                  {(detailModal.transactionHistory?.length
+                    ? detailModal.transactionHistory
+                    : detailModal.payments.map((p) => ({
+                        id: p.id,
+                        label: 'Accommodation Payment',
+                        amount: p.amount,
+                        method: p.method,
+                        date: p.paymentDate,
+                        description: p.comment,
+                      }))
+                  ).map((t) => (
+                    <div key={t.id} className="flex justify-between gap-2 text-xs">
+                      <span className="text-[var(--text-muted)]">
+                        {formatDate(t.date)} · {t.label || t.category}
+                        {t.method ? ` · ${t.method}` : ''}
+                        {t.description ? ` · ${t.description}` : ''}
+                      </span>
+                      <span className="font-medium text-[var(--text)]">{formatCurrency(t.amount)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
           </div>
         ) : null}
       </Modal>

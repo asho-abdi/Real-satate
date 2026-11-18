@@ -176,6 +176,11 @@ function mapBooking(b) {
     periodQuantity: Number(b.periodQuantity ?? b.nights ?? 1),
     balance: Number(b.balance ?? Math.max(0, Number(b.totalAmount ?? b.total) - Number(b.amountPaid ?? 0))),
     notes: b.notes || '',
+    financials: b.financials || null,
+    depositSummary: b.depositSummary || null,
+    deposit: b.deposit || null,
+    deposits: b.deposits || [],
+    transactionHistory: b.transactionHistory || [],
     payments: (b.payments || []).map((p) => ({
       id: p.id,
       amount: Number(p.amount),
@@ -184,6 +189,8 @@ function mapBooking(b) {
       reference: p.reference || '',
       comment: p.comment || '',
       recordedByName: p.recordedByName || '',
+      category: p.category || 'ACCOMMODATION',
+      receiptNumber: p.receiptNumber || '',
     })),
   };
 }
@@ -389,7 +396,24 @@ export const rentalApi = {
         payload.amountPaid !== undefined && payload.amountPaid !== null
           ? Number(payload.amountPaid)
           : undefined,
+      securityDeposit:
+        payload.securityDeposit !== undefined && payload.securityDeposit !== null
+          ? Number(payload.securityDeposit)
+          : payload.depositAmount !== undefined
+            ? Number(payload.depositAmount)
+            : undefined,
     }).then(mapBooking),
+  addBookingDeposit: (id, data) =>
+    post(`/bookings/${id}/deposits`, {
+      ...data,
+      method: METHOD_VALUES[data?.method] || data?.method,
+    }),
+  settleBookingDeposit: (id, depositId, data) =>
+    post(`/bookings/${id}/deposits/${depositId}/settle`, {
+      ...data,
+      returnMethod: METHOD_VALUES[data?.returnMethod] || data?.returnMethod,
+      method: METHOD_VALUES[data?.method] || data?.method,
+    }),
   addBookingPayment: (id, data) =>
     post(`/bookings/${id}/payments`, {
       amount: Number(data.amount),

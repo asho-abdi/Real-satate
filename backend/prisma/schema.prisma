@@ -413,9 +413,9 @@ model Booking {
   checkIn              DateTime
   checkOut             DateTime
   bookingPeriod        BookingPeriod  @default(DAILY)
-  /// Rate charged per period unit (day / week / month)
+  /// Nightly accommodation rate (Daily/Weekly/Monthly are categories; charges = periodRate × nights)
   periodRate           Decimal        @default(0) @db.Decimal(12, 2)
-  /// Number of days, weeks, or months
+  /// Equals nights for guest accommodation billing
   periodQuantity       Int            @default(1)
   nights               Int
   monthlyRent          Decimal        @db.Decimal(12, 2)
@@ -444,6 +444,7 @@ model Booking {
 
   unit     Unit             @relation(fields: [unitId], references: [id])
   payments BookingPayment[]
+  deposits SecurityDeposit[]
 
   @@index([unitId])
   @@index([status])
@@ -896,6 +897,8 @@ model SecurityDeposit {
   tenantId        String?       @db.Uuid
   businessId      String?       @db.Uuid
   shopSaleId      String?       @db.Uuid
+  /// Guest booking security deposit (refundable — not accommodation revenue)
+  bookingId       String?       @db.Uuid
   unitId          String        @db.Uuid
   amount          Decimal       @db.Decimal(12, 2)
   dateReceived    DateTime      @default(now())
@@ -920,6 +923,7 @@ model SecurityDeposit {
   tenant     Tenant?   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   business   Business? @relation(fields: [businessId], references: [id], onDelete: Cascade)
   shopSale   ShopSale? @relation(fields: [shopSaleId], references: [id], onDelete: Cascade)
+  booking    Booking?  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
   unit       Unit      @relation(fields: [unitId], references: [id])
   createdBy  User?     @relation("DepositCreatedBy", fields: [createdById], references: [id])
   updatedBy  User?     @relation("DepositUpdatedBy", fields: [updatedById], references: [id])
@@ -928,6 +932,7 @@ model SecurityDeposit {
   @@index([tenantId])
   @@index([businessId])
   @@index([shopSaleId])
+  @@index([bookingId])
   @@index([unitId])
   @@index([status])
 }

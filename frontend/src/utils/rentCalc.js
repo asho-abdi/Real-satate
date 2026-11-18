@@ -1,35 +1,88 @@
+/** Guest booking money helpers — mirrors backend/src/utils/rent.js */
+
+export function roundMoney(n) {
+  return Math.round((Number(n) || 0) * 100) / 100;
+}
+
 /** Daily rent from monthly rent (always ÷ 30). */
 export function calcDailyRent(monthlyRent) {
   const monthly = Number(monthlyRent) || 0;
-  return Math.round((monthly / 30) * 100) / 100;
+  return roundMoney(monthly / 30);
 }
 
 export function calcWeeklyRent(monthlyRent, override = null) {
   if (override !== null && override !== undefined && override !== '') {
-    return Math.round(Number(override) * 100) / 100;
+    return roundMoney(override);
   }
-  return Math.round((Number(monthlyRent) / 30) * 7 * 100) / 100;
+  return roundMoney((Number(monthlyRent) / 30) * 7);
 }
 
 /** Night count between two YYYY-MM-DD dates (checkout day exclusive). */
 export function calcNights(checkIn, checkOut) {
   if (!checkIn || !checkOut) return 0;
-  const start = new Date(`${checkIn}T00:00:00`);
-  const end = new Date(`${checkOut}T00:00:00`);
+  const start = new Date(`${String(checkIn).slice(0, 10)}T00:00:00`);
+  const end = new Date(`${String(checkOut).slice(0, 10)}T00:00:00`);
   const diff = Math.round((end - start) / (1000 * 60 * 60 * 24));
   return Math.max(0, diff);
+}
+
+export function resolveNightlyRate({
+  bookingPeriod = 'DAILY',
+  monthlyRent,
+  dailyRate = null,
+  weeklyRate = null,
+  periodRate = null,
+} = {}) {
+  if (periodRate !== null && periodRate !== undefined && periodRate !== '') {
+    return roundMoney(periodRate);
+  }
+  const period = String(bookingPeriod || 'DAILY').toUpperCase();
+  const daily =
+    dailyRate != null && dailyRate !== '' ? roundMoney(dailyRate) : calcDailyRent(monthlyRent);
+  if (period === 'WEEKLY' && weeklyRate != null && weeklyRate !== '') {
+    return roundMoney(Number(weeklyRate) / 7);
+  }
+  return daily;
+}
+
+export function calcNightsOccupied({ checkIn, checkOut, status, now = new Date() } = {}) {
+  const st = String(status || '').toUpperCase();
+  if (st === 'CANCELLED') return 0;
+  const expected = calcNights(checkIn, checkOut);
+  if (expected <= 0) return 0;
+
+  const toDay = (d) => {
+    const x = new Date(d);
+    x.setHours(0, 0, 0, 0);
+    return x;
+  };
+  const checkInDay = toDay(checkIn);
+  const checkOutDay = toDay(checkOut);
+  const today = toDay(now);
+
+  if (st === 'CONFIRMED' && today < checkInDay) return 0;
+  if (st === 'CHECKED_OUT' || today >= checkOutDay) return expected;
+
+  const tomorrow = new Date(today);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const end = tomorrow < checkOutDay ? tomorrow : checkOutDay;
+  if (end <= checkInDay) return 0;
+  return Math.min(expected, calcNights(checkInDay, end));
 }
 
 export function calcBookingTotal({ monthlyRent, checkIn, checkOut, discount = 0 }) {
   const nights = calcNights(checkIn, checkOut);
   const dailyRent = calcDailyRent(monthlyRent);
-  const subtotal = Math.round(dailyRent * nights * 100) / 100;
+  const subtotal = roundMoney(dailyRent * nights);
   const discountAmount = Math.min(Number(discount) || 0, subtotal);
-  const total = Math.round((subtotal - discountAmount) * 100) / 100;
+  const total = roundMoney(subtotal - discountAmount);
   return { nights, dailyRent, subtotal, discountAmount, total };
 }
 
-/** Daily / Weekly / Monthly guest booking totals with discount support. */
+/**
+ * Daily / Weekly / Monthly guest booking totals.
+ * Accommodation = nightlyRate × nights (period is a category label).
+ */
 export function calcPeriodBookingTotal({
   monthlyRent,
   dailyRate = null,
@@ -47,30 +100,15 @@ export function calcPeriodBookingTotal({
 }) {
   const period = String(bookingPeriod || 'DAILY').toUpperCase();
   const nights = calcNights(checkIn, checkOut);
-  const daily =
-    dailyRate != null && dailyRate !== '' ? Number(dailyRate) : calcDailyRent(monthlyRent);
-  const weekly = calcWeeklyRent(monthlyRent, weeklyRate);
-  const monthly = Number(monthlyRent) || 0;
-
-  let rate = daily;
-  let quantity = Number(periodQuantity);
-
-  if (period === 'WEEKLY') {
-    rate = weekly;
-    if (!Number.isFinite(quantity) || quantity < 1) quantity = Math.max(1, Math.ceil(nights / 7));
-  } else if (period === 'MONTHLY') {
-    rate = monthly;
-    if (!Number.isFinite(quantity) || quantity < 1) quantity = Math.max(1, Math.ceil(nights / 30));
-  } else {
-    rate = daily;
-    if (!Number.isFinite(quantity) || quantity < 1) quantity = Math.max(1, nights);
-  }
-
-  if (periodRateOverride !== null && periodRateOverride !== undefined && periodRateOverride !== '') {
-    rate = Number(periodRateOverride) || 0;
-  }
-
-  const originalAmount = Math.round(rate * quantity * 100) / 100;
+  const nightlyRate = resolveNightlyRate({
+    bookingPeriod: period,
+    monthlyRent,
+    dailyRate,
+    weeklyRate,
+    periodRate: periodRateOverride,
+  });
+  const quantity = Math.max(0, nights);
+  const originalAmount = roundMoney(nightlyRate * quantity);
   const type = String(discountType || 'FIXED').toUpperCase() === 'PERCENT' ? 'PERCENT' : 'FIXED';
   const value =
     discountValue !== null && discountValue !== undefined && discountValue !== ''
@@ -78,22 +116,23 @@ export function calcPeriodBookingTotal({
       : Math.max(0, Number(discount) || 0);
   let discountAmount = 0;
   if (type === 'PERCENT') {
-    discountAmount = Math.round(originalAmount * (Math.min(value, 100) / 100) * 100) / 100;
+    discountAmount = roundMoney(originalAmount * (Math.min(value, 100) / 100));
   } else {
     discountAmount = Math.min(value, originalAmount);
   }
   const services = Math.max(0, Number(servicesAmount) || 0);
   const taxes = Math.max(0, Number(taxesAmount) || 0);
-  const afterDiscount = Math.round((originalAmount - discountAmount) * 100) / 100;
-  const total = Math.round((afterDiscount + services + taxes) * 100) / 100;
+  const afterDiscount = roundMoney(originalAmount - discountAmount);
+  const total = roundMoney(afterDiscount + services + taxes);
 
   return {
     bookingPeriod: period,
-    periodRate: rate,
-    periodQuantity: quantity,
-    nights: nights || quantity,
-    dailyRent: daily,
-    weeklyRent: weekly,
+    periodRate: nightlyRate,
+    periodQuantity: quantity || Number(periodQuantity) || 0,
+    nights: quantity,
+    dailyRent: nightlyRate,
+    nightlyRate,
+    weeklyRent: calcWeeklyRent(monthlyRent, weeklyRate),
     originalAmount,
     discountType: type,
     discountValue: value,
@@ -102,6 +141,46 @@ export function calcPeriodBookingTotal({
     taxesAmount: taxes,
     subtotal: originalAmount,
     total,
+  };
+}
+
+export function calcBookingFinancials(booking, { now = new Date() } = {}) {
+  const nightlyRate = roundMoney(
+    booking.periodRate ?? booking.dailyRent ?? calcDailyRent(booking.monthlyRent),
+  );
+  const expectedNights = Math.max(
+    0,
+    Number(booking.nights) || calcNights(booking.checkIn, booking.checkOut),
+  );
+  const nightsStayed = calcNightsOccupied({
+    checkIn: booking.checkIn,
+    checkOut: booking.checkOut,
+    status: booking.status,
+    now,
+  });
+  const services = roundMoney(booking.servicesAmount);
+  const taxes = roundMoney(booking.taxesAmount);
+  const discount = roundMoney(booking.discount ?? booking.discountAmount);
+  const accruedLodging = roundMoney(nightlyRate * nightsStayed);
+  const expectedLodging = roundMoney(nightlyRate * expectedNights);
+  const discountShare =
+    expectedLodging > 0 ? roundMoney(discount * (accruedLodging / expectedLodging)) : 0;
+  const accruedAccommodation = roundMoney(
+    Math.max(0, accruedLodging - discountShare) + (nightsStayed > 0 ? services + taxes : 0),
+  );
+  const expectedAccommodation = roundMoney(Math.max(0, expectedLodging - discount) + services + taxes);
+  const accommodationPaid = roundMoney(booking.amountPaid);
+  return {
+    bookingPeriod: booking.bookingPeriod || booking.bookingPeriodLabel || 'DAILY',
+    nightlyRate,
+    ratePerNight: nightlyRate,
+    expectedNights,
+    nightsStayed,
+    accruedAccommodation,
+    expectedAccommodation,
+    accommodationPaid,
+    outstandingAccrued: roundMoney(Math.max(0, accruedAccommodation - accommodationPaid)),
+    outstandingExpected: roundMoney(Math.max(0, expectedAccommodation - accommodationPaid)),
   };
 }
 

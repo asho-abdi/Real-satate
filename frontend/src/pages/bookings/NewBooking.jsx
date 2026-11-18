@@ -77,6 +77,7 @@ export default function NewBooking({ onSuccess } = {}) {
     officeMpesaNumber: '',
   });
   const [amountPaid, setAmountPaid] = useState('');
+  const [securityDeposit, setSecurityDeposit] = useState('');
   const [markedPaid, setMarkedPaid] = useState(false);
   const [notes, setNotes] = useState('');
   const [identityFile, setIdentityFile] = useState(null);
@@ -167,14 +168,13 @@ export default function NewBooking({ onSuccess } = {}) {
     }
   }, [room?.id, totals.total, bookingPeriod, markedPaid]);
 
-  const quantityLabel =
-    bookingPeriod === 'WEEKLY' ? 'Weeks' : bookingPeriod === 'MONTHLY' ? 'Months' : 'Nights';
+  const quantityLabel = 'Nights';
   const rateLabel =
     bookingPeriod === 'WEEKLY'
-      ? 'Weekly rate'
+      ? 'Rate / night (from weekly)'
       : bookingPeriod === 'MONTHLY'
-        ? 'Monthly rate'
-        : 'Price / night';
+        ? 'Rate / night (monthly booking)'
+        : 'Rate / night';
 
   const balance = Math.max(
     0,
@@ -245,6 +245,7 @@ export default function NewBooking({ onSuccess } = {}) {
         agentName: payMethodForm.agentName || null,
         officeMpesaNumber: payMethodForm.officeMpesaNumber || null,
         amountPaid: paidNow,
+        securityDeposit: Number(securityDeposit) || 0,
         notes: notes.trim() || null,
       });
       toast.success('Booking saved');
@@ -605,8 +606,14 @@ export default function NewBooking({ onSuccess } = {}) {
 
               <PaymentMethodFields value={payMethodForm} onChange={setPayMethodForm} />
 
+              <p className="rounded-xl bg-[var(--surface-2)] px-3 py-2 text-xs text-[var(--text-muted)]">
+                Accommodation = rate/night × {totals.nights || 0} nights
+                {room ? ` = ${formatCurrency(totals.total || 0)}` : ''}. Monthly/Weekly is the booking
+                category — not a flat package total.
+              </p>
+
               <Input
-                label="Amount paid now"
+                label="Accommodation paid now"
                 type="number"
                 min={0}
                 value={amountPaid}
@@ -615,6 +622,16 @@ export default function NewBooking({ onSuccess } = {}) {
                   setAmountPaid(e.target.value);
                 }}
                 disabled={markedPaid}
+                hint="Does not include the security deposit."
+              />
+              <Input
+                label="Security deposit (refundable)"
+                type="number"
+                min={0}
+                step="0.01"
+                value={securityDeposit}
+                onChange={(e) => setSecurityDeposit(e.target.value)}
+                hint="Held separately — not accommodation revenue."
               />
 
               <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-sm">
@@ -631,11 +648,19 @@ export default function NewBooking({ onSuccess } = {}) {
                   <span>{formatCurrency(Number(taxesAmount) || 0)}</span>
                 </div>
                 <div className="mt-2 flex items-center justify-between border-t border-[var(--border)] pt-2">
-                  <span className="font-semibold text-[var(--text)]">Total</span>
+                  <span className="font-semibold text-[var(--text)]">
+                    Expected accommodation
+                  </span>
                   <strong className="text-lg text-[var(--text)]">
                     {formatCurrency(totals.total || 0)}
                   </strong>
                 </div>
+                {Number(securityDeposit) > 0 ? (
+                  <div className="mt-1 flex items-center justify-between text-[var(--text-muted)]">
+                    <span>Security deposit (held separately)</span>
+                    <span>{formatCurrency(Number(securityDeposit) || 0)}</span>
+                  </div>
+                ) : null}
                 <div className="mt-2 flex items-center justify-between">
                   <label className="inline-flex cursor-pointer items-center gap-2 text-sm font-medium text-[var(--text)]">
                     <input

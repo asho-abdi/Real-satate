@@ -23,18 +23,47 @@ export async function createDeposit(payload, userId) {
   const amount = asNumber(payload.amount);
   if (!(amount > 0)) throw new AppError('Deposit amount must be greater than 0', 400);
   if (!payload.unitId) throw new AppError('unitId is required', 400);
-  if (!payload.tenantId && !payload.businessId && !payload.shopSaleId) {
-    throw new AppError('tenantId, businessId, or shopSaleId is required', 400);
+  if (!payload.tenantId && !payload.businessId && !payload.shopSaleId && !payload.bookingId) {
+    throw new AppError('tenantId, businessId, shopSaleId, or bookingId is required', 400);
+  }
+
+  let booking = null;
+  if (payload.bookingId) {
+    booking = await prisma.booking.findFirst({
+      where: { id: payload.bookingId, deletedAt: null },
+    });
+    if (!booking) throw new AppError('Booking not found', 404);
+    if (payload.unitId && payload.unitId !== booking.unitId) {
+      throw new AppError('unitId must match the booking unit', 400);
+    }
+    payload.unitId = booking.unitId;
   }
 
   const details = pickPaymentDetails(payload, payload.method);
 
   return prisma.$transaction(async (tx) => {
+    if (payload.bookingId) {
+      const existingHeld = await tx.securityDeposit.findFirst({
+        where: {
+          bookingId: payload.bookingId,
+          deletedAt: null,
+          status: { in: ['HELD', 'PARTIALLY_RETURNED'] },
+        },
+      });
+      if (existingHeld) {
+        throw new AppError(
+          'This booking already has an active security deposit. Settle it before collecting another.',
+          409,
+        );
+      }
+    }
+
     const deposit = await tx.securityDeposit.create({
       data: {
         tenantId: payload.tenantId || null,
         businessId: payload.businessId || null,
         shopSaleId: payload.shopSaleId || null,
+        bookingId: payload.bookingId || null,
         unitId: payload.unitId,
         amount: money(amount),
         remainingAmount: money(amount),
@@ -53,6 +82,7 @@ export async function createDeposit(payload, userId) {
         unit: { include: { building: true, floor: true } },
         tenant: true,
         business: true,
+        booking: true,
         transactions: { orderBy: { createdAt: 'asc' } },
       },
     });
@@ -64,14 +94,18 @@ export async function createDeposit(payload, userId) {
         amount: money(amount),
         method: details.method,
         reference: details.reference,
-        notes: payload.notes || 'Security deposit received',
+        notes: payload.notes || 'SECURITY DEPOSIT – REFUNDABLE',
         createdById: userId || null,
       },
     });
 
     const customerName =
-      deposit.tenant?.fullName || deposit.business?.businessName || 'Customer';
-    const customerPhone = deposit.tenant?.phone || deposit.business?.phone || null;
+      deposit.booking?.fullName ||
+      deposit.tenant?.fullName ||
+      deposit.business?.businessName ||
+      'Customer';
+    const customerPhone =
+      deposit.booking?.phone || deposit.tenant?.phone || deposit.business?.phone || null;
     await ensurePaymentReceipt(tx, {
       sourceType: 'SECURITY_DEPOSIT_TXN',
       sourceId: txn.id,
@@ -89,9 +123,14 @@ export async function createDeposit(payload, userId) {
       method: details.method,
       reference: details.reference,
       paymentDate: deposit.dateReceived,
-      description: 'Security deposit received (held — not revenue)',
+      description: 'SECURITY DEPOSIT – REFUNDABLE (held — not accommodation revenue)',
       createdById: userId || null,
-      meta: { depositLiability: true },
+      meta: {
+        depositLiability: true,
+        bookingId: deposit.bookingId || null,
+        bookingCode: deposit.booking?.code || null,
+        label: 'SECURITY DEPOSIT – REFUNDABLE',
+      },
     });
 
     // Keep legacy static field in sync when linked to a lease
@@ -115,6 +154,7 @@ export async function createDeposit(payload, userId) {
         tenant: true,
         business: true,
         shopSale: true,
+        booking: { select: { id: true, code: true, fullName: true, phone: true } },
         transactions: { orderBy: { createdAt: 'asc' } },
         createdBy: { select: { id: true, firstName: true, lastName: true, email: true } },
       },
@@ -223,6 +263,7 @@ export async function listDeposits(filters = {}) {
     ...(filters.tenantId ? { tenantId: filters.tenantId } : {}),
     ...(filters.businessId ? { businessId: filters.businessId } : {}),
     ...(filters.shopSaleId ? { shopSaleId: filters.shopSaleId } : {}),
+    ...(filters.bookingId ? { bookingId: filters.bookingId } : {}),
     ...(filters.unitId ? { unitId: filters.unitId } : {}),
     ...(filters.status ? { status: filters.status } : {}),
     ...(filters.buildingId
@@ -237,6 +278,7 @@ export async function listDeposits(filters = {}) {
       tenant: true,
       business: true,
       shopSale: true,
+      booking: { select: { id: true, code: true, fullName: true, phone: true } },
       transactions: { orderBy: { createdAt: 'asc' } },
     },
     orderBy: { dateReceived: 'desc' },
