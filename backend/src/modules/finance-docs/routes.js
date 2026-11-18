@@ -147,6 +147,14 @@ router.post(
       ? normalizePaymentMethod(body.method, { fallback: 'CASH' })
       : null;
 
+    const moneyDec = (v) => new Prisma.Decimal(String(asNumber(v)));
+    const refreshableSources = new Set([
+      'BOOKING_ACCOMMODATION',
+      'BOOKING_PAYMENT',
+      'SECURITY_DEPOSIT_TXN',
+      'SECURITY_DEPOSIT',
+    ]);
+
     const doc = await prisma.$transaction(async (tx) => {
       if (body.sourceType && body.sourceId) {
         const existing = await tx.financeDocument.findFirst({
@@ -158,6 +166,41 @@ router.post(
         });
         if (existing) {
           await assertFinanceDocumentAccess(req.user, existing);
+          // Refresh booking/deposit docs so regenerated PDFs use corrected totals
+          if (refreshableSources.has(String(body.sourceType))) {
+            return tx.financeDocument.update({
+              where: { id: existing.id },
+              data: {
+                customerName: String(body.customerName).trim(),
+                customerPhone: body.customerPhone || existing.customerPhone,
+                description: body.description || existing.description,
+                billingPeriod: body.billingPeriod || existing.billingPeriod,
+                amount: moneyDec(body.amount),
+                previousBalance: moneyDec(body.previousBalance),
+                currentCharges: moneyDec(body.currentCharges ?? body.amount),
+                amountPaid: moneyDec(body.amountPaid),
+                remainingBalance: moneyDec(body.remainingBalance),
+                method: method || existing.method,
+                reference: body.reference || existing.reference,
+                dueDate: body.dueDate ? new Date(body.dueDate) : existing.dueDate,
+                paymentDate: body.paymentDate
+                  ? new Date(body.paymentDate)
+                  : existing.paymentDate,
+                notes: body.notes || existing.notes,
+                unitId: body.unitId || existing.unitId,
+                meta: {
+                  ...(existing.meta && typeof existing.meta === 'object' ? existing.meta : {}),
+                  buildingName: body.buildingName || null,
+                  floorName: body.floorName || null,
+                  unitNumber: body.unitNumber || null,
+                  receivedBy: body.receivedByName || body.receivedBy || null,
+                  methodLabel: method ? labelPaymentMethod(method) : null,
+                  companyName: company.companyName,
+                  correctedAt: new Date().toISOString(),
+                },
+              },
+            });
+          }
           return existing;
         }
       }
@@ -176,13 +219,11 @@ router.post(
             customerPhone: body.customerPhone || null,
             description: body.description || null,
             billingPeriod: body.billingPeriod || null,
-            amount: new Prisma.Decimal(String(asNumber(body.amount))),
-            previousBalance: new Prisma.Decimal(String(asNumber(body.previousBalance))),
-            currentCharges: new Prisma.Decimal(
-              String(asNumber(body.currentCharges ?? body.amount)),
-            ),
-            amountPaid: new Prisma.Decimal(String(asNumber(body.amountPaid))),
-            remainingBalance: new Prisma.Decimal(String(asNumber(body.remainingBalance))),
+            amount: moneyDec(body.amount),
+            previousBalance: moneyDec(body.previousBalance),
+            currentCharges: moneyDec(body.currentCharges ?? body.amount),
+            amountPaid: moneyDec(body.amountPaid),
+            remainingBalance: moneyDec(body.remainingBalance),
             method,
             reference: body.reference || null,
             dueDate: body.dueDate ? new Date(body.dueDate) : null,
@@ -202,7 +243,7 @@ router.post(
           },
         });
       } catch (err) {
-        // Concurrent create with same source — return existing
+        // Concurrent create with same source — refresh or return existing
         if (err?.code === 'P2002' && body.sourceType && body.sourceId) {
           const existing = await tx.financeDocument.findFirst({
             where: {
@@ -211,6 +252,20 @@ router.post(
               sourceId: String(body.sourceId),
             },
           });
+          if (existing && refreshableSources.has(String(body.sourceType))) {
+            return tx.financeDocument.update({
+              where: { id: existing.id },
+              data: {
+                amount: moneyDec(body.amount),
+                previousBalance: moneyDec(body.previousBalance),
+                currentCharges: moneyDec(body.currentCharges ?? body.amount),
+                amountPaid: moneyDec(body.amountPaid),
+                remainingBalance: moneyDec(body.remainingBalance),
+                description: body.description || existing.description,
+                notes: body.notes || existing.notes,
+              },
+            });
+          }
           if (existing) return existing;
         }
         throw err;
