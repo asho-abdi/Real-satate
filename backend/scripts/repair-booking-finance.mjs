@@ -2,17 +2,56 @@
  * Repair guest booking totals and linked finance invoices/receipts.
  * Recalculates accommodation as nightlyRate × nights (never monthly package).
  *
+ * Also recovers bookings previously “repaired” when a monthly package amount
+ * was mistaken for a nightly rate.
+ *
  * Usage (from backend/): node scripts/repair-booking-finance.mjs
  * Dry-run:              node scripts/repair-booking-finance.mjs --dry-run
  */
 import { PrismaClient } from '@prisma/client';
-import { periodBookingTotal, roundMoney } from '../src/utils/rent.js';
+import { nightsBetween, periodBookingTotal, roundMoney } from '../src/utils/rent.js';
 
 const dryRun = process.argv.includes('--dry-run');
 const prisma = new PrismaClient();
 
 function money(n) {
   return roundMoney(n);
+}
+
+/**
+ * Resolve the true nightly rate from possibly-legacy stored fields.
+ * Legacy MONTHLY bookings often stored periodRate = monthly package (= total).
+ */
+function resolveCanonicalNightly(b, nights) {
+  const monthly = money(b.monthlyRent);
+  const storedRate = money(b.periodRate || b.dailyRent);
+  const total = money(b.totalAmount);
+  const dailyFromMonthly = monthly > 0 ? money(monthly / 30) : null;
+
+  if (!(storedRate > 0) && dailyFromMonthly) return dailyFromMonthly;
+  if (!(storedRate > 0)) return 0;
+
+  // periodRate was set to the monthly rent (package mistaken as rate)
+  if (monthly > 0 && Math.abs(storedRate - monthly) <= 1) {
+    return dailyFromMonthly;
+  }
+
+  // Old package: total ≈ periodRate while stay is multi-night
+  if (nights > 1 && Math.abs(storedRate - total) <= 1) {
+    return money(total / nights);
+  }
+
+  // Inflated repair: periodRate looks like a monthly figure, total = rate × nights
+  if (
+    nights > 1 &&
+    dailyFromMonthly &&
+    storedRate > dailyFromMonthly * 5 &&
+    Math.abs(money(storedRate * nights) - total) <= 1
+  ) {
+    return dailyFromMonthly;
+  }
+
+  return storedRate;
 }
 
 async function main() {
@@ -27,11 +66,17 @@ async function main() {
   let docsFixed = 0;
 
   for (const b of bookings) {
+    const nights = nightsBetween(b.checkIn, b.checkOut);
+    if (nights < 1) {
+      console.log(`${b.code}: skip (nights=${nights})`);
+      continue;
+    }
+
+    const nightly = resolveCanonicalNightly(b, nights);
     const totals = periodBookingTotal({
       monthlyRent: b.monthlyRent,
-      dailyRate: b.periodRate || b.dailyRent,
       bookingPeriod: b.bookingPeriod || 'DAILY',
-      periodRate: b.periodRate || b.dailyRent,
+      periodRate: nightly,
       checkIn: b.checkIn,
       checkOut: b.checkOut,
       discountType: b.discountType,
@@ -85,31 +130,35 @@ async function main() {
             sourceId: b.id,
           },
           {
-            description: { contains: b.code },
-            OR: [
-              { description: { contains: 'Accommodation', mode: 'insensitive' } },
-              { description: { contains: 'Booking', mode: 'insensitive' } },
-              { description: { contains: 'invoice', mode: 'insensitive' } },
-              { description: { contains: 'Invoice', mode: 'insensitive' } },
+            AND: [
+              { description: { contains: b.code } },
+              {
+                OR: [
+                  { description: { contains: 'Accommodation' } },
+                  { description: { contains: 'Booking' } },
+                  { description: { contains: 'invoice' } },
+                  { description: { contains: 'Invoice' } },
+                  { description: { contains: 'payment' } },
+                  { description: { contains: 'Payment' } },
+                ],
+              },
             ],
           },
         ],
       },
     });
 
-    // De-dupe
     const seen = new Set();
     for (const doc of docs) {
       if (seen.has(doc.id)) continue;
       seen.add(doc.id);
 
-      // Skip pure security-deposit receipts
       const desc = String(doc.description || '');
       if (/SECURITY DEPOSIT/i.test(desc) && !/Accommodation/i.test(desc)) continue;
 
       const isReceipt = doc.type === 'RECEIPT';
       const nextAmount = newTotal;
-      const nextPaid = isReceipt ? amountPaid : amountPaid;
+      const nextPaid = amountPaid;
       const nextRemaining = money(Math.max(0, nextAmount - amountPaid));
       const nextCurrent = newTotal;
       const nextDesc = isReceipt
@@ -126,7 +175,8 @@ async function main() {
         money(doc.amount) !== nextAmount ||
         money(doc.currentCharges) !== nextCurrent ||
         money(doc.amountPaid) !== nextPaid ||
-        money(doc.remainingBalance) !== nextRemaining;
+        money(doc.remainingBalance) !== nextRemaining ||
+        String(doc.description || '') !== nextDesc;
 
       if (!changed) continue;
 
@@ -134,6 +184,7 @@ async function main() {
         `  doc ${doc.number} (${doc.type}): amount ${money(doc.amount)} → ${nextAmount}`,
       );
       if (!dryRun) {
+        // Do not rewrite sourceType/sourceId — avoids unique conflicts with siblings
         await prisma.financeDocument.update({
           where: { id: doc.id },
           data: {
@@ -144,8 +195,6 @@ async function main() {
             amountPaid: nextPaid,
             remainingBalance: nextRemaining,
             notes: nextNotes,
-            sourceType: isReceipt ? 'BOOKING_PAYMENT' : 'BOOKING_ACCOMMODATION',
-            sourceId: b.id,
             unitId: b.unitId,
             meta: {
               ...(doc.meta && typeof doc.meta === 'object' ? doc.meta : {}),

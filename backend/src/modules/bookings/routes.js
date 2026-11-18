@@ -9,6 +9,7 @@ import {
   periodBookingTotal,
   bookingAccommodationFinancials,
   summarizeDeposit,
+  resolveStoredNightlyRate,
   roundMoney,
 } from '../../utils/rent.js';
 import {
@@ -179,11 +180,16 @@ function money(v) {
 
 /** Recompute accommodation total as nightlyRate × nights (category is not a package). */
 function recomputeBookingTotals(booking, overrides = {}) {
+  const base = { ...booking, ...overrides };
+  const nightly =
+    overrides.periodRate != null && overrides.periodRate !== ''
+      ? Number(overrides.periodRate)
+      : resolveStoredNightlyRate(base);
   return periodBookingTotal({
     monthlyRent: overrides.monthlyRent ?? booking.monthlyRent,
-    dailyRate: overrides.dailyRate ?? booking.periodRate ?? booking.dailyRent,
+    dailyRate: overrides.dailyRate ?? nightly,
     bookingPeriod: overrides.bookingPeriod ?? booking.bookingPeriod ?? 'DAILY',
-    periodRate: overrides.periodRate ?? booking.periodRate ?? booking.dailyRent,
+    periodRate: nightly,
     checkIn: overrides.checkIn ?? booking.checkIn,
     checkOut: overrides.checkOut ?? booking.checkOut,
     discountType: overrides.discountType ?? booking.discountType,

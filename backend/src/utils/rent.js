@@ -77,6 +77,46 @@ export function resolveNightlyRate({
 }
 
 /**
+ * Resolve nightly rate from a stored booking row, including legacy MONTHLY
+ * rows where periodRate was wrongly saved as the package / monthly total.
+ */
+export function resolveStoredNightlyRate(booking) {
+  const nights = Math.max(
+    0,
+    Number(booking?.nights) || nightsBetween(booking?.checkIn, booking?.checkOut),
+  );
+  const monthly = roundMoney(booking?.monthlyRent);
+  const storedRate = roundMoney(booking?.periodRate ?? booking?.dailyRent);
+  const total = roundMoney(booking?.totalAmount ?? booking?.total);
+  const dailyFromMonthly = monthly > 0 ? dailyRent(monthly) : null;
+
+  if (!(storedRate > 0) && dailyFromMonthly) return dailyFromMonthly;
+  if (!(storedRate > 0)) return 0;
+
+  // periodRate equals monthly rent → it was a package figure
+  if (monthly > 0 && Math.abs(storedRate - monthly) <= 1) {
+    return dailyFromMonthly;
+  }
+
+  // Multi-night stay where total ≈ periodRate (package stored as rate)
+  if (nights > 1 && Math.abs(storedRate - total) <= 1) {
+    return roundMoney(total / nights);
+  }
+
+  // Inflated total = monthly-like rate × nights
+  if (
+    nights > 1 &&
+    dailyFromMonthly &&
+    storedRate > dailyFromMonthly * 5 &&
+    Math.abs(roundMoney(storedRate * nights) - total) <= 1
+  ) {
+    return dailyFromMonthly;
+  }
+
+  return storedRate;
+}
+
+/**
  * Nights actually occupied so far (does not charge future nights).
  * On the check-in calendar day, 1 night accrues once the guest has checked in.
  * After checkout, uses the full stay nights.
@@ -196,9 +236,7 @@ export function periodBookingTotal({
  * Deposits must be passed separately and are never treated as accommodation revenue.
  */
 export function bookingAccommodationFinancials(booking, { now = new Date(), timeZone = 'Africa/Nairobi' } = {}) {
-  const nightlyRate = roundMoney(
-    booking.periodRate ?? booking.dailyRent ?? dailyRent(booking.monthlyRent),
-  );
+  const nightlyRate = resolveStoredNightlyRate(booking);
   const expectedNights = Math.max(
     0,
     Number(booking.nights) || nightsBetween(booking.checkIn, booking.checkOut),
@@ -299,6 +337,7 @@ export default {
   nightsBetween,
   startOfDayInZone,
   resolveNightlyRate,
+  resolveStoredNightlyRate,
   nightsOccupied,
   bookingTotal,
   periodBookingTotal,

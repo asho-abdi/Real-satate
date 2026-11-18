@@ -174,7 +174,7 @@ export default function Bookings() {
   const openPayModal = (booking, action) => {
     const fin = bookingFin(booking);
     const expected = Number(fin.expectedAccommodation ?? booking.total);
-    const paid = Number(fin.accommodationPaid ?? booking.amountPaid || 0);
+    const paid = Number(fin.accommodationPaid ?? booking.amountPaid ?? 0);
     const balance = Math.max(0, roundMoney(expected - paid));
     const depositHeld = Number(
       booking.depositSummary?.remaining ?? booking.deposit?.remainingAmount ?? 0,
@@ -604,11 +604,11 @@ export default function Bookings() {
                       {b.code} · {formatRoomLocation({ building: b.building, floor: b.floor })} ·{' '}
                       {b.phone} · {formatDate(b.checkIn)} → {formatDate(b.checkOut)} ·{' '}
                       {fin.nightsStayed ?? 0}/{fin.expectedNights ?? b.nights} nights · Rate{' '}
-                      {formatCurrency(fin.nightlyRate ?? b.periodRate || b.dailyRent || 0)}
+                      {formatCurrency(fin.nightlyRate ?? b.periodRate ?? b.dailyRent ?? 0)}
                       /night · Accrued {formatCurrency(fin.accruedAccommodation ?? 0)} · Expected{' '}
                       {formatCurrency(fin.expectedAccommodation ?? b.total)}
                       {b.discount ? ` (−${formatCurrency(b.discount)})` : ''} · Paid{' '}
-                      {formatCurrency(fin.accommodationPaid ?? b.amountPaid || 0)}
+                      {formatCurrency(fin.accommodationPaid ?? b.amountPaid ?? 0)}
                       {balance > 0 ? ` · Due ${formatCurrency(balance)}` : ''}
                       {depositHeld > 0 ? ` · Deposit held ${formatCurrency(depositHeld)}` : ''}
                     </p>
@@ -618,7 +618,7 @@ export default function Bookings() {
                       </span>
                       <PaymentStatusBadge status={b.paymentStatus || 'Unpaid'} />
                       <span className="text-sm text-[var(--text-muted)]">
-                        {formatCurrency(fin.nightlyRate ?? b.periodRate || b.dailyRent || 0)} per
+                        {formatCurrency(fin.nightlyRate ?? b.periodRate ?? b.dailyRent ?? 0)} per
                         night
                       </span>
                     </div>
@@ -663,12 +663,12 @@ export default function Bookings() {
               <p className="mt-1 text-[var(--text-muted)]">
                 Room {payModal.booking.roomNumber} · {payFin?.nightsStayed ?? 0}/
                 {payFin?.expectedNights ?? payModal.booking.nights} nights · Rate{' '}
-                {formatCurrency(payFin?.nightlyRate ?? payModal.booking.periodRate || 0)}/night
+                {formatCurrency(payFin?.nightlyRate ?? payModal.booking.periodRate ?? 0)}/night
               </p>
               <p className="mt-1 text-[var(--text-muted)]">
                 Accrued {formatCurrency(payFin?.accruedAccommodation ?? 0)} · Expected stay{' '}
                 {formatCurrency(payFin?.expectedAccommodation ?? payModal.booking.total)} · Paid{' '}
-                {formatCurrency(payFin?.accommodationPaid ?? payModal.booking.amountPaid || 0)}
+                {formatCurrency(payFin?.accommodationPaid ?? payModal.booking.amountPaid ?? 0)}
               </p>
               {payDepositHeld > 0 ? (
                 <p className="mt-1 text-[var(--text-muted)]">
@@ -754,7 +754,7 @@ export default function Bookings() {
                         0,
                         roundMoney(
                           Number(payFin?.expectedAccommodation ?? payModal.booking.total) -
-                            Number(payFin?.accommodationPaid ?? payModal.booking.amountPaid || 0) -
+                            Number(payFin?.accommodationPaid ?? payModal.booking.amountPaid ?? 0) -
                             Number(payForm.amountPaid || 0),
                         ),
                       ),

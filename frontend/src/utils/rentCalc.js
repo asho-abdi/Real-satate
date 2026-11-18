@@ -144,10 +144,34 @@ export function calcPeriodBookingTotal({
   };
 }
 
-export function calcBookingFinancials(booking, { now = new Date() } = {}) {
-  const nightlyRate = roundMoney(
-    booking.periodRate ?? booking.dailyRent ?? calcDailyRent(booking.monthlyRent),
+/** Mirror backend resolveStoredNightlyRate for legacy monthly package rows. */
+export function resolveStoredNightlyRate(booking) {
+  const nights = Math.max(
+    0,
+    Number(booking?.nights) || calcNights(booking?.checkIn, booking?.checkOut),
   );
+  const monthly = roundMoney(booking?.monthlyRent);
+  const storedRate = roundMoney(booking?.periodRate ?? booking?.dailyRent);
+  const total = roundMoney(booking?.totalAmount ?? booking?.total);
+  const dailyFromMonthly = monthly > 0 ? calcDailyRent(monthly) : null;
+
+  if (!(storedRate > 0) && dailyFromMonthly) return dailyFromMonthly;
+  if (!(storedRate > 0)) return 0;
+  if (monthly > 0 && Math.abs(storedRate - monthly) <= 1) return dailyFromMonthly;
+  if (nights > 1 && Math.abs(storedRate - total) <= 1) return roundMoney(total / nights);
+  if (
+    nights > 1 &&
+    dailyFromMonthly &&
+    storedRate > dailyFromMonthly * 5 &&
+    Math.abs(roundMoney(storedRate * nights) - total) <= 1
+  ) {
+    return dailyFromMonthly;
+  }
+  return storedRate;
+}
+
+export function calcBookingFinancials(booking, { now = new Date() } = {}) {
+  const nightlyRate = resolveStoredNightlyRate(booking);
   const expectedNights = Math.max(
     0,
     Number(booking.nights) || calcNights(booking.checkIn, booking.checkOut),
