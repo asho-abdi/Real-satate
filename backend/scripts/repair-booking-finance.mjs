@@ -159,6 +159,8 @@ async function main() {
       taxesAmount: b.taxesAmount,
     });
     const accrued = money(live.accruedAccommodation);
+    // Proforma invoices quote the full expected stay; receipts use accrued / paid.
+    const expected = money(live.expectedAccommodation ?? newTotal);
 
     const seen = new Set();
     for (const doc of docs) {
@@ -168,12 +170,12 @@ async function main() {
       if (/SECURITY DEPOSIT/i.test(desc) && !/Accommodation/i.test(desc)) continue;
 
       const isReceipt = doc.type === 'RECEIPT';
-      const nextAmount = isReceipt ? Math.max(accrued, amountPaid) : accrued;
+      const nextAmount = isReceipt ? Math.max(accrued, amountPaid) : expected;
       const nextPaid = amountPaid;
       const nextRemaining = money(Math.max(0, nextAmount - amountPaid));
       const nextDesc = isReceipt
         ? `Accommodation payment · ${b.code}`
-        : `Accommodation invoice · ${b.code} · ${live.nightsStayed} nights stayed × ${money(totals.periodRate)}`;
+        : `Room ${b.unit?.roomNumber || ''} · ${b.code}`.trim();
 
       const changed =
         money(doc.amount) !== nextAmount ||
