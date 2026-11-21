@@ -240,5 +240,5 @@ END $$;
 
 -- Seed default office MPESA number setting if missing
 INSERT INTO "Setting" ("id", "key", "value", "createdAt", "updatedAt")
-SELECT gen_random_uuid(), 'payments.officeMpesaNumber', '"0700000000"'::jsonb, NOW(), NOW()
+SELECT gen_random_uuid(), 'payments.officeMpesaNumber', '"+254999999972"'::jsonb, NOW(), NOW()
 WHERE NOT EXISTS (SELECT 1 FROM "Setting" WHERE "key" = 'payments.officeMpesaNumber');
