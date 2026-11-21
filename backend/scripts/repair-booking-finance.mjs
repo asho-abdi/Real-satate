@@ -1,67 +1,81 @@
 /**
  * Repair guest booking totals and linked finance invoices/receipts.
- * Recalculates accommodation as nightlyRate × nights (never monthly package).
+ * Accommodation = nightlyRate × nights.
  *
- * Also recovers bookings previously “repaired” when a monthly package amount
- * was mistaken for a nightly rate.
- *
- * Usage (from backend/): node scripts/repair-booking-finance.mjs
- * Dry-run:              node scripts/repair-booking-finance.mjs --dry-run
+ * Handles legacy MONTHLY package rows and recovers from bad /30 repairs when
+ * booking.monthlyRent itself was stored as a nightly figure (< 20,000).
  */
 import { PrismaClient } from '@prisma/client';
 import { nightsBetween, periodBookingTotal, roundMoney } from '../src/utils/rent.js';
 
 const dryRun = process.argv.includes('--dry-run');
 const prisma = new PrismaClient();
+const money = (n) => roundMoney(n);
 
-function money(n) {
-  return roundMoney(n);
-}
-
-/**
- * Resolve the true nightly rate from possibly-legacy stored fields.
- * Legacy MONTHLY bookings often stored periodRate = monthly package (= total).
- */
-function resolveCanonicalNightly(b, nights) {
-  const monthly = money(b.monthlyRent);
-  const storedRate = money(b.periodRate || b.dailyRent);
+function pickNightly(b, unit) {
+  const nights = nightsBetween(b.checkIn, b.checkOut);
+  const unitDaily = unit?.dailyRate != null ? money(unit.dailyRate) : null;
+  const unitMonthly = money(unit?.monthlyRent);
+  const bookingMonthly = money(b.monthlyRent);
+  const stored = money(b.periodRate || b.dailyRent);
   const total = money(b.totalAmount);
-  const dailyFromMonthly = monthly > 0 ? money(monthly / 30) : null;
 
-  if (!(storedRate > 0) && dailyFromMonthly) return dailyFromMonthly;
-  if (!(storedRate > 0)) return 0;
+  const monthlyLooksNightly = bookingMonthly > 0 && bookingMonthly < 20000;
+  const unitMonthlyLooksNightly = unitMonthly > 0 && unitMonthly < 20000;
 
-  // periodRate was set to the monthly rent (package mistaken as rate)
-  if (monthly > 0 && Math.abs(storedRate - monthly) <= 1) {
-    return dailyFromMonthly;
+  // Recover from bad monthly/30 when monthlyRent was actually a nightly
+  // (must run before the "already consistent" check — 94.44×30 can look consistent)
+  const paid = money(b.amountPaid);
+  if (
+    monthlyLooksNightly &&
+    stored > 0 &&
+    Math.abs(money(stored * 30) - bookingMonthly) <= 1
+  ) {
+    // If guest paid ~monthly, monthly is the nightly. If they paid far more, treat paid as package.
+    if (paid > bookingMonthly * 2 && nights > 0) {
+      return money(paid / nights);
+    }
+    return bookingMonthly;
+  }
+  if (unitMonthlyLooksNightly && stored > 0 && stored < unitMonthly / 5) {
+    if (paid > unitMonthly * 2 && nights > 0) return money(paid / nights);
+    return unitMonthly;
   }
 
-  // Old package: total ≈ periodRate while stay is multi-night
-  if (nights > 1 && Math.abs(storedRate - total) <= 1) {
-    return money(total / nights);
-  }
-
-  // Inflated repair: periodRate looks like a monthly figure, total = rate × nights
+  // Already consistent plausible nightly × nights
   if (
     nights > 1 &&
-    dailyFromMonthly &&
-    storedRate > dailyFromMonthly * 5 &&
-    Math.abs(money(storedRate * nights) - total) <= 1
+    stored > 0 &&
+    stored < 20000 &&
+    Math.abs(money(stored * nights) - total) <= 1
   ) {
-    return dailyFromMonthly;
+    return stored;
   }
 
-  return storedRate;
+  // Legacy package: large periodRate ≈ total
+  if (nights > 1 && stored >= 20000 && Math.abs(stored - total) <= 1) {
+    return money(total / nights);
+  }
+  if (nights > 1 && bookingMonthly >= 20000 && Math.abs(stored - bookingMonthly) <= 1) {
+    return money(bookingMonthly / 30);
+  }
+
+  if (unitDaily && unitDaily > 0 && stored >= 20000) return unitDaily;
+  if (stored > 0) return stored;
+  if (unitDaily) return unitDaily;
+  if (bookingMonthly >= 20000) return money(bookingMonthly / 30);
+  if (bookingMonthly > 0) return bookingMonthly;
+  return 0;
 }
 
 async function main() {
   const bookings = await prisma.booking.findMany({
     where: { deletedAt: null },
+    include: { unit: true },
     orderBy: { createdAt: 'asc' },
   });
 
   console.log(`Found ${bookings.length} bookings${dryRun ? ' (dry-run)' : ''}`);
-
   let bookingsFixed = 0;
   let docsFixed = 0;
 
@@ -72,9 +86,11 @@ async function main() {
       continue;
     }
 
-    const nightly = resolveCanonicalNightly(b, nights);
+    const nightly = pickNightly(b, b.unit);
+    const monthlyForCalc =
+      money(b.monthlyRent) >= 20000 ? b.monthlyRent : money(nightly) * 30;
     const totals = periodBookingTotal({
-      monthlyRent: b.monthlyRent,
+      monthlyRent: monthlyForCalc,
       bookingPeriod: b.bookingPeriod || 'DAILY',
       periodRate: nightly,
       checkIn: b.checkIn,
@@ -111,9 +127,6 @@ async function main() {
             periodRate: totals.periodRate,
             dailyRent: totals.dailyRent,
             originalAmount: totals.originalAmount,
-            discount: totals.discount,
-            discountType: totals.discountType,
-            discountValue: totals.discountValue,
             totalAmount: newTotal,
             paymentStatus,
           },
@@ -124,27 +137,7 @@ async function main() {
 
     const docs = await prisma.financeDocument.findMany({
       where: {
-        OR: [
-          {
-            sourceType: { in: ['BOOKING_ACCOMMODATION', 'BOOKING_PAYMENT'] },
-            sourceId: b.id,
-          },
-          {
-            AND: [
-              { description: { contains: b.code } },
-              {
-                OR: [
-                  { description: { contains: 'Accommodation' } },
-                  { description: { contains: 'Booking' } },
-                  { description: { contains: 'invoice' } },
-                  { description: { contains: 'Invoice' } },
-                  { description: { contains: 'payment' } },
-                  { description: { contains: 'Payment' } },
-                ],
-              },
-            ],
-          },
-        ],
+        OR: [{ sourceId: b.id }, { description: { contains: b.code } }],
       },
     });
 
@@ -152,7 +145,6 @@ async function main() {
     for (const doc of docs) {
       if (seen.has(doc.id)) continue;
       seen.add(doc.id);
-
       const desc = String(doc.description || '');
       if (/SECURITY DEPOSIT/i.test(desc) && !/Accommodation/i.test(desc)) continue;
 
@@ -160,46 +152,38 @@ async function main() {
       const nextAmount = newTotal;
       const nextPaid = amountPaid;
       const nextRemaining = money(Math.max(0, nextAmount - amountPaid));
-      const nextCurrent = newTotal;
       const nextDesc = isReceipt
         ? `Accommodation payment · ${b.code}`
         : `Accommodation invoice · ${b.code} · ${totals.nights} nights × ${money(totals.periodRate)}`;
-      const nextNotes = [
-        `Rate per night: ${money(totals.periodRate)}`,
-        `Expected nights: ${totals.nights}`,
-        'Security deposit is separate and is not applied to this balance.',
-        'Corrected from nightly × nights accrual.',
-      ].join('\n');
 
       const changed =
         money(doc.amount) !== nextAmount ||
-        money(doc.currentCharges) !== nextCurrent ||
+        money(doc.currentCharges) !== nextAmount ||
         money(doc.amountPaid) !== nextPaid ||
-        money(doc.remainingBalance) !== nextRemaining ||
-        String(doc.description || '') !== nextDesc;
+        money(doc.remainingBalance) !== nextRemaining;
 
       if (!changed) continue;
-
-      console.log(
-        `  doc ${doc.number} (${doc.type}): amount ${money(doc.amount)} → ${nextAmount}`,
-      );
+      console.log(`  doc ${doc.number} (${doc.type}): amount ${money(doc.amount)} → ${nextAmount}`);
       if (!dryRun) {
-        // Do not rewrite sourceType/sourceId — avoids unique conflicts with siblings
         await prisma.financeDocument.update({
           where: { id: doc.id },
           data: {
             description: nextDesc,
             billingPeriod: `${String(b.checkIn).slice(0, 10)} → ${String(b.checkOut).slice(0, 10)}`,
             amount: nextAmount,
-            currentCharges: nextCurrent,
+            currentCharges: nextAmount,
             amountPaid: nextPaid,
             remainingBalance: nextRemaining,
-            notes: nextNotes,
-            unitId: b.unitId,
+            notes: [
+              `Rate per night: ${money(totals.periodRate)}`,
+              `Expected nights: ${totals.nights}`,
+              'Security deposit is separate and is not applied to this balance.',
+              'Corrected from nightly × nights accrual.',
+            ].join('\n'),
             meta: {
               ...(doc.meta && typeof doc.meta === 'object' ? doc.meta : {}),
               correctedAt: new Date().toISOString(),
-              repair: 'nightly-x-nights',
+              repair: 'nightly-x-nights-v2',
               bookingCode: b.code,
             },
           },

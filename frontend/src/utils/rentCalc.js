@@ -153,19 +153,26 @@ export function resolveStoredNightlyRate(booking) {
   const monthly = roundMoney(booking?.monthlyRent);
   const storedRate = roundMoney(booking?.periodRate ?? booking?.dailyRent);
   const total = roundMoney(booking?.totalAmount ?? booking?.total);
-  const dailyFromMonthly = monthly > 0 ? calcDailyRent(monthly) : null;
+  const monthlyLooksNightly = monthly > 0 && monthly < 20000;
+  const dailyFromMonthly = monthly >= 20000 ? calcDailyRent(monthly) : null;
 
+  if (!(storedRate > 0) && monthlyLooksNightly) return monthly;
   if (!(storedRate > 0) && dailyFromMonthly) return dailyFromMonthly;
   if (!(storedRate > 0)) return 0;
-  if (monthly > 0 && Math.abs(storedRate - monthly) <= 1) return dailyFromMonthly;
-  if (nights > 1 && Math.abs(storedRate - total) <= 1) return roundMoney(total / nights);
+
+  if (monthlyLooksNightly && storedRate < monthly / 5) return monthly;
+
   if (
     nights > 1 &&
-    dailyFromMonthly &&
-    storedRate > dailyFromMonthly * 5 &&
+    storedRate > 0 &&
+    storedRate < 20000 &&
     Math.abs(roundMoney(storedRate * nights) - total) <= 1
   ) {
-    return dailyFromMonthly;
+    return storedRate;
+  }
+  if (monthly >= 20000 && Math.abs(storedRate - monthly) <= 1) return dailyFromMonthly;
+  if (nights > 1 && storedRate >= 20000 && Math.abs(storedRate - total) <= 1) {
+    return roundMoney(total / nights);
   }
   return storedRate;
 }

@@ -79,6 +79,7 @@ export function resolveNightlyRate({
 /**
  * Resolve nightly rate from a stored booking row, including legacy MONTHLY
  * rows where periodRate was wrongly saved as the package / monthly total.
+ * Treat monthlyRent < 20,000 as a nightly figure (mis-labeled), not a package.
  */
 export function resolveStoredNightlyRate(booking) {
   const nights = Math.max(
@@ -88,29 +89,34 @@ export function resolveStoredNightlyRate(booking) {
   const monthly = roundMoney(booking?.monthlyRent);
   const storedRate = roundMoney(booking?.periodRate ?? booking?.dailyRent);
   const total = roundMoney(booking?.totalAmount ?? booking?.total);
-  const dailyFromMonthly = monthly > 0 ? dailyRent(monthly) : null;
+  const monthlyLooksNightly = monthly > 0 && monthly < 20000;
+  const dailyFromMonthly = monthly >= 20000 ? dailyRent(monthly) : null;
 
+  if (!(storedRate > 0) && monthlyLooksNightly) return monthly;
   if (!(storedRate > 0) && dailyFromMonthly) return dailyFromMonthly;
   if (!(storedRate > 0)) return 0;
 
-  // periodRate equals monthly rent → it was a package figure
-  if (monthly > 0 && Math.abs(storedRate - monthly) <= 1) {
-    return dailyFromMonthly;
+  // Recover bad /30 when monthlyRent itself was a nightly (before consistency check)
+  if (monthlyLooksNightly && storedRate < monthly / 5) {
+    return monthly;
   }
 
-  // Multi-night stay where total ≈ periodRate (package stored as rate)
-  if (nights > 1 && Math.abs(storedRate - total) <= 1) {
-    return roundMoney(total / nights);
-  }
-
-  // Inflated total = monthly-like rate × nights
+  // Already consistent plausible nightly × nights
   if (
     nights > 1 &&
-    dailyFromMonthly &&
-    storedRate > dailyFromMonthly * 5 &&
+    storedRate > 0 &&
+    storedRate < 20000 &&
     Math.abs(roundMoney(storedRate * nights) - total) <= 1
   ) {
+    return storedRate;
+  }
+
+  // Legacy package: large periodRate ≈ monthly or ≈ total
+  if (monthly >= 20000 && Math.abs(storedRate - monthly) <= 1) {
     return dailyFromMonthly;
+  }
+  if (nights > 1 && storedRate >= 20000 && Math.abs(storedRate - total) <= 1) {
+    return roundMoney(total / nights);
   }
 
   return storedRate;
