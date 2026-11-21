@@ -64,231 +64,310 @@ function longDate(v) {
 }
 
 /**
- * Branded A4 invoice / receipt: logo, one navy rule, a clean item table and totals.
- * Deliberately plain — white page, no gradients or decoration.
+ * Proforma-style A4 invoice / receipt (HODO-style layout, RJK branding).
+ * Bill-to shows name/phone/unit only — no long thank-you paragraph.
  */
 function streamFinanceA4Pdf(res, docMeta, company = {}) {
   const isReceipt = docMeta.type === 'RECEIPT';
-  const title = isReceipt ? 'RECEIPT' : 'INVOICE';
+  const title = isReceipt ? 'Receipt#' : 'Proforma#';
   const companyName = prettyCompany(company.companyName || company['app.name']);
   const currency = company.currency || 'KES';
+  const kes = (v) =>
+    `${currency} ${Number(v || 0).toLocaleString('en-KE', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })}`;
   const fmt = (v) => money(v, currency, company);
 
-  const filename = `${docMeta.number || title}.pdf`.replace(/[^\w.-]+/g, '_');
+  const filename = `${docMeta.number || (isReceipt ? 'RECEIPT' : 'INVOICE')}.pdf`.replace(
+    /[^\w.-]+/g,
+    '_',
+  );
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
 
-  const doc = new PDFDocument({ size: 'A4', margin: 0, info: { Title: `${title} ${docMeta.number || ''}`.trim(), Author: companyName } });
+  const doc = new PDFDocument({
+    size: 'A4',
+    margin: 0,
+    info: { Title: `${title} ${docMeta.number || ''}`.trim(), Author: companyName },
+  });
   doc.pipe(res);
 
-  const W = doc.page.width; // 595.28
-  const H = doc.page.height; // 841.89
-  const M = 51; // ~18mm
+  const W = doc.page.width;
+  const H = doc.page.height;
+  const M = 48;
   const CW = W - M * 2;
 
   const charges = Number(docMeta.currentCharges ?? docMeta.amount) || 0;
   const previous = Number(docMeta.previousBalance) || 0;
   const paid = Number(docMeta.amountPaid) || 0;
   const subtotal = charges + previous;
-  const balance = docMeta.remainingBalance != null ? Number(docMeta.remainingBalance) || 0 : Math.max(0, subtotal - paid);
+  const balance =
+    docMeta.remainingBalance != null
+      ? Number(docMeta.remainingBalance) || 0
+      : Math.max(0, subtotal - paid);
   const status = balance <= 0 && paid > 0 ? 'Paid' : paid > 0 ? 'Partial' : 'Unpaid';
-
-  const label = (text, x, y, opts = {}) =>
-    doc.font('Helvetica-Bold').fontSize(7).fillColor(A4.muted).text(text.toUpperCase(), x, y, { characterSpacing: 1, ...opts });
-
-  // ---------------------------------------------------------- header
-  let y = 46;
-  try {
-    doc.image(LOGO_PATH, M, y, { width: 148 });
-  } catch {
-    doc.font('Helvetica-Bold').fontSize(18).fillColor(A4.navy).text(companyName, M, y + 20);
-  }
-  doc.font('Helvetica-Bold').fontSize(26).fillColor(A4.navy).text(title, M, y + 4, { width: CW, align: 'right', characterSpacing: 1 });
-  doc.font('Helvetica').fontSize(9).fillColor(A4.muted).text(docMeta.number || '—', M, y + 36, { width: CW, align: 'right' });
-
   const st = A4.status[status];
-  doc.font('Helvetica-Bold').fontSize(7.5);
-  const pillW = doc.widthOfString(status.toUpperCase(), { characterSpacing: 0.8 }) + 16;
-  const pillX = W - M - pillW;
-  doc.roundedRect(pillX, y + 52, pillW, 16, 3).fillAndStroke(st.bg, st.border);
-  doc.fillColor(st.fg).text(status.toUpperCase(), pillX, y + 56.5, { width: pillW, align: 'center', characterSpacing: 0.8 });
-
-  y = 140;
-  doc.rect(M, y, CW, 1.2).fill(A4.navy);
-
-  // ---------------------------------------------------------- parties + dates
-  y += 22;
-  const colW = (CW - 40) / 3;
-  const c1 = M;
-  const c2 = M + colW + 20;
-  const c3 = M + (colW + 20) * 2;
-
-  label('From', c1, y);
-  doc.font('Helvetica-Bold').fontSize(9.5).fillColor(A4.ink).text(companyName, c1, y + 14, { width: colW });
-  doc.font('Helvetica').fontSize(9).fillColor(A4.muted).text('Property Management', c1, doc.y + 2, { width: colW });
-  if (company.officeMpesaNumber) doc.text(`M-PESA ${company.officeMpesaNumber}`, c1, doc.y + 2, { width: colW });
-  const yFromEnd = doc.y;
-
-  label(isReceipt ? 'Received from' : 'Billed to', c2, y);
-  doc.font('Helvetica-Bold').fontSize(9.5).fillColor(A4.ink).text(docMeta.customerName || '—', c2, y + 14, { width: colW });
-  doc.font('Helvetica').fontSize(9).fillColor(A4.muted);
-  if (docMeta.customerPhone) doc.text(docMeta.customerPhone, c2, doc.y + 2, { width: colW });
-  if (docMeta.unitNumber) doc.text(`Unit ${docMeta.unitNumber}`, c2, doc.y + 2, { width: colW });
+  const depositPaid = Number(docMeta.securityDepositPaid) || 0;
+  const depositHeld = Number(docMeta.securityDepositHeld ?? depositPaid) || 0;
+  const depositStatus = docMeta.securityDepositStatus || (depositPaid > 0 ? 'HELD' : null);
+  const nightsQty = Number(docMeta.nightsQuantity) || 0;
+  const guests = Number(docMeta.guestsCount) || 0;
+  const taxes = Number(docMeta.taxesAmount) || 0;
   const place = [docMeta.buildingName, docMeta.floorName].filter(Boolean).join(' · ');
-  if (place) doc.text(place, c2, doc.y + 2, { width: colW });
-  const yBillEnd = doc.y;
 
-  const metaRow = (k, v, ry) => {
-    doc.font('Helvetica').fontSize(9).fillColor(A4.muted).text(k, c3, ry, { width: colW });
-    doc.font('Helvetica-Bold').fillColor(A4.ink).text(v, c3, ry, { width: colW, align: 'right' });
-  };
-  let ry = y;
-  metaRow(isReceipt ? 'Receipt date' : 'Issue date', longDate(docMeta.paymentDate || docMeta.createdAt), ry);
-  ry += 15;
-  if (docMeta.dueDate) {
-    metaRow('Due date', longDate(docMeta.dueDate), ry);
-    ry += 15;
+  let y = 42;
+  try {
+    doc.image(LOGO_PATH, M, y, { width: 120 });
+  } catch {
+    doc.font('Helvetica-Bold').fontSize(16).fillColor(A4.navy).text(companyName, M, y + 8);
   }
-  metaRow(
-    'Currency',
-    company.usdKesRate
-      ? `KES · USD @ ${Number(company.usdKesRate).toLocaleString('en-KE', { maximumFractionDigits: 2 })}`
-      : currency,
-    ry,
-  );
-  ry += 15;
-
-  // ---------------------------------------------------------- items
-  y = Math.max(yFromEnd, yBillEnd, ry) + 28;
-  const colNo = M;
-  const colDesc = M + 34;
-  const colPeriod = M + CW * 0.56;
-  const colAmt = M + CW * 0.76;
-  const amtW = CW * 0.24;
-
-  doc.font('Helvetica-Bold').fontSize(7).fillColor(A4.muted);
-  doc.text('#', colNo, y, { characterSpacing: 1 });
-  doc.text('DESCRIPTION', colDesc, y, { characterSpacing: 1 });
-  doc.text('PERIOD', colPeriod, y, { characterSpacing: 1 });
-  doc.text('AMOUNT', colAmt, y, { width: amtW, align: 'right', characterSpacing: 1 });
-  y += 13;
-  doc.rect(M, y, CW, 1).fill(A4.ink);
-  y += 10;
-
-  const unitText = [docMeta.unitNumber ? `Unit ${docMeta.unitNumber}` : null, place || null].filter(Boolean).join(' · ');
-  const items = [
-    {
-      desc: docMeta.description || (isReceipt ? 'Payment received' : 'Charges'),
-      detail: unitText,
-      period: docMeta.billingPeriod || '—',
-      amount: charges,
-    },
-  ];
-  if (previous > 0) items.push({ desc: 'Previous balance brought forward', detail: '', period: '—', amount: previous });
-
-  items.forEach((it, i) => {
-    const descW = colPeriod - colDesc - 12;
-    doc.font('Helvetica').fontSize(9).fillColor(A4.muted).text(String(i + 1).padStart(2, '0'), colNo, y);
-    doc.font('Helvetica-Bold').fontSize(9.5).fillColor(A4.ink).text(it.desc, colDesc, y, { width: descW });
-    let rowEnd = doc.y;
-    if (it.detail) {
-      doc.font('Helvetica').fontSize(8.5).fillColor(A4.muted).text(it.detail, colDesc, rowEnd + 1, { width: descW });
-      rowEnd = doc.y;
-    }
-    doc.font('Helvetica').fontSize(9).fillColor(A4.muted).text(it.period, colPeriod, y, { width: colAmt - colPeriod - 8 });
-    // Dual-currency amounts wrap below the row start so they stay inside the amount column
-    doc.font('Helvetica-Bold').fontSize(8.5).fillColor(A4.ink).text(fmt(it.amount), colAmt, y, {
-      width: amtW,
+  const rightX = M + CW * 0.58;
+  const rightW = CW * 0.42;
+  doc.font('Helvetica-Bold').fontSize(20).fillColor(A4.ink).text(title, rightX, y, {
+    width: rightW,
+    align: 'right',
+  });
+  doc
+    .font('Helvetica-Bold')
+    .fontSize(12)
+    .fillColor(A4.ink)
+    .text(docMeta.bookingCode || docMeta.number || '—', rightX, y + 28, {
+      width: rightW,
       align: 'right',
     });
-    y = Math.max(rowEnd, doc.y) + 10;
-    doc.rect(M, y, CW, 0.7).fill(A4.line);
-    y += 10;
+  doc.font('Helvetica').fontSize(9).fillColor(A4.muted).text(docMeta.number || '', rightX, y + 46, {
+    width: rightW,
+    align: 'right',
+  });
+  doc.font('Helvetica-Bold').fontSize(9).fillColor(st.fg).text(status.toUpperCase(), rightX, y + 62, {
+    width: rightW,
+    align: 'right',
   });
 
-  // ---------------------------------------------------------- payment details + totals
-  y += 8;
-  // Wider totals column so dual KES·USD amounts do not collide with labels
-  const totW = 250;
-  const totX = M + CW - totW;
-  const leftW = Math.max(120, totX - M - 24);
-
-  label('Payment details', M, y);
-  let ly = y + 15;
-  const detail = (k, v) => {
-    doc.font('Helvetica').fontSize(9).fillColor(A4.muted).text(k, M, ly, { width: leftW * 0.42 });
-    doc.font('Helvetica-Bold').fillColor(A4.ink).text(v, M + leftW * 0.42, ly, {
-      width: leftW * 0.58,
-      align: 'right',
-    });
-    ly += 15;
-  };
-  detail('Payment date', docMeta.paymentDate && paid > 0 ? longDate(docMeta.paymentDate) : 'Not yet paid');
-  if (docMeta.method) detail('Method', String(docMeta.methodLabel || docMeta.method));
-  if (docMeta.reference) detail('Reference', String(docMeta.reference));
-  if (docMeta.receivedBy) detail('Received by', String(docMeta.receivedBy));
-  if (balance > 0 && company.officeMpesaNumber) {
-    ly += 4;
-    doc.font('Helvetica').fontSize(8.5).fillColor(A4.muted).text(
-      `Pay the balance by M-PESA to ${company.officeMpesaNumber}, quoting ${docMeta.number || 'this invoice number'}.`,
+  y = 118;
+  doc.font('Helvetica-Bold').fontSize(11).fillColor(A4.ink).text(companyName, M, y);
+  y = doc.y + 2;
+  doc.font('Helvetica').fontSize(9).fillColor(A4.muted).text('Property Management, Simplified.', M, y);
+  y = doc.y + 2;
+  if (docMeta.buildingName) {
+    doc.text(
+      String(docMeta.buildingName) + (docMeta.floorName ? `, ${docMeta.floorName}` : ''),
       M,
-      ly,
-      { width: leftW },
+      y,
     );
-    ly = doc.y;
+    y = doc.y + 2;
+  }
+  if (company.officeMpesaNumber) {
+    doc.text(`M-PESA ${company.officeMpesaNumber}`, M, y);
+    y = doc.y + 2;
   }
 
-  let ty = y;
-  // Stack label above dual-currency value so long "KES … · USD …" strings never overlap
-  const totalRow = (k, v, { emphasis = false, subtract = false } = {}) => {
+  y += 16;
+  const billW = CW * 0.55;
+  const dateX = M + billW + 20;
+  const dateW = CW - billW - 20;
+  doc.font('Helvetica').fontSize(9).fillColor(A4.muted).text(isReceipt ? 'Received from' : 'Bill to', M, y);
+  doc.font('Helvetica-Bold').fontSize(12).fillColor(A4.ink).text(docMeta.customerName || '—', M, y + 14, {
+    width: billW,
+  });
+  let billY = doc.y + 3;
+  if (docMeta.customerPhone) {
+    doc.font('Helvetica').fontSize(9).fillColor(A4.muted).text(docMeta.customerPhone, M, billY, {
+      width: billW,
+    });
+    billY = doc.y + 2;
+  }
+  if (docMeta.unitNumber) {
     doc
-      .font(emphasis ? 'Helvetica-Bold' : 'Helvetica')
-      .fontSize(emphasis ? 10 : 8)
-      .fillColor(emphasis ? A4.ink : A4.muted)
-      .text(k, totX, ty, { width: totW });
-    ty += emphasis ? 14 : 12;
+      .font('Helvetica')
+      .fontSize(9)
+      .fillColor(A4.muted)
+      .text(`Unit ${docMeta.unitNumber}${place ? ` · ${place}` : ''}`, M, billY, { width: billW });
+    billY = doc.y;
+  }
+
+  const dateRow = (k, v, dy) => {
+    doc.font('Helvetica').fontSize(9).fillColor(A4.muted).text(k, dateX, dy, { width: dateW * 0.45 });
+    doc.font('Helvetica-Bold').fontSize(9).fillColor(A4.ink).text(v, dateX + dateW * 0.45, dy, {
+      width: dateW * 0.55,
+      align: 'right',
+    });
+  };
+  dateRow(isReceipt ? 'Receipt date' : 'Invoice date', longDate(docMeta.paymentDate || docMeta.createdAt), y);
+  if (docMeta.dueDate) dateRow('Due date', longDate(docMeta.dueDate), y + 16);
+
+  y = Math.max(billY, y + 40) + 22;
+
+  const cols = [
+    { key: 'desc', label: 'DESCRIPTION', x: M, w: CW * 0.34 },
+    { key: 'qty', label: 'QUANTITY', x: M + CW * 0.34, w: CW * 0.14 },
+    { key: 'guests', label: 'GUESTS', x: M + CW * 0.48, w: CW * 0.1 },
+    { key: 'tax', label: 'TAX, KES', x: M + CW * 0.58, w: CW * 0.12 },
+    { key: 'taxp', label: 'TAX, %', x: M + CW * 0.7, w: CW * 0.1 },
+    { key: 'price', label: 'PRICE', x: M + CW * 0.8, w: CW * 0.2 },
+  ];
+  doc.rect(M, y, CW, 22).fill('#f0f2f5');
+  cols.forEach((c) => {
     doc
       .font('Helvetica-Bold')
-      .fontSize(emphasis ? 12 : 9)
-      .fillColor(emphasis ? (balance > 0 ? A4.navy : '#0e7a55') : A4.ink)
-      .text(subtract ? `- ${v}` : v, totX, ty, { width: totW, align: 'right' });
-    ty += emphasis ? 18 : 14;
-  };
-  totalRow('Subtotal', fmt(subtotal));
-  totalRow('Amount paid', fmt(paid), { subtract: true });
-  doc.rect(totX, ty, totW, 1.2).fill(A4.ink);
-  ty += 8;
-  totalRow('Balance due', fmt(balance), { emphasis: true });
+      .fontSize(7.5)
+      .fillColor(A4.ink)
+      .text(c.label, c.x + 4, y + 7, {
+        width: c.w - 8,
+        align: c.key === 'price' ? 'right' : 'left',
+      });
+  });
+  y += 28;
 
-  y = Math.max(ly, ty) + 18;
+  const descMain =
+    docMeta.unitNumber || docMeta.description || (isReceipt ? 'Payment received' : 'Accommodation');
+  const periodPretty = String(docMeta.billingPeriod || '')
+    .replace(/→/g, ' - ')
+    .trim();
+  const timeBit = docMeta.checkInTime ? String(docMeta.checkInTime) : '';
 
-  if (docMeta.notes) {
-    label('Notes', M, y);
-    doc.font('Helvetica').fontSize(9).fillColor(A4.muted).text(String(docMeta.notes), M, y + 14, { width: CW });
-    y = doc.y + 10;
+  doc.font('Helvetica-Bold').fontSize(10).fillColor(A4.ink).text(String(descMain), cols[0].x + 4, y, {
+    width: cols[0].w - 8,
+  });
+  let rowBottom = doc.y;
+  if (timeBit || periodPretty) {
+    doc
+      .font('Helvetica')
+      .fontSize(8.5)
+      .fillColor(A4.muted)
+      .text([timeBit, periodPretty].filter(Boolean).join('  ·  '), cols[0].x + 4, rowBottom + 2, {
+        width: cols[0].w - 8,
+      });
+    rowBottom = doc.y;
   }
 
-  // ---------------------------------------------------------- signature + footer (pinned to bottom)
-  const footY = H - 46;
-  const sigY = footY - 52;
-  doc.font('Helvetica').fontSize(9).fillColor(A4.muted).text(
-    balance > 0
-      ? 'Please settle the balance due by the due date. Thank you for your business.'
-      : 'Thank you for your payment. Please keep this document for your records.',
-    M,
-    sigY - 2,
-    { width: CW * 0.55 },
-  );
-  const sigX = W - M - 170;
-  doc.rect(sigX, sigY + 8, 170, 0.8).fill(A4.ink);
-  doc.font('Helvetica').fontSize(8).fillColor(A4.muted).text('Authorised signature', sigX, sigY + 13, { width: 170, align: 'center' });
-
-  doc.rect(M, footY - 10, CW, 0.7).fill(A4.line);
-  doc.rect(M, footY + 2.5, 17, 3.2).fill(A4.gold);
-  doc.font('Helvetica').fontSize(8).fillColor(A4.muted).text(`${companyName} · Property Management, Simplified.`, M + 24, footY, {
-    width: CW * 0.7,
-    lineBreak: false,
+  const qtyLabel = nightsQty > 0 ? `${nightsQty} Nights` : '—';
+  doc.font('Helvetica').fontSize(9).fillColor(A4.ink).text(qtyLabel, cols[1].x + 4, y, {
+    width: cols[1].w - 8,
   });
+  doc.text(guests > 0 ? String(guests) : '—', cols[2].x + 4, y, { width: cols[2].w - 8 });
+  doc.text(taxes > 0 ? kes(taxes) : '', cols[3].x + 4, y, { width: cols[3].w - 8 });
+  doc.text(taxes > 0 && charges > 0 ? `${((taxes / charges) * 100).toFixed(0)}%` : '', cols[4].x + 4, y, {
+    width: cols[4].w - 8,
+  });
+  doc.font('Helvetica-Bold').fontSize(9).fillColor(A4.ink).text(kes(charges), cols[5].x + 4, y, {
+    width: cols[5].w - 8,
+    align: 'right',
+  });
+
+  y = Math.max(rowBottom, y + 28) + 8;
+  doc.rect(M, y, CW, 0.7).fill(A4.line);
+  y += 18;
+
+  doc.font('Helvetica-Bold').fontSize(11).fillColor(A4.ink).text(`Outstanding balance: ${kes(balance)}`, M, y, {
+    width: CW * 0.55,
+  });
+  doc.font('Helvetica-Bold').fontSize(12).fillColor(A4.ink).text(`Total: ${kes(subtotal)}`, M + CW * 0.45, y, {
+    width: CW * 0.55,
+    align: 'right',
+  });
+  y += 16;
+  doc.font('Helvetica').fontSize(8).fillColor(A4.muted).text(fmt(balance), M, y, { width: CW * 0.55 });
+  doc.text(fmt(subtotal), M + CW * 0.45, y, { width: CW * 0.55, align: 'right' });
+  y += 22;
+
+  doc.rect(M, y, CW, 0.6).fill(A4.line);
+  y += 14;
+  doc.font('Helvetica-Bold').fontSize(9).fillColor(A4.ink).text('Payment & deposit', M, y);
+  y += 14;
+  doc.font('Helvetica').fontSize(9).fillColor(A4.ink).text(`Accommodation paid: ${kes(paid)}`, M, y);
+  y += 13;
+  if (depositPaid > 0) {
+    doc
+      .font('Helvetica-Bold')
+      .fontSize(9)
+      .fillColor(A4.navy)
+      .text(
+        `Security deposit paid: ${kes(depositPaid)}  ·  Held: ${kes(depositHeld)}  ·  ${depositStatus || 'HELD'}`,
+        M,
+        y,
+        { width: CW },
+      );
+    y += 13;
+    doc
+      .font('Helvetica')
+      .fontSize(8)
+      .fillColor(A4.muted)
+      .text('Security deposit is refundable and is not applied to accommodation charges.', M, y, {
+        width: CW,
+      });
+    y += 12;
+  } else {
+    doc.font('Helvetica').fontSize(9).fillColor(A4.muted).text('Security deposit paid: —', M, y);
+    y += 13;
+  }
+  if (docMeta.receivedBy) {
+    doc.font('Helvetica').fontSize(9).fillColor(A4.ink).text(`Received by: ${docMeta.receivedBy}`, M, y);
+    y += 13;
+  }
+  if (docMeta.method) {
+    doc
+      .font('Helvetica')
+      .fontSize(9)
+      .fillColor(A4.ink)
+      .text(`Method: ${docMeta.methodLabel || docMeta.method}`, M, y);
+    y += 13;
+  }
+  if (docMeta.bookingCode) {
+    doc.font('Helvetica').fontSize(9).fillColor(A4.ink).text(`Booking: ${docMeta.bookingCode}`, M, y);
+    y += 13;
+  }
+
+  y += 10;
+  doc.font('Helvetica-Bold').fontSize(10).fillColor(A4.ink).text('Notes', M, y);
+  y += 12;
+  doc.font('Helvetica').fontSize(9).fillColor(A4.muted).text('Thank you!', M, y);
+  y += 14;
+  if (company.officeMpesaNumber) {
+    doc.text(`Telephone / M-PESA: ${company.officeMpesaNumber}`, M, y);
+    y += 12;
+  }
+  if (balance > 0 && company.officeMpesaNumber) {
+    doc.text(
+      `Pay outstanding accommodation to ${company.officeMpesaNumber}, quoting ${docMeta.number || 'this invoice'}.`,
+      M,
+      y,
+      { width: CW },
+    );
+    y = doc.y + 8;
+  }
+  if (docMeta.notes) {
+    const cleanNotes = String(docMeta.notes)
+      .split('\n')
+      .filter((line) => !/^thank you/i.test(line.trim()))
+      .join('\n')
+      .trim();
+    if (cleanNotes) {
+      doc.font('Helvetica').fontSize(8).fillColor(A4.muted).text(cleanNotes, M, y, { width: CW });
+      y = doc.y + 8;
+    }
+  }
+
+  const sigY = Math.min(y + 28, H - 90);
+  const sigX = W - M - 160;
+  doc.rect(sigX, sigY, 160, 0.8).fill(A4.ink);
+  doc.font('Helvetica').fontSize(8).fillColor(A4.muted).text('Authorised signature', sigX, sigY + 6, {
+    width: 160,
+    align: 'center',
+  });
+
+  const footY = H - 40;
+  doc.rect(M, footY - 8, CW, 0.6).fill(A4.line);
+  doc.rect(M, footY + 2, 16, 3).fill(A4.gold);
+  doc
+    .font('Helvetica')
+    .fontSize(8)
+    .fillColor(A4.muted)
+    .text(`${companyName} · Property Management, Simplified.`, M + 22, footY, {
+      width: CW * 0.7,
+      lineBreak: false,
+    });
   doc.text(docMeta.number || '', M, footY, { width: CW, align: 'right', lineBreak: false });
 
   doc.end();

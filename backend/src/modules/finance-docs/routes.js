@@ -57,6 +57,29 @@ function paymentDefaultsPayload(s) {
   };
 }
 
+function financeDocMetaFromBody(body, company, method) {
+  return {
+    buildingName: body.buildingName || null,
+    floorName: body.floorName || null,
+    unitNumber: body.unitNumber || null,
+    receivedBy: body.receivedByName || body.receivedBy || null,
+    methodLabel: method ? labelPaymentMethod(method) : null,
+    companyName: company.companyName,
+    bookingCode: body.bookingCode || null,
+    checkInTime: body.checkInTime || null,
+    nightsQuantity: body.nightsQuantity != null ? Number(body.nightsQuantity) : null,
+    nightsStayed: body.nightsStayed != null ? Number(body.nightsStayed) : null,
+    guestsCount: body.guestsCount != null ? Number(body.guestsCount) : null,
+    ratePerNight: body.ratePerNight != null ? Number(body.ratePerNight) : null,
+    taxesAmount: body.taxesAmount != null ? Number(body.taxesAmount) : null,
+    securityDepositPaid:
+      body.securityDepositPaid != null ? Number(body.securityDepositPaid) : null,
+    securityDepositHeld:
+      body.securityDepositHeld != null ? Number(body.securityDepositHeld) : null,
+    securityDepositStatus: body.securityDepositStatus || null,
+  };
+}
+
 const docInclude = {
   unit: { include: { building: true, floor: true } },
   tenant: { include: { unit: { select: { buildingId: true } } } },
@@ -190,12 +213,7 @@ router.post(
                 unitId: body.unitId || existing.unitId,
                 meta: {
                   ...(existing.meta && typeof existing.meta === 'object' ? existing.meta : {}),
-                  buildingName: body.buildingName || null,
-                  floorName: body.floorName || null,
-                  unitNumber: body.unitNumber || null,
-                  receivedBy: body.receivedByName || body.receivedBy || null,
-                  methodLabel: method ? labelPaymentMethod(method) : null,
-                  companyName: company.companyName,
+                  ...financeDocMetaFromBody(body, company, method),
                   correctedAt: new Date().toISOString(),
                 },
               },
@@ -231,14 +249,7 @@ router.post(
             notes: body.notes || null,
             sourceType: body.sourceType || null,
             sourceId: body.sourceId || null,
-            meta: {
-              buildingName: body.buildingName || null,
-              floorName: body.floorName || null,
-              unitNumber: body.unitNumber || null,
-              receivedBy: body.receivedByName || body.receivedBy || null,
-              methodLabel: method ? labelPaymentMethod(method) : null,
-              companyName: company.companyName,
-            },
+            meta: financeDocMetaFromBody(body, company, method),
             createdById: req.user.id,
           },
         });
@@ -263,6 +274,10 @@ router.post(
                 remainingBalance: moneyDec(body.remainingBalance),
                 description: body.description || existing.description,
                 notes: body.notes || existing.notes,
+                meta: {
+                  ...(existing.meta && typeof existing.meta === 'object' ? existing.meta : {}),
+                  ...financeDocMetaFromBody(body, company, method),
+                },
               },
             });
           }
@@ -349,6 +364,16 @@ router.get(
         buildingName: meta.buildingName || row.unit?.building?.name,
         floorName: meta.floorName || row.unit?.floor?.name,
         unitNumber: meta.unitNumber || row.unit?.roomNumber,
+        bookingCode: meta.bookingCode || null,
+        checkInTime: meta.checkInTime || null,
+        nightsQuantity: meta.nightsQuantity,
+        nightsStayed: meta.nightsStayed,
+        guestsCount: meta.guestsCount,
+        ratePerNight: meta.ratePerNight,
+        taxesAmount: meta.taxesAmount,
+        securityDepositPaid: meta.securityDepositPaid,
+        securityDepositHeld: meta.securityDepositHeld,
+        securityDepositStatus: meta.securityDepositStatus,
         createdAt: row.createdAt,
       },
       company,

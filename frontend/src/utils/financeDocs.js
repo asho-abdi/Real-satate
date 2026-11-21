@@ -103,13 +103,24 @@ export function bookingDocPayload(booking, type = 'INVOICE') {
     fin.accruedAccommodation != null ? fin.accruedAccommodation : expected,
   );
   const paid = Number(fin.accommodationPaid ?? booking.amountPaid) || 0;
-  // Invoices bill nights actually stayed (accrued). Receipts record money received.
-  const chargeBasis = type === 'RECEIPT' ? Math.max(accrued, paid) : accrued;
+  // Proforma invoices quote the expected full stay; receipts / mid-stay charges use accrued.
+  const chargeBasis =
+    type === 'RECEIPT' ? Math.max(accrued, paid) : expected > 0 ? expected : accrued;
   const balance = Math.max(0, Math.round((chargeBasis - paid) * 100) / 100);
   const period = `${String(booking.checkIn || '').slice(0, 10)} → ${String(booking.checkOut || '').slice(0, 10)}`;
-  const expectedNights = fin.expectedNights ?? booking.nights;
-  const nightsStayed = fin.nightsStayed ?? 0;
-  const rate = fin.nightlyRate ?? booking.periodRate ?? booking.dailyRent;
+  const expectedNights = Number(fin.expectedNights ?? booking.nights) || 0;
+  const nightsStayed = Number(fin.nightsStayed ?? 0);
+  const rate = Number(fin.nightlyRate ?? booking.periodRate ?? booking.dailyRent) || 0;
+  const guests =
+    Number(booking.adultsCount ?? 1) + Number(booking.childrenCount ?? 0) || 1;
+  const deposit = booking.depositSummary || booking.deposit || null;
+  const depositPaid = Number(
+    deposit?.received ?? deposit?.amount ?? booking.depositSummary?.received ?? 0,
+  );
+  const depositHeld = Number(
+    deposit?.remaining ?? deposit?.held ?? deposit?.remainingAmount ?? depositPaid,
+  );
+  const depositStatus = deposit?.status || booking.depositSummary?.status || null;
   return {
     type,
     customerName: booking.fullName,
@@ -118,7 +129,7 @@ export function bookingDocPayload(booking, type = 'INVOICE') {
     description:
       type === 'RECEIPT'
         ? `Accommodation payment · ${booking.code}`
-        : `Accommodation invoice · ${booking.code} · ${nightsStayed} nights stayed × ${rate}`,
+        : `Room ${booking.roomNumber || ''} · ${booking.code}`.trim(),
     billingPeriod: period,
     amount: chargeBasis,
     previousBalance: 0,
@@ -133,12 +144,25 @@ export function bookingDocPayload(booking, type = 'INVOICE') {
     buildingName: booking.building || null,
     floorName: booking.floor || null,
     unitNumber: booking.roomNumber || null,
+    receivedByName: booking.payments?.[0]?.receivedByName || null,
+    // Proforma layout fields (stored in FinanceDocument.meta)
+    bookingCode: booking.code || null,
+    checkInTime: booking.checkInTime || null,
+    nightsQuantity: expectedNights || nightsStayed,
+    nightsStayed,
+    guestsCount: guests,
+    ratePerNight: rate,
+    taxesAmount: Number(booking.taxesAmount) || 0,
+    securityDepositPaid: depositPaid,
+    securityDepositHeld: depositHeld,
+    securityDepositStatus: depositStatus,
     notes: [
+      depositPaid > 0
+        ? `Security deposit paid: ${depositPaid} (${depositStatus || 'HELD'}) — refundable, not accommodation revenue.`
+        : 'No security deposit recorded for this booking.',
       `Rate per night: ${rate}`,
-      `Nights stayed (accrued): ${nightsStayed}`,
-      `Expected full stay: ${expectedNights} nights · ${expected}`,
-      'Future nights are not charged until occupied.',
-      'Security deposit is separate and is not applied to this balance.',
+      `Nights stayed (accrued): ${nightsStayed} / expected ${expectedNights}`,
+      'Security deposit does not automatically reduce the accommodation balance.',
       booking.notes || '',
     ]
       .filter(Boolean)
