@@ -258,68 +258,84 @@ function streamFinanceA4Pdf(res, docMeta, company = {}) {
 
   y = Math.max(rowBottom, y + 28) + 8;
   doc.rect(M, y, CW, 0.7).fill(A4.line);
-  y += 18;
-
-  doc.font('Helvetica-Bold').fontSize(11).fillColor(A4.ink).text(`Outstanding balance: ${kes(balance)}`, M, y, {
-    width: CW * 0.55,
-  });
-  doc.font('Helvetica-Bold').fontSize(12).fillColor(A4.ink).text(`Total: ${kes(subtotal)}`, M + CW * 0.45, y, {
-    width: CW * 0.55,
-    align: 'right',
-  });
   y += 16;
-  doc.font('Helvetica').fontSize(8).fillColor(A4.muted).text(fmt(balance), M, y, { width: CW * 0.55 });
-  doc.text(fmt(subtotal), M + CW * 0.45, y, { width: CW * 0.55, align: 'right' });
-  y += 22;
 
-  doc.rect(M, y, CW, 0.6).fill(A4.line);
-  y += 14;
-  doc.font('Helvetica-Bold').fontSize(9).fillColor(A4.ink).text('Payment & deposit', M, y);
-  y += 14;
-  doc.font('Helvetica').fontSize(9).fillColor(A4.ink).text(`Accommodation paid: ${kes(paid)}`, M, y);
-  y += 13;
+  // Left: payment / deposit context · Right: clear Total → Paid → Due (same amounts as before)
+  const leftW = CW * 0.48;
+  const totW = CW * 0.46;
+  const totX = M + CW - totW;
+  let leftY = y;
+
+  doc.font('Helvetica-Bold').fontSize(9).fillColor(A4.ink).text('Payment details', M, leftY);
+  leftY += 14;
+  const leftRow = (k, v, bold = false) => {
+    doc.font('Helvetica').fontSize(9).fillColor(A4.muted).text(k, M, leftY, { width: leftW * 0.45 });
+    doc
+      .font(bold ? 'Helvetica-Bold' : 'Helvetica')
+      .fontSize(9)
+      .fillColor(A4.ink)
+      .text(v, M + leftW * 0.45, leftY, { width: leftW * 0.55, align: 'right' });
+    leftY += 13;
+  };
+  if (docMeta.paymentDate && paid > 0) leftRow('Payment date', longDate(docMeta.paymentDate));
+  if (docMeta.method) leftRow('Method', String(docMeta.methodLabel || docMeta.method));
+  if (docMeta.receivedBy) leftRow('Received by', String(docMeta.receivedBy));
+  if (docMeta.bookingCode) leftRow('Booking', String(docMeta.bookingCode));
+  if (docMeta.reference) leftRow('Reference', String(docMeta.reference));
+  leftY += 4;
   if (depositPaid > 0) {
     doc
       .font('Helvetica-Bold')
       .fontSize(9)
       .fillColor(A4.navy)
-      .text(
-        `Security deposit paid: ${kes(depositPaid)}  ·  Held: ${kes(depositHeld)}  ·  ${depositStatus || 'HELD'}`,
-        M,
-        y,
-        { width: CW },
-      );
-    y += 13;
+      .text(`Security deposit paid: ${kes(depositPaid)}`, M, leftY, { width: leftW });
+    leftY += 12;
     doc
       .font('Helvetica')
       .fontSize(8)
       .fillColor(A4.muted)
-      .text('Security deposit is refundable and is not applied to accommodation charges.', M, y, {
-        width: CW,
+      .text(`Held: ${kes(depositHeld)} · ${depositStatus || 'HELD'} (refundable, not rent)`, M, leftY, {
+        width: leftW,
       });
-    y += 12;
+    leftY = doc.y + 4;
   } else {
-    doc.font('Helvetica').fontSize(9).fillColor(A4.muted).text('Security deposit paid: —', M, y);
-    y += 13;
-  }
-  if (docMeta.receivedBy) {
-    doc.font('Helvetica').fontSize(9).fillColor(A4.ink).text(`Received by: ${docMeta.receivedBy}`, M, y);
-    y += 13;
-  }
-  if (docMeta.method) {
-    doc
-      .font('Helvetica')
-      .fontSize(9)
-      .fillColor(A4.ink)
-      .text(`Method: ${docMeta.methodLabel || docMeta.method}`, M, y);
-    y += 13;
-  }
-  if (docMeta.bookingCode) {
-    doc.font('Helvetica').fontSize(9).fillColor(A4.ink).text(`Booking: ${docMeta.bookingCode}`, M, y);
-    y += 13;
+    leftRow('Security deposit', '—');
   }
 
-  y += 10;
+  let ty = y;
+  const moneyRow = (label, value, { subtract = false, emphasis = false } = {}) => {
+    doc
+      .font(emphasis ? 'Helvetica-Bold' : 'Helvetica')
+      .fontSize(emphasis ? 10 : 9)
+      .fillColor(emphasis ? A4.ink : A4.muted)
+      .text(label, totX, ty, { width: totW * 0.42 });
+    doc
+      .font('Helvetica-Bold')
+      .fontSize(emphasis ? 11 : 9)
+      .fillColor(emphasis ? (balance > 0 ? A4.navy : '#0e7a55') : A4.ink)
+      .text(subtract ? `- ${kes(value)}` : kes(value), totX + totW * 0.42, ty, {
+        width: totW * 0.58,
+        align: 'right',
+      });
+    ty += emphasis ? 14 : 13;
+    doc
+      .font('Helvetica')
+      .fontSize(7.5)
+      .fillColor(A4.muted)
+      .text(fmt(value), totX, ty, { width: totW, align: 'right' });
+    ty += emphasis ? 16 : 14;
+  };
+
+  moneyRow('Total', subtotal);
+  moneyRow('Amount paid', paid, { subtract: true });
+  doc.rect(totX, ty, totW, 1.1).fill(A4.ink);
+  ty += 8;
+  moneyRow(balance > 0 ? 'Amount due' : 'Balance', balance, { emphasis: true });
+
+  y = Math.max(leftY, ty) + 14;
+  doc.rect(M, y, CW, 0.6).fill(A4.line);
+  y += 14;
+
   doc.font('Helvetica-Bold').fontSize(10).fillColor(A4.ink).text('Notes', M, y);
   y += 12;
   doc.font('Helvetica').fontSize(9).fillColor(A4.muted).text('Thank you!', M, y);
@@ -330,7 +346,7 @@ function streamFinanceA4Pdf(res, docMeta, company = {}) {
   }
   if (balance > 0 && company.officeMpesaNumber) {
     doc.text(
-      `Pay outstanding accommodation to ${company.officeMpesaNumber}, quoting ${docMeta.number || 'this invoice'}.`,
+      `Pay amount due (${kes(balance)}) to ${company.officeMpesaNumber}, quoting ${docMeta.number || 'this invoice'}.`,
       M,
       y,
       { width: CW },
@@ -338,9 +354,22 @@ function streamFinanceA4Pdf(res, docMeta, company = {}) {
     y = doc.y + 8;
   }
   if (docMeta.notes) {
+    // Guest-facing notes only — skip internal accrual / repair lines
     const cleanNotes = String(docMeta.notes)
       .split('\n')
-      .filter((line) => !/^thank you/i.test(line.trim()))
+      .map((line) => line.trim())
+      .filter(
+        (line) =>
+          line &&
+          !/^thank you/i.test(line) &&
+          !/^nights stayed/i.test(line) &&
+          !/^rate per night/i.test(line) &&
+          !/^no security deposit/i.test(line) &&
+          !/^security deposit paid:/i.test(line) &&
+          !/^security deposit does not/i.test(line) &&
+          !/^expected full stay/i.test(line) &&
+          !/^future nights/i.test(line),
+      )
       .join('\n')
       .trim();
     if (cleanNotes) {
