@@ -6,7 +6,12 @@
  * booking.monthlyRent itself was stored as a nightly figure (< 20,000).
  */
 import { PrismaClient } from '@prisma/client';
-import { nightsBetween, periodBookingTotal, roundMoney } from '../src/utils/rent.js';
+import {
+  bookingAccommodationFinancials,
+  nightsBetween,
+  periodBookingTotal,
+  roundMoney,
+} from '../src/utils/rent.js';
 
 const dryRun = process.argv.includes('--dry-run');
 const prisma = new PrismaClient();
@@ -141,6 +146,20 @@ async function main() {
       },
     });
 
+    // Accrue for invoice docs; receipts record money received
+    const live = bookingAccommodationFinancials({
+      ...b,
+      periodRate: totals.periodRate,
+      dailyRent: totals.dailyRent,
+      nights: totals.nights,
+      amountPaid,
+      totalAmount: newTotal,
+      discount: totals.discount,
+      servicesAmount: b.servicesAmount,
+      taxesAmount: b.taxesAmount,
+    });
+    const accrued = money(live.accruedAccommodation);
+
     const seen = new Set();
     for (const doc of docs) {
       if (seen.has(doc.id)) continue;
@@ -149,12 +168,12 @@ async function main() {
       if (/SECURITY DEPOSIT/i.test(desc) && !/Accommodation/i.test(desc)) continue;
 
       const isReceipt = doc.type === 'RECEIPT';
-      const nextAmount = newTotal;
+      const nextAmount = isReceipt ? Math.max(accrued, amountPaid) : accrued;
       const nextPaid = amountPaid;
       const nextRemaining = money(Math.max(0, nextAmount - amountPaid));
       const nextDesc = isReceipt
         ? `Accommodation payment · ${b.code}`
-        : `Accommodation invoice · ${b.code} · ${totals.nights} nights × ${money(totals.periodRate)}`;
+        : `Accommodation invoice · ${b.code} · ${live.nightsStayed} nights stayed × ${money(totals.periodRate)}`;
 
       const changed =
         money(doc.amount) !== nextAmount ||
@@ -176,14 +195,15 @@ async function main() {
             remainingBalance: nextRemaining,
             notes: [
               `Rate per night: ${money(totals.periodRate)}`,
-              `Expected nights: ${totals.nights}`,
+              `Nights stayed (accrued): ${live.nightsStayed}`,
+              `Expected full stay: ${totals.nights} nights · ${newTotal}`,
+              'Future nights are not charged until occupied.',
               'Security deposit is separate and is not applied to this balance.',
-              'Corrected from nightly × nights accrual.',
             ].join('\n'),
             meta: {
               ...(doc.meta && typeof doc.meta === 'object' ? doc.meta : {}),
               correctedAt: new Date().toISOString(),
-              repair: 'nightly-x-nights-v2',
+              repair: 'nightly-x-nights-accrual',
               bookingCode: b.code,
             },
           },
