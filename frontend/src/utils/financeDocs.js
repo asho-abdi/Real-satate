@@ -98,11 +98,17 @@ export function rentPaymentDocPayload(payment, ctx = {}, type = 'RECEIPT') {
 /** Build a booking accommodation invoice/receipt payload from a mapped booking row. */
 export function bookingDocPayload(booking, type = 'INVOICE') {
   const fin = booking.financials || {};
-  const total = Number(fin.expectedAccommodation ?? booking.total) || 0;
+  const expected = Number(fin.expectedAccommodation ?? booking.total) || 0;
+  const accrued = Number(
+    fin.accruedAccommodation != null ? fin.accruedAccommodation : expected,
+  );
   const paid = Number(fin.accommodationPaid ?? booking.amountPaid) || 0;
-  const balance = Math.max(0, Math.round((total - paid) * 100) / 100);
+  // Invoices bill nights actually stayed (accrued). Receipts record money received.
+  const chargeBasis = type === 'RECEIPT' ? Math.max(accrued, paid) : accrued;
+  const balance = Math.max(0, Math.round((chargeBasis - paid) * 100) / 100);
   const period = `${String(booking.checkIn || '').slice(0, 10)} → ${String(booking.checkOut || '').slice(0, 10)}`;
-  const nights = fin.expectedNights ?? booking.nights;
+  const expectedNights = fin.expectedNights ?? booking.nights;
+  const nightsStayed = fin.nightsStayed ?? 0;
   const rate = fin.nightlyRate ?? booking.periodRate ?? booking.dailyRent;
   return {
     type,
@@ -112,11 +118,11 @@ export function bookingDocPayload(booking, type = 'INVOICE') {
     description:
       type === 'RECEIPT'
         ? `Accommodation payment · ${booking.code}`
-        : `Accommodation invoice · ${booking.code} · ${nights} nights × ${rate}`,
+        : `Accommodation invoice · ${booking.code} · ${nightsStayed} nights stayed × ${rate}`,
     billingPeriod: period,
-    amount: total,
+    amount: chargeBasis,
     previousBalance: 0,
-    currentCharges: Number(fin.accruedAccommodation ?? total) || total,
+    currentCharges: chargeBasis,
     amountPaid: paid,
     remainingBalance: balance,
     method: booking.paymentMethod || null,
@@ -129,8 +135,10 @@ export function bookingDocPayload(booking, type = 'INVOICE') {
     unitNumber: booking.roomNumber || null,
     notes: [
       `Rate per night: ${rate}`,
-      `Nights stayed: ${fin.nightsStayed ?? '—'} / expected ${nights}`,
-      `Security deposit is separate and is not applied to this balance.`,
+      `Nights stayed (accrued): ${nightsStayed}`,
+      `Expected full stay: ${expectedNights} nights · ${expected}`,
+      'Future nights are not charged until occupied.',
+      'Security deposit is separate and is not applied to this balance.',
       booking.notes || '',
     ]
       .filter(Boolean)

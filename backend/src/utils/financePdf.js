@@ -196,7 +196,11 @@ function streamFinanceA4Pdf(res, docMeta, company = {}) {
       rowEnd = doc.y;
     }
     doc.font('Helvetica').fontSize(9).fillColor(A4.muted).text(it.period, colPeriod, y, { width: colAmt - colPeriod - 8 });
-    doc.font('Helvetica-Bold').fontSize(9.5).fillColor(A4.ink).text(fmt(it.amount), colAmt, y, { width: amtW, align: 'right' });
+    // Dual-currency amounts wrap below the row start so they stay inside the amount column
+    doc.font('Helvetica-Bold').fontSize(8.5).fillColor(A4.ink).text(fmt(it.amount), colAmt, y, {
+      width: amtW,
+      align: 'right',
+    });
     y = Math.max(rowEnd, doc.y) + 10;
     doc.rect(M, y, CW, 0.7).fill(A4.line);
     y += 10;
@@ -204,15 +208,19 @@ function streamFinanceA4Pdf(res, docMeta, company = {}) {
 
   // ---------------------------------------------------------- payment details + totals
   y += 8;
-  const totX = M + CW - 210;
-  const totW = 210;
-  const leftW = totX - M - 30;
+  // Wider totals column so dual KES·USD amounts do not collide with labels
+  const totW = 250;
+  const totX = M + CW - totW;
+  const leftW = Math.max(120, totX - M - 24);
 
   label('Payment details', M, y);
   let ly = y + 15;
   const detail = (k, v) => {
-    doc.font('Helvetica').fontSize(9).fillColor(A4.muted).text(k, M, ly, { width: leftW });
-    doc.font('Helvetica-Bold').fillColor(A4.ink).text(v, M, ly, { width: leftW, align: 'right' });
+    doc.font('Helvetica').fontSize(9).fillColor(A4.muted).text(k, M, ly, { width: leftW * 0.42 });
+    doc.font('Helvetica-Bold').fillColor(A4.ink).text(v, M + leftW * 0.42, ly, {
+      width: leftW * 0.58,
+      align: 'right',
+    });
     ly += 15;
   };
   detail('Payment date', docMeta.paymentDate && paid > 0 ? longDate(docMeta.paymentDate) : 'Not yet paid');
@@ -231,19 +239,26 @@ function streamFinanceA4Pdf(res, docMeta, company = {}) {
   }
 
   let ty = y;
-  const total = (k, v, bold) => {
-    doc.font(bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(9).fillColor(bold ? A4.ink : A4.muted).text(k, totX, ty, { width: totW });
-    doc.font('Helvetica-Bold').fillColor(A4.ink).text(v, totX, ty, { width: totW, align: 'right' });
-    ty += 16;
+  // Stack label above dual-currency value so long "KES … · USD …" strings never overlap
+  const totalRow = (k, v, { emphasis = false, subtract = false } = {}) => {
+    doc
+      .font(emphasis ? 'Helvetica-Bold' : 'Helvetica')
+      .fontSize(emphasis ? 10 : 8)
+      .fillColor(emphasis ? A4.ink : A4.muted)
+      .text(k, totX, ty, { width: totW });
+    ty += emphasis ? 14 : 12;
+    doc
+      .font('Helvetica-Bold')
+      .fontSize(emphasis ? 12 : 9)
+      .fillColor(emphasis ? (balance > 0 ? A4.navy : '#0e7a55') : A4.ink)
+      .text(subtract ? `- ${v}` : v, totX, ty, { width: totW, align: 'right' });
+    ty += emphasis ? 18 : 14;
   };
-  total('Subtotal', fmt(subtotal));
-  total('Amount paid', `- ${fmt(paid)}`);
-  ty += 2;
+  totalRow('Subtotal', fmt(subtotal));
+  totalRow('Amount paid', fmt(paid), { subtract: true });
   doc.rect(totX, ty, totW, 1.2).fill(A4.ink);
-  ty += 9;
-  doc.font('Helvetica-Bold').fontSize(10).fillColor(A4.ink).text('Balance due', totX, ty + 3, { width: totW });
-  doc.font('Helvetica-Bold').fontSize(15).fillColor(balance > 0 ? A4.navy : '#0e7a55').text(fmt(balance), totX, ty, { width: totW, align: 'right' });
-  ty += 24;
+  ty += 8;
+  totalRow('Balance due', fmt(balance), { emphasis: true });
 
   y = Math.max(ly, ty) + 18;
 
