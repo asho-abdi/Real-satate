@@ -69,7 +69,7 @@ function longDate(v) {
  */
 function streamFinanceA4Pdf(res, docMeta, company = {}) {
   const isReceipt = docMeta.type === 'RECEIPT';
-  const title = isReceipt ? 'Receipt#' : 'Proforma#';
+  const title = isReceipt ? 'Receipt#' : 'Invoice #';
   const companyName = prettyCompany(company.companyName || company['app.name']);
   const currency = company.currency || 'KES';
   const kes = (v) =>
