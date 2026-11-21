@@ -40,11 +40,22 @@ function statusLabel(status) {
 
 function customerName(row) {
   return (
+    row.booking?.fullName ||
     row.tenant?.fullName ||
     row.business?.businessName ||
     row.shopSale?.buyerName ||
     '—'
   );
+}
+
+function partyLabel(row) {
+  if (row.bookingId || row.booking) {
+    return row.booking?.code ? `Guest · ${row.booking.code}` : 'Guest';
+  }
+  if (row.businessId || row.business) return 'Business';
+  if (row.shopSaleId || row.shopSale) return 'Shop sale';
+  if (row.tenantId || row.tenant) return 'Tenant';
+  return '—';
 }
 
 function num(row, key) {
@@ -57,6 +68,7 @@ export default function Deposits() {
   const [buildings, setBuildings] = useState([]);
   const [tenants, setTenants] = useState([]);
   const [businesses, setBusinesses] = useState([]);
+  const [bookings, setBookings] = useState([]);
   const [units, setUnits] = useState([]);
   const [loading, setLoading] = useState(true);
   const [buildingId, setBuildingId] = useState('');
@@ -72,6 +84,7 @@ export default function Deposits() {
     partyType: 'tenant',
     tenantId: '',
     businessId: '',
+    bookingId: '',
     unitId: '',
     amount: '',
     dateReceived: new Date().toISOString().slice(0, 10),
@@ -113,16 +126,18 @@ export default function Deposits() {
 
   const loadLookups = useCallback(async () => {
     try {
-      const [b, t, biz, u] = await Promise.all([
+      const [b, t, biz, u, bk] = await Promise.all([
         rentalApi.listBuildings(),
         rentalApi.listTenants(),
         rentalApi.listBusinesses({ commercialType: 'ALL' }),
         rentalApi.listUnits(),
+        rentalApi.listBookings(),
       ]);
       setBuildings(b || []);
       setTenants(t || []);
       setBusinesses(biz || []);
       setUnits(u || []);
+      setBookings(Array.isArray(bk) ? bk : []);
     } catch {
       /* optional for create form */
     }
@@ -141,10 +156,19 @@ export default function Deposits() {
     if (!q) return rows;
     return rows.filter((r) => {
       const name = customerName(r).toLowerCase();
+      const code = String(r.booking?.code || '').toLowerCase();
       const room = String(r.unit?.roomNumber || '').toLowerCase();
       const bld = String(r.unit?.building?.name || '').toLowerCase();
       const notes = String(r.notes || '').toLowerCase();
-      return name.includes(q) || room.includes(q) || bld.includes(q) || notes.includes(q);
+      const party = partyLabel(r).toLowerCase();
+      return (
+        name.includes(q) ||
+        code.includes(q) ||
+        room.includes(q) ||
+        bld.includes(q) ||
+        notes.includes(q) ||
+        party.includes(q)
+      );
     });
   }, [rows, search]);
 
@@ -196,8 +220,17 @@ export default function Deposits() {
     }
     const tenantId = createForm.partyType === 'tenant' ? createForm.tenantId : null;
     const businessId = createForm.partyType === 'business' ? createForm.businessId : null;
-    if (!tenantId && !businessId) {
-      toast.error('Select a tenant or business');
+    const bookingId = createForm.partyType === 'guest' ? createForm.bookingId : null;
+    if (createForm.partyType === 'tenant' && !tenantId) {
+      toast.error('Select a tenant');
+      return;
+    }
+    if (createForm.partyType === 'business' && !businessId) {
+      toast.error('Select a business');
+      return;
+    }
+    if (createForm.partyType === 'guest' && !bookingId) {
+      toast.error('Select a guest booking');
       return;
     }
     setSaving(true);
@@ -205,6 +238,7 @@ export default function Deposits() {
       await rentalApi.createDeposit({
         tenantId,
         businessId,
+        bookingId,
         unitId: createForm.unitId,
         amount,
         dateReceived: createForm.dateReceived,
@@ -213,10 +247,22 @@ export default function Deposits() {
         receivedByName: createForm.receivedByName || null,
         agentName: createForm.agentName || null,
         officeMpesaNumber: createForm.officeMpesaNumber || null,
-        notes: createForm.notes || null,
+        notes:
+          createForm.notes ||
+          (createForm.partyType === 'guest' ? 'SECURITY DEPOSIT – REFUNDABLE' : null),
       });
       toast.success('Deposit recorded');
       setCreateOpen(false);
+      setCreateForm((prev) => ({
+        ...prev,
+        tenantId: '',
+        businessId: '',
+        bookingId: '',
+        unitId: '',
+        amount: '',
+        reference: '',
+        notes: '',
+      }));
       await load();
     } catch (err) {
       toast.error(err.message || 'Could not record deposit');
@@ -259,8 +305,23 @@ export default function Deposits() {
   };
 
   const unitsForCreate = useMemo(() => {
-    return units.filter((u) => u.id);
-  }, [units]);
+    const list = units.filter((u) => u.id);
+    if (createForm.partyType === 'guest') {
+      return list.filter((u) => String(u.usageRaw || '').toUpperCase() === 'GUEST');
+    }
+    if (createForm.partyType === 'business') {
+      return list.filter((u) =>
+        ['SHOP', 'OFFICE'].includes(String(u.usageRaw || '').toUpperCase()),
+      );
+    }
+    if (createForm.partyType === 'tenant') {
+      return list.filter((u) => {
+        const usage = String(u.usageRaw || '').toUpperCase();
+        return usage !== 'GUEST' && usage !== 'SHOP' && usage !== 'OFFICE';
+      });
+    }
+    return list;
+  }, [units, createForm.partyType]);
 
   const tenantsForUnit = useMemo(() => {
     if (!createForm.unitId) return tenants;
@@ -272,6 +333,17 @@ export default function Deposits() {
     return businesses.filter((b) => b.unitId === createForm.unitId);
   }, [businesses, createForm.unitId]);
 
+  const bookingsForCreate = useMemo(() => {
+    const active = new Set(['Confirmed', 'Reserved', 'CheckedIn']);
+    return bookings.filter((b) => {
+      if (!active.has(b.status)) return false;
+      if (createForm.unitId && b.roomId !== createForm.unitId && b.unitId !== createForm.unitId) {
+        return false;
+      }
+      return true;
+    });
+  }, [bookings, createForm.unitId]);
+
   const SUMMARY_ICONS = [MdAccountBalanceWallet, MdUndo, MdLock, MdPendingActions];
 
   return (
@@ -279,7 +351,7 @@ export default function Deposits() {
       <PageHeader
         icon={<MdAccountBalanceWallet />}
         title="Security Deposits"
-        subtitle="Deposits held on behalf of tenants (a liability), returns and checkout deductions."
+        subtitle="Deposits held for tenants, businesses, and guest bookings — returns and checkout deductions."
         actions={
           <Button onClick={() => setCreateOpen(true)}>
             <MdAdd className="h-4 w-4" /> Record deposit
@@ -346,7 +418,11 @@ export default function Deposits() {
         <EmptyState
           icon={MdAccountBalanceWallet}
           title="No deposits found"
-          description={search || status || buildingId ? 'Try clearing the filters.' : 'Record a deposit when a tenant moves in.'}
+          description={
+            search || status || buildingId
+              ? 'Try clearing the filters.'
+              : 'Record a deposit for a tenant, business, or guest booking.'
+          }
           action={
             !search && !status && !buildingId ? (
               <Button onClick={() => setCreateOpen(true)}>
@@ -373,7 +449,10 @@ export default function Deposits() {
               <tbody>
                 {filtered.map((r) => (
                   <tr key={r.id}>
-                    <td className="pl-5 font-semibold text-[var(--text)]">{customerName(r)}</td>
+                    <td className="pl-5">
+                      <span className="font-semibold text-[var(--text)]">{customerName(r)}</span>
+                      <span className="block text-xs text-[var(--text-muted)]">{partyLabel(r)}</span>
+                    </td>
                     <td>
                       <span className="font-medium">{r.unit?.roomNumber || '—'}</span>
                       <span className="block text-xs text-[var(--text-muted)]">
@@ -442,6 +521,10 @@ export default function Deposits() {
               <div>
                 <p className="text-[var(--text-muted)]">Customer</p>
                 <p className="font-medium">{customerName(detail)}</p>
+              </div>
+              <div>
+                <p className="text-[var(--text-muted)]">Party</p>
+                <p className="font-medium">{partyLabel(detail)}</p>
               </div>
               <div>
                 <p className="text-[var(--text-muted)]">Unit</p>
@@ -525,11 +608,14 @@ export default function Deposits() {
                 partyType: e.target.value,
                 tenantId: '',
                 businessId: '',
+                bookingId: '',
+                unitId: '',
               })
             }
           >
             <option value="tenant">Tenant (apartment)</option>
             <option value="business">Business (shop/office)</option>
+            <option value="guest">Guest (booking)</option>
           </Select>
           <Select
             label="Unit"
@@ -540,6 +626,7 @@ export default function Deposits() {
                 unitId: e.target.value,
                 tenantId: '',
                 businessId: '',
+                bookingId: createForm.partyType === 'guest' ? '' : createForm.bookingId,
               })
             }
           >
@@ -564,7 +651,8 @@ export default function Deposits() {
                 </option>
               ))}
             </Select>
-          ) : (
+          ) : null}
+          {createForm.partyType === 'business' ? (
             <Select
               label="Business"
               className="sm:col-span-2"
@@ -578,7 +666,30 @@ export default function Deposits() {
                 </option>
               ))}
             </Select>
-          )}
+          ) : null}
+          {createForm.partyType === 'guest' ? (
+            <Select
+              label="Guest booking"
+              className="sm:col-span-2"
+              value={createForm.bookingId}
+              onChange={(e) => {
+                const bookingId = e.target.value;
+                const booking = bookingsForCreate.find((b) => b.id === bookingId);
+                setCreateForm({
+                  ...createForm,
+                  bookingId,
+                  unitId: booking?.roomId || booking?.unitId || createForm.unitId,
+                });
+              }}
+            >
+              <option value="">Select active guest booking</option>
+              {bookingsForCreate.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.code} · {b.fullName} · {b.roomNumber} · {b.status}
+                </option>
+              ))}
+            </Select>
+          ) : null}
           <Input
             label="Amount"
             type="number"

@@ -715,7 +715,22 @@ export const rentalApi = {
   listDeposits: (params) => get('/deposits', params),
   getDepositSummary: () => get('/deposits/summary'),
   getDeposit: (id) => get(`/deposits/${id}`),
-  createDeposit: (payload) => post('/deposits', payload),
+  createDeposit: (payload) =>
+    post('/deposits', {
+      tenantId: payload.tenantId || null,
+      businessId: payload.businessId || null,
+      shopSaleId: payload.shopSaleId || null,
+      bookingId: payload.bookingId || null,
+      unitId: payload.unitId,
+      amount: Number(payload.amount),
+      dateReceived: payload.dateReceived || undefined,
+      method: METHOD_VALUES[payload.method] || payload.method || 'CASH',
+      reference: payload.reference || null,
+      receivedByName: payload.receivedByName || null,
+      agentName: payload.agentName || null,
+      officeMpesaNumber: payload.officeMpesaNumber || null,
+      notes: payload.notes || null,
+    }),
   settleDeposit: (id, payload) => post(`/deposits/${id}/settle`, payload),
 
   getStatement: (params) => get('/finance/statements', params),
