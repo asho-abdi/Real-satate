@@ -210,16 +210,20 @@ export default function PaymentCalendar({
       d.setMonth(d.getMonth() - 11);
       return d;
     })();
+    // 12-month leases store end as the anniversary date (start + 1 year).
+    // Treat that end as exclusive so Jan 1 → Jan 1 next year bills 12 months, not 13.
     const endDate = leaseEnd ? new Date(leaseEnd) : addMonths(startDate, 12);
+    const endExclusive = new Date(endDate);
+    endExclusive.setHours(0, 0, 0, 0);
 
     const rows = [];
     let cursor = new Date(startDate.getFullYear(), startDate.getMonth(), 1);
-    const endMonth = new Date(endDate.getFullYear(), endDate.getMonth(), 1);
     let idx = 1;
 
-    while (cursor <= endMonth) {
+    while (idx <= 240) {
       const key = monthKey(cursor);
       const due = dueDate(startDate.toISOString(), key);
+      if (due >= endExclusive) break;
 
       const record = payments.find((p) => {
         if (p.month !== key) return false;
