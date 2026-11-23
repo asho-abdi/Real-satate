@@ -738,30 +738,6 @@ export function streamStatementPdf(res, statement, company = {}, opts = {}) {
     .fontSize(11)
     .fillColor(closing > 0 ? RJK.navy : RJK.green)
     .text(fmt(closing), margin, y, { width: CW, align: 'right' });
-  y += 26;
-  doc
-    .font('Helvetica')
-    .fontSize(8)
-    .fillColor(RJK.muted)
-    .text(
-      [
-        'Notes:',
-        '• Lease commencement is the contractual start date — not the date the lease was registered in the system.',
-        '• Rent-free months are concessions (not payments) and do not reduce cash received.',
-        '• Advance rent is recorded once as cash and allocated across rental periods.',
-        '• Security deposits are held on your behalf and are not counted as rent payments.',
-        'Please contact our office if anything on this statement looks incorrect.',
-        company.officeMpesaNumber
-          ? `Telephone / M-PESA: ${company.officeMpesaNumber}`
-          : null,
-      ]
-        .filter(Boolean)
-        .join('\n'),
-      margin,
-      y,
-      { width: CW, lineGap: 1.5 },
-    );
-
   footers(doc, { margin, companyName });
   doc.end();
 }
