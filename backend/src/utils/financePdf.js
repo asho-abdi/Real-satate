@@ -592,13 +592,44 @@ export function streamStatementPdf(res, statement, company = {}, opts = {}) {
   // ---------------------------------------------------------- account holder + summary box
   const boxW = 250;
   const boxX = W - margin - boxW;
+  const cust = statement.customer || {};
   label(doc, 'Account holder', margin, y);
-  doc.font('Helvetica-Bold').fontSize(11).fillColor(RJK.ink).text(statement.customer?.name || '—', margin, y + 14, { width: boxX - margin - 20 });
+  doc.font('Helvetica-Bold').fontSize(11).fillColor(RJK.ink).text(cust.name || '—', margin, y + 14, {
+    width: boxX - margin - 20,
+  });
   doc.font('Helvetica').fontSize(9).fillColor(RJK.muted);
-  if (statement.customer?.phone) doc.text(statement.customer.phone, margin, doc.y + 3, { width: boxX - margin - 20 });
+  if (cust.phone) doc.text(cust.phone, margin, doc.y + 3, { width: boxX - margin - 20 });
   if (statement.unit?.roomNumber) doc.text(`Unit ${statement.unit.roomNumber}`, margin, doc.y + 2);
   const place = [statement.unit?.building?.name, statement.unit?.floor?.name].filter(Boolean).join(' · ');
   if (place) doc.text(place, margin, doc.y + 2, { width: boxX - margin - 20 });
+  if (cust.leaseStart) {
+    doc.text(`Lease commencement ${longDate(cust.leaseStart)}`, margin, doc.y + 4, {
+      width: boxX - margin - 20,
+    });
+  }
+  if (cust.registeredAt) {
+    doc.text(`Registered ${longDate(cust.registeredAt)}`, margin, doc.y + 2, {
+      width: boxX - margin - 20,
+    });
+  }
+  if (cust.monthlyRent != null && Number(cust.monthlyRent) > 0) {
+    doc.text(`Monthly rent ${fmt(cust.monthlyRent)}`, margin, doc.y + 2, {
+      width: boxX - margin - 20,
+    });
+  }
+  if (Number(cust.rentFreeMonths) > 0) {
+    doc.text(
+      `Rent-free: first ${Number(cust.rentFreeMonths)} month${Number(cust.rentFreeMonths) === 1 ? '' : 's'}`,
+      margin,
+      doc.y + 2,
+      { width: boxX - margin - 20 },
+    );
+  }
+  if (cust.leaseEnd) {
+    doc.text(`Lease end ${longDate(cust.leaseEnd)}`, margin, doc.y + 2, {
+      width: boxX - margin - 20,
+    });
+  }
   const leftEnd = doc.y;
 
   const closing = Number(s.closingBalance ?? s.outstandingBalance ?? 0);
@@ -713,10 +744,22 @@ export function streamStatementPdf(res, statement, company = {}, opts = {}) {
     .fontSize(8)
     .fillColor(RJK.muted)
     .text(
-      'Security deposits are held on your behalf and are not counted as rent payments. Please contact our office if anything on this statement looks incorrect.',
+      [
+        'Notes:',
+        '• Lease commencement is the contractual start date — not the date the lease was registered in the system.',
+        '• Rent-free months are concessions (not payments) and do not reduce cash received.',
+        '• Advance rent is recorded once as cash and allocated across rental periods.',
+        '• Security deposits are held on your behalf and are not counted as rent payments.',
+        'Please contact our office if anything on this statement looks incorrect.',
+        company.officeMpesaNumber
+          ? `Telephone / M-PESA: ${company.officeMpesaNumber}`
+          : null,
+      ]
+        .filter(Boolean)
+        .join('\n'),
       margin,
       y,
-      { width: CW },
+      { width: CW, lineGap: 1.5 },
     );
 
   footers(doc, { margin, companyName });

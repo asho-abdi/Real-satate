@@ -1,6 +1,20 @@
 import prisma from '../config/database.js';
 import { asNumber } from '../utils/paymentMethod.js';
 import { commercialTypeFromUsage } from '../utils/commercialType.js';
+import {
+  loadLeaseParty,
+  materializeLeaseSchedule,
+} from './rentReceipt.service.js';
+
+function monthLabel(yyyyMm) {
+  const [y, m] = String(yyyyMm || '').split('-').map(Number);
+  if (!y || !m) return String(yyyyMm || '');
+  return new Date(Date.UTC(y, m - 1, 1)).toLocaleString('en-GB', {
+    month: 'short',
+    year: 'numeric',
+    timeZone: 'UTC',
+  });
+}
 
 function push(lines, row) {
   lines.push(row);
@@ -152,6 +166,10 @@ export async function buildStatement(party, filters = {}) {
   const lines = [];
 
   if (party.tenantId) {
+    // Materialize historical obligations from leaseStart before reading the ledger.
+    const partyLoaded = await loadLeaseParty(prisma, { tenantId: party.tenantId });
+    await prisma.$transaction((tx) => materializeLeaseSchedule(tx, partyLoaded));
+
     const tenant = await prisma.tenant.findFirst({
       where: { id: party.tenantId, deletedAt: null },
       include: { unit: { include: { building: true, floor: true } } },
@@ -176,12 +194,13 @@ export async function buildStatement(party, filters = {}) {
     });
     for (const p of payments) {
       const dueDate = `${p.month}-01`;
+      const label = monthLabel(p.month);
       const rentFree = Boolean(p.isRentFree) || p.status === 'RENT_FREE';
       push(lines, {
         date: dueDate,
         description: rentFree
-          ? `Rent-free concession (${p.month})`
-          : `Monthly rent (${p.month})`,
+          ? `Rent-free concession (${label})`
+          : `Monthly rent (${label})`,
         type: rentFree ? 'RENT_FREE' : 'RENT',
         debit: rentFree ? 0 : asNumber(p.amountDue),
         credit: 0,
@@ -195,8 +214,8 @@ export async function buildStatement(party, filters = {}) {
         push(lines, {
           date: p.paymentDate || dueDate,
           description: p.isAdvance
-            ? `Advance rent allocated (${p.month})`
-            : `Payment received (${p.month})`,
+            ? `Advance rent allocated (${label})`
+            : `Payment received (${label})`,
           type: p.isAdvance ? 'ADVANCE_PAYMENT' : 'PAYMENT',
           debit: 0,
           credit: asNumber(p.amountPaid),
@@ -288,6 +307,9 @@ export async function buildStatement(party, filters = {}) {
       }
     }
   } else if (party.businessId) {
+    const partyLoaded = await loadLeaseParty(prisma, { businessId: party.businessId });
+    await prisma.$transaction((tx) => materializeLeaseSchedule(tx, partyLoaded));
+
     const business = await prisma.business.findFirst({
       where: { id: party.businessId, deletedAt: null },
       include: { unit: { include: { building: true, floor: true } } },
@@ -313,12 +335,13 @@ export async function buildStatement(party, filters = {}) {
     });
     for (const p of payments) {
       const dueDate = `${p.month}-01`;
+      const label = monthLabel(p.month);
       const rentFree = Boolean(p.isRentFree) || p.status === 'RENT_FREE';
       push(lines, {
         date: dueDate,
         description: rentFree
-          ? `Rent-free concession (${p.month})`
-          : commercialRentDescription(unit, p.month),
+          ? `Rent-free concession (${label})`
+          : commercialRentDescription(unit, label),
         type: rentFree ? 'RENT_FREE' : 'RENT',
         debit: rentFree ? 0 : asNumber(p.amountDue),
         credit: 0,
@@ -332,8 +355,8 @@ export async function buildStatement(party, filters = {}) {
         push(lines, {
           date: p.paymentDate || dueDate,
           description: p.isAdvance
-            ? `Advance rent allocated (${p.month})`
-            : `Payment received (${p.month})`,
+            ? `Advance rent allocated (${label})`
+            : `Payment received (${label})`,
           type: p.isAdvance ? 'ADVANCE_PAYMENT' : 'PAYMENT',
           debit: 0,
           credit: asNumber(p.amountPaid),
