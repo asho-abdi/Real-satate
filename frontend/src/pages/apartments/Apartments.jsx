@@ -27,6 +27,8 @@ const emptyForm = {
   monthlyRent: '',
   discount: 0,
   leaseStart: '',
+  leaseEnd: '',
+  rentFreeMonths: '0',
 };
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -185,6 +187,8 @@ export default function Apartments() {
         roomId: selectedRoom.id,
         monthlyRent: Number(form.monthlyRent) || selectedRoom.monthlyRent,
         discount: Number(form.discount) || 0,
+        leaseEnd: form.leaseEnd || undefined,
+        rentFreeMonths: Number(form.rentFreeMonths) || 0,
         ...identity,
       });
       toast.success('Tenant registered');
@@ -213,6 +217,8 @@ export default function Apartments() {
       monthlyRent: String(tenant.monthlyRent ?? ''),
       discount: tenant.discount ?? 0,
       leaseStart: tenant.leaseStart || '',
+      leaseEnd: tenant.leaseEnd || '',
+      rentFreeMonths: String(tenant.rentFreeMonths ?? 0),
       identityDocument: tenant.identityDocument || null,
       identityDocumentName: tenant.identityDocumentName || null,
     });
@@ -233,6 +239,9 @@ export default function Apartments() {
         ...editForm,
         monthlyRent: Number(editForm.monthlyRent),
         discount: Number(editForm.discount) || 0,
+        leaseEnd: editForm.leaseEnd || null,
+        rentFreeMonths: Number(editForm.rentFreeMonths) || 0,
+        adjustmentReason: 'Lease terms updated from apartments form',
         ...identity,
       });
       toast.success('Tenant updated');
@@ -413,11 +422,30 @@ export default function Apartments() {
               onChange={(e) => setForm({ ...form, discount: e.target.value })}
             />
             <Input
-              label="Lease start"
+              label="Lease start (commencement)"
               type="date"
               value={form.leaseStart}
               onChange={(e) => setForm({ ...form, leaseStart: e.target.value })}
+              hint="Actual lease start — can be in the past. Registration date is recorded separately."
             />
+            <Input
+              label="Lease end"
+              type="date"
+              value={form.leaseEnd}
+              onChange={(e) => setForm({ ...form, leaseEnd: e.target.value })}
+              hint="Optional. For a 12-month term use the anniversary date (exclusive)."
+            />
+            <Select
+              label="Rent-free months"
+              value={form.rentFreeMonths}
+              onChange={(e) => setForm({ ...form, rentFreeMonths: e.target.value })}
+            >
+              <option value="0">None</option>
+              <option value="1">1 Month Free</option>
+              <option value="2">2 Months Free</option>
+              <option value="3">3 Months Free</option>
+              <option value="6">6 Months Free</option>
+            </Select>
           </div>
           <Button className="mt-6 px-8" onClick={register}>
             Save Tenant
@@ -631,7 +659,15 @@ export default function Apartments() {
             <Input label="Emergency contact" value={editForm.emergencyContact} onChange={(e) => setEditForm({ ...editForm, emergencyContact: e.target.value })} />
             <Input label="Monthly rent" type="number" value={editForm.monthlyRent} onChange={(e) => setEditForm({ ...editForm, monthlyRent: e.target.value })} />
             <Input label="Discount" type="number" value={editForm.discount} onChange={(e) => setEditForm({ ...editForm, discount: e.target.value })} />
-            <Input label="Lease start" type="date" value={editForm.leaseStart} onChange={(e) => setEditForm({ ...editForm, leaseStart: e.target.value })} />
+            <Input label="Lease start (commencement)" type="date" value={editForm.leaseStart} onChange={(e) => setEditForm({ ...editForm, leaseStart: e.target.value })} />
+            <Input label="Lease end" type="date" value={editForm.leaseEnd || ''} onChange={(e) => setEditForm({ ...editForm, leaseEnd: e.target.value })} />
+            <Select label="Rent-free months" value={editForm.rentFreeMonths || '0'} onChange={(e) => setEditForm({ ...editForm, rentFreeMonths: e.target.value })}>
+              <option value="0">None</option>
+              <option value="1">1 Month Free</option>
+              <option value="2">2 Months Free</option>
+              <option value="3">3 Months Free</option>
+              <option value="6">6 Months Free</option>
+            </Select>
           </div>
         ) : null}
       </Modal>

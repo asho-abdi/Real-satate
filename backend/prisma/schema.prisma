@@ -71,6 +71,12 @@ enum PaymentStatus {
   PAID
   UNPAID
   PARTIAL
+  RENT_FREE
+}
+
+enum RentReceiptKind {
+  MONTHLY
+  ADVANCE
 }
 
 enum PaymentMethod {
@@ -267,6 +273,7 @@ model User {
   depositTransactions     SecurityDepositTxn[] @relation("DepositTxnCreatedBy")
   financeDocuments        FinanceDocument[]    @relation("FinanceDocCreatedBy")
   monthlyPaymentsRecorded MonthlyPayment[]     @relation("MonthlyPaymentRecordedBy")
+  rentReceiptsRecorded    RentReceipt[]        @relation("RentReceiptRecordedBy")
 
   @@index([roleId])
 }
@@ -494,6 +501,10 @@ model Tenant {
   securityDeposit      Decimal           @default(0) @db.Decimal(12, 2)
   paymentFrequency     PaymentFrequency  @default(MONTHLY)
   gracePeriodDays      Int               @default(0)
+  /// Consecutive rent-free months from leaseStart (concession, not a payment).
+  rentFreeMonths       Int               @default(0)
+  /// Calendar day rent is due each month (1–31). Null = day of leaseStart.
+  rentDueDay           Int?
   notes                String?
   leaseStart           DateTime
   leaseEnd             DateTime?
@@ -509,6 +520,7 @@ model Tenant {
   charges  LeaseCharge[]
   deposits SecurityDeposit[]
   financeDocuments FinanceDocument[]
+  rentReceipts     RentReceipt[]
 
   @@index([unitId])
   @@index([phone])
@@ -529,6 +541,8 @@ model Business {
   securityDeposit      Decimal           @default(0) @db.Decimal(12, 2)
   paymentFrequency     PaymentFrequency  @default(MONTHLY)
   gracePeriodDays      Int               @default(0)
+  rentFreeMonths       Int               @default(0)
+  rentDueDay           Int?
   notes                String?
   leaseStart           DateTime
   leaseEnd             DateTime?
@@ -544,6 +558,7 @@ model Business {
   charges  LeaseCharge[]
   deposits SecurityDeposit[]
   financeDocuments FinanceDocument[]
+  rentReceipts     RentReceipt[]
 
   @@index([unitId])
   @@index([phone])
@@ -571,18 +586,72 @@ model MonthlyPayment {
   receiptNumber      String?
   recordedById       String?  @db.Uuid
   notes       String?
+  /// True when this period is a contractual rent concession (amountDue should be 0).
+  isRentFree  Boolean        @default(false)
+  /// True when this period was settled by allocating an advance receipt.
+  isAdvance   Boolean        @default(false)
   createdAt   DateTime       @default(now())
   updatedAt   DateTime       @updatedAt
 
   tenant     Tenant?   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   business   Business? @relation(fields: [businessId], references: [id], onDelete: Cascade)
   recordedBy User?     @relation("MonthlyPaymentRecordedBy", fields: [recordedById], references: [id])
+  allocations RentAllocation[]
 
   @@unique([tenantId, month])
   @@unique([businessId, month])
   @@index([status])
   @@index([month])
   @@index([receiptNumber])
+}
+
+/// Cash received for rent (monthly or multi-month advance). Counted as income once.
+model RentReceipt {
+  id             String          @id @default(uuid()) @db.Uuid
+  tenantId       String?         @db.Uuid
+  businessId     String?         @db.Uuid
+  kind           RentReceiptKind @default(MONTHLY)
+  amount         Decimal         @db.Decimal(12, 2)
+  monthsCovered  Int             @default(1)
+  startMonth     String?
+  method         PaymentMethod?
+  paymentDate    DateTime
+  reference      String?
+  receivedByName String?
+  agentName      String?
+  officeMpesaNumber String?
+  receiptNumber  String?
+  notes          String?
+  recordedById   String?         @db.Uuid
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  tenant     Tenant?          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  business   Business?        @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  recordedBy User?            @relation("RentReceiptRecordedBy", fields: [recordedById], references: [id])
+  allocations RentAllocation[]
+
+  @@index([tenantId])
+  @@index([businessId])
+  @@index([paymentDate])
+  @@index([kind])
+}
+
+/// Allocation of a rent receipt to a specific rental period. Does not create extra income.
+model RentAllocation {
+  id               String   @id @default(uuid()) @db.Uuid
+  receiptId        String   @db.Uuid
+  month            String
+  amount           Decimal  @db.Decimal(12, 2)
+  monthlyPaymentId String?  @db.Uuid
+  createdAt        DateTime @default(now())
+
+  receipt        RentReceipt     @relation(fields: [receiptId], references: [id], onDelete: Cascade)
+  monthlyPayment MonthlyPayment? @relation(fields: [monthlyPaymentId], references: [id], onDelete: SetNull)
+
+  @@unique([receiptId, month])
+  @@index([month])
+  @@index([monthlyPaymentId])
 }
 
 /// Extra billable charges on a lease (utilities, late fees, parking, etc.)

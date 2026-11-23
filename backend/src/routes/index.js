@@ -25,6 +25,7 @@ import maintenanceRoutes from '../modules/maintenance/routes.js';
 import todayRoutes from '../modules/today/routes.js';
 import depositsRoutes from '../modules/deposits/routes.js';
 import financeDocsRoutes from '../modules/finance-docs/routes.js';
+import leasesRoutes from '../modules/leases/routes.js';
 const router = Router();
 
 router.use('/auth', authRoutes);
@@ -38,6 +39,7 @@ router.use('/bookings', bookingsRoutes);
 router.use('/tenants', tenantsRoutes);
 router.use('/businesses', businessesRoutes);
 router.use('/payments', paymentsRoutes);
+router.use('/leases', leasesRoutes);
 router.use('/deposits', depositsRoutes);
 router.use('/finance', financeDocsRoutes);
 router.use('/lease-charges', leaseChargesRoutes);

@@ -48,11 +48,15 @@ export function serializeChargeLine(c) {
 export function computeLeaseFinancials(payments = [], charges = []) {
   const payLines = payments.map(serializePaymentLine);
   const chargeLines = charges.filter((c) => !c.deletedAt).map(serializeChargeLine);
+  // Rent-free concessions are not obligations and must not inflate outstanding.
+  const billable = payLines.filter(
+    (p) => !(p.isRentFree || p.status === 'RENT_FREE' || (money(p.amountDue) <= 0 && money(p.amountPaid) <= 0 && p.status === 'RENT_FREE')),
+  );
 
-  const rentLineDue = payLines.reduce((s, p) => s + p.amountDue, 0);
-  const rentLinePaid = payLines.reduce((s, p) => s + p.amountPaid, 0);
-  const rentPortionDue = payLines.reduce((s, p) => s + p.rentDue, 0);
-  const embeddedOtherDue = payLines.reduce((s, p) => s + p.otherCharges, 0);
+  const rentLineDue = billable.reduce((s, p) => s + p.amountDue, 0);
+  const rentLinePaid = billable.reduce((s, p) => s + p.amountPaid, 0);
+  const rentPortionDue = billable.reduce((s, p) => s + p.rentDue, 0);
+  const embeddedOtherDue = billable.reduce((s, p) => s + p.otherCharges, 0);
 
   const chargesDue = chargeLines.reduce((s, c) => s + c.amountDue, 0);
   const chargesPaid = chargeLines.reduce((s, c) => s + c.amountPaid, 0);

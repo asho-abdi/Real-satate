@@ -5,7 +5,7 @@ import { authorize } from '../../middlewares/authorize.js';
 import { asyncHandler } from '../../utils/asyncHandler.js';
 import { success } from '../../utils/apiResponse.js';
 import { AppError } from '../../utils/AppError.js';
-import { currentMonthKey } from '../../utils/rent.js';
+import { materializeLeaseSchedule } from '../../services/rentReceipt.service.js';
 import {
   assertUnitBuildingAccess,
   unitBuildingFilter,
@@ -38,6 +38,9 @@ function serialize(b) {
     discount: Number(b.discount || 0),
     securityDeposit: Number(b.securityDeposit || 0),
     gracePeriodDays: Number(b.gracePeriodDays || 0),
+    rentFreeMonths: Number(b.rentFreeMonths || 0),
+    rentDueDay: b.rentDueDay ?? null,
+    registeredAt: b.createdAt,
     payments: (b.payments || []).map((p) => ({
       ...p,
       amountDue: Number(p.amountDue),
@@ -127,6 +130,8 @@ router.post(
       notes,
       leaseStart,
       leaseEnd,
+      rentFreeMonths = 0,
+      rentDueDay,
     } = req.body || {};
 
     if (!businessName || !contactName || !phone || !unitId || !leaseStart) {
@@ -171,9 +176,6 @@ router.post(
 
     const rent = monthlyRent !== undefined ? monthlyRent : unit.monthlyRent;
     const disc = discount !== undefined ? discount : unit.discount;
-    const amountDue = Math.max(0, Number(rent) - Number(disc));
-    const month = currentMonthKey();
-
     const business = await prisma.$transaction(async (tx) => {
       const created = await tx.business.create({
         data: {
@@ -194,6 +196,8 @@ router.post(
           notes: notes ? String(notes).trim() : null,
           leaseStart: new Date(leaseStart),
           leaseEnd: leaseEnd ? new Date(leaseEnd) : null,
+          rentFreeMonths: Math.max(0, Number(rentFreeMonths) || 0),
+          rentDueDay: rentDueDay != null && rentDueDay !== '' ? Number(rentDueDay) : null,
           status: 'ACTIVE',
         },
         include: businessInclude,
@@ -204,14 +208,12 @@ router.post(
         data: { status: 'OCCUPIED' },
       });
 
-      await tx.monthlyPayment.create({
-        data: {
-          businessId: created.id,
-          month,
-          amountDue,
-          amountPaid: 0,
-          status: 'UNPAID',
-        },
+      await materializeLeaseSchedule(tx, {
+        kind: 'BUSINESS',
+        lease: { ...created, payments: [] },
+        tenantId: null,
+        businessId: created.id,
+        unitId,
       });
 
       await logActivity({
@@ -317,8 +319,6 @@ router.post(
 
     const rent = monthlyRent !== undefined ? Number(monthlyRent) : Number(existing.monthlyRent);
     const disc = discount !== undefined ? Number(discount) : Number(existing.discount);
-    const amountDue = Math.max(0, rent - disc);
-    const month = currentMonthKey(leaseStart);
 
     const renewed = await prisma.$transaction(async (tx) => {
       await tx.business.update({
@@ -364,20 +364,13 @@ router.post(
         data: { status: 'OCCUPIED' },
       });
 
-      const existingMonth = await tx.monthlyPayment.findFirst({
-        where: { businessId: created.id, month },
+      await materializeLeaseSchedule(tx, {
+        kind: 'BUSINESS',
+        lease: { ...created, payments: [] },
+        tenantId: null,
+        businessId: created.id,
+        unitId: existing.unitId,
       });
-      if (!existingMonth) {
-        await tx.monthlyPayment.create({
-          data: {
-            businessId: created.id,
-            month,
-            amountDue,
-            amountPaid: 0,
-            status: 'UNPAID',
-          },
-        });
-      }
 
       await logActivity({
         tx,
@@ -391,6 +384,7 @@ router.post(
           leaseStart,
           leaseEnd,
           monthlyRent: rent,
+          rentFreeMonths: Number(created.rentFreeMonths || 0),
         },
         actorId: req.user.id,
       });

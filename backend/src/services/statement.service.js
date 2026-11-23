@@ -162,6 +162,11 @@ export async function buildStatement(party, filters = {}) {
       name: tenant.fullName,
       phone: tenant.phone,
       type: 'tenant',
+      leaseStart: tenant.leaseStart,
+      leaseEnd: tenant.leaseEnd,
+      registeredAt: tenant.createdAt,
+      rentFreeMonths: Number(tenant.rentFreeMonths || 0),
+      monthlyRent: asNumber(tenant.monthlyRent) - asNumber(tenant.discount),
     };
     unit = tenant.unit;
 
@@ -171,22 +176,28 @@ export async function buildStatement(party, filters = {}) {
     });
     for (const p of payments) {
       const dueDate = `${p.month}-01`;
+      const rentFree = Boolean(p.isRentFree) || p.status === 'RENT_FREE';
       push(lines, {
         date: dueDate,
-        description: `Monthly rent (${p.month})`,
-        type: 'RENT',
-        debit: asNumber(p.amountDue),
+        description: rentFree
+          ? `Rent-free concession (${p.month})`
+          : `Monthly rent (${p.month})`,
+        type: rentFree ? 'RENT_FREE' : 'RENT',
+        debit: rentFree ? 0 : asNumber(p.amountDue),
         credit: 0,
         method: null,
         reference: null,
         sourceType: 'MONTHLY_PAYMENT',
         sourceId: p.id,
+        status: rentFree ? 'RENT_FREE' : p.status,
       });
-      if (asNumber(p.amountPaid) > 0) {
+      if (!rentFree && asNumber(p.amountPaid) > 0) {
         push(lines, {
           date: p.paymentDate || dueDate,
-          description: `Payment received (${p.month})`,
-          type: 'PAYMENT',
+          description: p.isAdvance
+            ? `Advance rent allocated (${p.month})`
+            : `Payment received (${p.month})`,
+          type: p.isAdvance ? 'ADVANCE_PAYMENT' : 'PAYMENT',
           debit: 0,
           credit: asNumber(p.amountPaid),
           method: p.method,
@@ -288,6 +299,11 @@ export async function buildStatement(party, filters = {}) {
       phone: business.phone,
       contactName: business.contactName,
       type: 'business',
+      leaseStart: business.leaseStart,
+      leaseEnd: business.leaseEnd,
+      registeredAt: business.createdAt,
+      rentFreeMonths: Number(business.rentFreeMonths || 0),
+      monthlyRent: asNumber(business.monthlyRent) - asNumber(business.discount),
     };
     unit = business.unit;
 
@@ -297,22 +313,28 @@ export async function buildStatement(party, filters = {}) {
     });
     for (const p of payments) {
       const dueDate = `${p.month}-01`;
+      const rentFree = Boolean(p.isRentFree) || p.status === 'RENT_FREE';
       push(lines, {
         date: dueDate,
-        description: commercialRentDescription(unit, p.month),
-        type: 'RENT',
-        debit: asNumber(p.amountDue),
+        description: rentFree
+          ? `Rent-free concession (${p.month})`
+          : commercialRentDescription(unit, p.month),
+        type: rentFree ? 'RENT_FREE' : 'RENT',
+        debit: rentFree ? 0 : asNumber(p.amountDue),
         credit: 0,
         method: null,
         reference: null,
         sourceType: 'MONTHLY_PAYMENT',
         sourceId: p.id,
+        status: rentFree ? 'RENT_FREE' : p.status,
       });
-      if (asNumber(p.amountPaid) > 0) {
+      if (!rentFree && asNumber(p.amountPaid) > 0) {
         push(lines, {
           date: p.paymentDate || dueDate,
-          description: `Payment received (${p.month})`,
-          type: 'PAYMENT',
+          description: p.isAdvance
+            ? `Advance rent allocated (${p.month})`
+            : `Payment received (${p.month})`,
+          type: p.isAdvance ? 'ADVANCE_PAYMENT' : 'PAYMENT',
           debit: 0,
           credit: asNumber(p.amountPaid),
           method: p.method,

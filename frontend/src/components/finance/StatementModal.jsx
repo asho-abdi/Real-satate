@@ -163,6 +163,17 @@ export default function StatementModal({ open, onClose, party }) {
                 .filter(Boolean)
                 .join(' · ')}
             </p>
+            {statement.customer?.leaseStart ? (
+              <p className="mt-1 text-xs text-[var(--text-muted)]">
+                Lease commencement {String(statement.customer.leaseStart).slice(0, 10)}
+                {statement.customer.registeredAt
+                  ? ` · Registered ${String(statement.customer.registeredAt).slice(0, 10)}`
+                  : ''}
+                {statement.customer.rentFreeMonths
+                  ? ` · ${statement.customer.rentFreeMonths} rent-free month(s)`
+                  : ''}
+              </p>
+            ) : null}
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">

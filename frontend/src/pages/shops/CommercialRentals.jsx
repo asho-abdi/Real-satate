@@ -27,6 +27,8 @@ const emptyForm = {
   monthlyRent: '',
   discount: 0,
   leaseStart: '',
+  leaseEnd: '',
+  rentFreeMonths: '0',
   salePrice: '',
   saleDate: '',
   amountPaid: '',
@@ -344,6 +346,8 @@ export default function CommercialRentals({ initialFilter = 'ALL' }) {
         commercialType: expectedUsage,
         monthlyRent: Number(form.monthlyRent) || selectedRoom.monthlyRent,
         discount: Number(form.discount) || 0,
+        leaseEnd: form.leaseEnd || undefined,
+        rentFreeMonths: Number(form.rentFreeMonths) || 0,
         ...identity,
       });
       toast.success(`${typeLabel(expectedUsage)} rental registered`);
@@ -623,11 +627,29 @@ export default function CommercialRentals({ initialFilter = 'ALL' }) {
                   onChange={(e) => setForm({ ...form, discount: e.target.value })}
                 />
                 <Input
-                  label="Lease start date"
+                  label="Lease start (commencement)"
                   type="date"
                   value={form.leaseStart}
                   onChange={(e) => setForm({ ...form, leaseStart: e.target.value })}
+                  hint="Actual lease start — can be historical. Registration date is separate."
                 />
+                <Input
+                  label="Lease end"
+                  type="date"
+                  value={form.leaseEnd}
+                  onChange={(e) => setForm({ ...form, leaseEnd: e.target.value })}
+                />
+                <Select
+                  label="Rent-free months"
+                  value={form.rentFreeMonths}
+                  onChange={(e) => setForm({ ...form, rentFreeMonths: e.target.value })}
+                >
+                  <option value="0">None</option>
+                  <option value="1">1 Month Free</option>
+                  <option value="2">2 Months Free</option>
+                  <option value="3">3 Months Free</option>
+                  <option value="6">6 Months Free</option>
+                </Select>
               </>
             )}
           </div>

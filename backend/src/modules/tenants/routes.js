@@ -5,7 +5,8 @@ import { authorize } from '../../middlewares/authorize.js';
 import { asyncHandler } from '../../utils/asyncHandler.js';
 import { success } from '../../utils/apiResponse.js';
 import { AppError } from '../../utils/AppError.js';
-import { currentMonthKey } from '../../utils/rent.js';
+import { logActivity } from '../../services/activity.service.js';
+import { materializeLeaseSchedule } from '../../services/rentReceipt.service.js';
 import {
   assertUnitBuildingAccess,
   unitBuildingFilter,
@@ -29,6 +30,9 @@ function serialize(t) {
     ...t,
     monthlyRent: Number(t.monthlyRent),
     discount: Number(t.discount),
+    rentFreeMonths: Number(t.rentFreeMonths || 0),
+    rentDueDay: t.rentDueDay ?? null,
+    registeredAt: t.createdAt,
   };
 }
 
@@ -66,6 +70,8 @@ router.post(
       discount = 0,
       leaseStart,
       leaseEnd,
+      rentFreeMonths = 0,
+      rentDueDay,
     } = req.body || {};
 
     if (!fullName || !phone || !idNumber || !unitId || !leaseStart) {
@@ -86,8 +92,6 @@ router.post(
 
     const rent = monthlyRent !== undefined ? monthlyRent : unit.monthlyRent;
     const disc = discount !== undefined ? discount : unit.discount;
-    const amountDue = Math.max(0, Number(rent) - Number(disc));
-    const month = currentMonthKey();
 
     const tenant = await prisma.$transaction(async (tx) => {
       const created = await tx.tenant.create({
@@ -107,6 +111,8 @@ router.post(
           discount: disc,
           leaseStart: new Date(leaseStart),
           leaseEnd: leaseEnd ? new Date(leaseEnd) : null,
+          rentFreeMonths: Math.max(0, Number(rentFreeMonths) || 0),
+          rentDueDay: rentDueDay != null && rentDueDay !== '' ? Number(rentDueDay) : null,
           status: 'ACTIVE',
         },
         include: tenantInclude,
@@ -117,14 +123,29 @@ router.post(
         data: { status: 'OCCUPIED' },
       });
 
-      await tx.monthlyPayment.create({
-        data: {
-          tenantId: created.id,
-          month,
-          amountDue,
-          amountPaid: 0,
-          status: 'UNPAID',
+      await materializeLeaseSchedule(tx, {
+        kind: 'TENANT',
+        lease: { ...created, payments: [] },
+        tenantId: created.id,
+        businessId: null,
+        unitId,
+      });
+
+      await logActivity({
+        tx,
+        entityType: 'TENANT',
+        entityId: created.id,
+        unitId,
+        action: 'LEASE_CREATED',
+        summary: `Lease created for ${created.fullName} commencing ${String(leaseStart).slice(0, 10)}`,
+        meta: {
+          leaseStart,
+          leaseEnd: leaseEnd || null,
+          registeredAt: created.createdAt,
+          monthlyRent: Number(rent),
+          rentFreeMonths: Number(created.rentFreeMonths || 0),
         },
+        actorId: req.user.id,
       });
 
       return created;
@@ -157,8 +178,19 @@ router.patch(
       discount,
       leaseStart,
       leaseEnd,
+      rentFreeMonths,
+      rentDueDay,
       status,
+      adjustmentReason,
     } = req.body || {};
+
+    const termsChanged =
+      monthlyRent !== undefined ||
+      discount !== undefined ||
+      leaseStart !== undefined ||
+      leaseEnd !== undefined ||
+      rentFreeMonths !== undefined ||
+      rentDueDay !== undefined;
 
     const tenant = await prisma.tenant.update({
       where: { id: existing.id },
@@ -181,10 +213,56 @@ router.patch(
         ...(discount !== undefined && { discount }),
         ...(leaseStart !== undefined && { leaseStart: new Date(leaseStart) }),
         ...(leaseEnd !== undefined && { leaseEnd: leaseEnd ? new Date(leaseEnd) : null }),
+        ...(rentFreeMonths !== undefined && {
+          rentFreeMonths: Math.max(0, Number(rentFreeMonths) || 0),
+        }),
+        ...(rentDueDay !== undefined && {
+          rentDueDay: rentDueDay != null && rentDueDay !== '' ? Number(rentDueDay) : null,
+        }),
         ...(status !== undefined && { status: String(status).toUpperCase() }),
       },
       include: tenantInclude,
     });
+
+    if (termsChanged) {
+      await prisma.$transaction(async (tx) => {
+        const full = await tx.tenant.findFirst({
+          where: { id: existing.id },
+          include: { payments: true },
+        });
+        await materializeLeaseSchedule(tx, {
+          kind: 'TENANT',
+          lease: full,
+          tenantId: existing.id,
+          businessId: null,
+          unitId: existing.unitId,
+        });
+        await logActivity({
+          tx,
+          entityType: 'TENANT',
+          entityId: existing.id,
+          unitId: existing.unitId,
+          action: 'LEASE_TERMS_UPDATED',
+          summary: `Lease terms updated for ${existing.fullName}`,
+          meta: {
+            previous: {
+              leaseStart: existing.leaseStart,
+              leaseEnd: existing.leaseEnd,
+              monthlyRent: Number(existing.monthlyRent),
+              rentFreeMonths: Number(existing.rentFreeMonths || 0),
+            },
+            next: {
+              leaseStart: tenant.leaseStart,
+              leaseEnd: tenant.leaseEnd,
+              monthlyRent: Number(tenant.monthlyRent),
+              rentFreeMonths: Number(tenant.rentFreeMonths || 0),
+            },
+            reason: adjustmentReason || null,
+          },
+          actorId: req.user.id,
+        });
+      });
+    }
 
     if (status && String(status).toUpperCase() === 'ENDED') {
       await prisma.unit.update({

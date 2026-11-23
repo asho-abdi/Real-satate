@@ -156,7 +156,7 @@ function StatCard({ label, value, hint, icon: Icon, accent = false, to, trend })
           <span className="inline-flex items-center gap-0.5 rounded-md bg-emerald-50 px-1.5 py-0.5 font-semibold text-emerald-700 dark:bg-emerald-500/12 dark:text-emerald-300">
             <MdTrendingUp className="h-3.5 w-3.5" />
             {trend}
-          </span>
+    </span>
         ) : null}
         <span className="truncate">{hint}</span>
       </div>
@@ -263,7 +263,7 @@ function RevenueChart({ series, colors }) {
           />
         </AreaChart>
       </ResponsiveContainer>
-    </div>
+            </div>
   );
 }
 
@@ -284,7 +284,7 @@ function OccupancyBreakdown({ parts, total, rate, colors }) {
           ? parts
               .filter((p) => p.value > 0)
               .map((p) => (
-                <span
+        <span
                   key={p.key}
                   title={`${p.label}: ${p.value}`}
                   className="h-full first:rounded-l-full last:rounded-r-full"
@@ -520,7 +520,7 @@ function ActivityFeed({ items }) {
             ) : null}
             <span className={cn('relative flex h-8 w-8 shrink-0 items-center justify-center rounded-full ring-4 ring-[var(--surface)]', it.tone)}>
               <Icon className="h-4 w-4" />
-            </span>
+        </span>
             <div className="min-w-0 flex-1 pt-0.5">
               <p className="text-[13px] leading-snug text-[var(--text)]">
                 <span className="font-semibold">{it.title}</span> <span className="text-[var(--text-secondary)]">{it.detail}</span>
@@ -573,6 +573,7 @@ export default function Dashboard() {
   const [payments, setPayments] = useState([]);
   const [units, setUnits] = useState([]);
   const [bookings, setBookings] = useState([]);
+  const [leaseOverview, setLeaseOverview] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
@@ -583,18 +584,20 @@ export default function Dashboard() {
       else setLoading(true);
       setError('');
       try {
-        const [dash, todayBoard, pays, unitRows, bookingRows] = await Promise.all([
+        const [dash, todayBoard, pays, unitRows, bookingRows, leases] = await Promise.all([
           rentalApi.getDashboard(),
           rentalApi.getTodayBoard(date),
           rentalApi.listPayments().catch(() => []),
           rentalApi.listUnits().catch(() => []),
           rentalApi.listBookings().catch(() => []),
+          rentalApi.getLeaseOverview().catch(() => null),
         ]);
         setStats(dash);
         setBoard(todayBoard);
         setPayments(Array.isArray(pays) ? pays : []);
         setUnits(Array.isArray(unitRows) ? unitRows : []);
         setBookings(Array.isArray(bookingRows) ? bookingRows : []);
+        setLeaseOverview(leases);
       } catch (err) {
         setError(err.message || 'Failed to load dashboard');
       } finally {
@@ -725,7 +728,7 @@ export default function Dashboard() {
           <p className="mt-1 text-[13.5px] text-[var(--text-muted)]">
             Here&apos;s how your portfolio is performing today.
           </p>
-        </div>
+      </div>
         <div className="flex flex-wrap items-center gap-2">
           <input
             type="date"
@@ -782,6 +785,40 @@ export default function Dashboard() {
           to="/outstanding"
         />
       </div>
+
+      {leaseOverview ? (
+        <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+          <StatCard
+            label="Active leases"
+            value={leaseOverview.activeLeases ?? 0}
+            hint={
+              leaseOverview.expiringSoon
+                ? `${leaseOverview.expiringSoon} expiring within 30 days`
+                : 'Residential + commercial'
+            }
+            icon={MdApartment}
+          />
+          <StatCard
+            label="Expected lease rent"
+            value={formatCurrency(leaseOverview.expectedRent ?? 0)}
+            hint={`Collected ${formatCurrency(leaseOverview.collected ?? 0)}`}
+            icon={MdPayments}
+          />
+          <StatCard
+            label="Lease outstanding"
+            value={formatCurrency(leaseOverview.outstanding ?? 0)}
+            hint={`${leaseOverview.overdueAccounts ?? 0} overdue account(s)`}
+            icon={MdWarningAmber}
+            to="/outstanding"
+          />
+          <StatCard
+            label="Advance / rent-free"
+            value={formatCurrency(leaseOverview.advanceReceived ?? 0)}
+            hint={`${leaseOverview.rentFreeNow ?? 0} currently rent-free`}
+            icon={MdEventAvailable}
+          />
+        </div>
+      ) : null}
 
       {/* Today strip */}
       <div className="grid grid-cols-2 overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface)] shadow-[var(--shadow)] lg:grid-cols-4">
@@ -846,7 +883,7 @@ export default function Dashboard() {
                 <li key={p.id} className="flex items-center gap-3 px-5 py-3">
                   <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--surface-2)] text-xs font-bold text-[var(--text-secondary)]">
                     {(p.name || '?').slice(0, 1).toUpperCase()}
-                  </span>
+                        </span>
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-[13.5px] font-medium text-[var(--text)]">{p.name || '—'}</p>
                     <p className="truncate text-[11.5px] text-[var(--text-muted)]">
@@ -858,9 +895,9 @@ export default function Dashboard() {
                     <Badge status={p.status} dot={false} className="mt-0.5">
                       {p.status}
                     </Badge>
-                  </div>
-                </li>
-              ))}
+                      </div>
+                    </li>
+                  ))}
             </ul>
           )}
         </Panel>
@@ -880,7 +917,7 @@ export default function Dashboard() {
                     <p className="truncate text-[11.5px] text-[var(--text-muted)]">
                       {b.roomNumber || '—'} · {formatDate(b.checkIn)} → {formatDate(b.checkOut)}
                     </p>
-                  </div>
+          </div>
                   <Badge status={b.status}>{b.status}</Badge>
                 </li>
               ))}

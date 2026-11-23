@@ -216,6 +216,9 @@ function mapTenant(t) {
     floor: t.unit?.floor?.name,
     monthlyRent: Number(t.monthlyRent),
     discount: Number(t.discount) || 0,
+    rentFreeMonths: Number(t.rentFreeMonths || 0),
+    rentDueDay: t.rentDueDay ?? null,
+    registeredAt: isoDate(t.registeredAt || t.createdAt),
     leaseStart: isoDate(t.leaseStart),
     leaseEnd: isoDate(t.leaseEnd),
     status: labelStatus(t.status),
@@ -247,6 +250,9 @@ function mapBusiness(b) {
     floor: b.unit?.floor?.name,
     monthlyRent: Number(b.monthlyRent),
     discount: Number(b.discount) || 0,
+    rentFreeMonths: Number(b.rentFreeMonths || 0),
+    rentDueDay: b.rentDueDay ?? null,
+    registeredAt: isoDate(b.registeredAt || b.createdAt),
     leaseStart: isoDate(b.leaseStart),
     leaseEnd: isoDate(b.leaseEnd),
     status: labelStatus(b.status),
@@ -601,6 +607,12 @@ export const rentalApi = {
       discount: Number(payload.discount) || 0,
       leaseStart: payload.leaseStart,
       ...(payload.leaseEnd ? { leaseEnd: payload.leaseEnd } : {}),
+      ...(payload.rentFreeMonths !== undefined && {
+        rentFreeMonths: Number(payload.rentFreeMonths) || 0,
+      }),
+      ...(payload.rentDueDay !== undefined && {
+        rentDueDay: payload.rentDueDay === '' || payload.rentDueDay == null ? null : Number(payload.rentDueDay),
+      }),
     }).then(mapTenant),
   terminateTenant: (id, { leaseEnd, notes } = {}) =>
     patch(`/tenants/${id}`, {
@@ -626,7 +638,40 @@ export const rentalApi = {
       ...(payload.discount !== undefined && { discount: Number(payload.discount) || 0 }),
       ...(payload.leaseStart !== undefined && { leaseStart: payload.leaseStart }),
       ...(payload.leaseEnd !== undefined && { leaseEnd: payload.leaseEnd || null }),
+      ...(payload.rentFreeMonths !== undefined && {
+        rentFreeMonths: Number(payload.rentFreeMonths) || 0,
+      }),
+      ...(payload.rentDueDay !== undefined && {
+        rentDueDay: payload.rentDueDay === '' || payload.rentDueDay == null ? null : Number(payload.rentDueDay),
+      }),
+      ...(payload.adjustmentReason !== undefined && {
+        adjustmentReason: payload.adjustmentReason,
+      }),
     }).then(mapTenant),
+
+  getLeaseSchedule: (params) => get('/leases/schedule', params),
+  getLeaseOverview: () => get('/leases/overview'),
+  recordAdvanceRent: (payload) =>
+    post('/leases/advance', {
+      tenantId: payload.tenantId || null,
+      businessId: payload.businessId || null,
+      monthsCovered: Number(payload.monthsCovered || payload.months || 1),
+      amount: payload.amount != null && payload.amount !== '' ? Number(payload.amount) : undefined,
+      method: METHOD_VALUES[payload.method] || payload.method || 'CASH',
+      paymentDate: payload.paymentDate || null,
+      reference: payload.reference || null,
+      receivedByName: payload.receivedByName || null,
+      agentName: payload.agentName || null,
+      officeMpesaNumber: payload.officeMpesaNumber || null,
+      notes: payload.notes || null,
+    }),
+  updateRentFree: (payload) =>
+    post('/leases/rent-free', {
+      tenantId: payload.tenantId || null,
+      businessId: payload.businessId || null,
+      rentFreeMonths: Number(payload.rentFreeMonths) || 0,
+      reason: payload.reason,
+    }),
 
   listBusinesses: (params) =>
     get('/businesses', params).then((rows) => (rows || []).map(mapBusiness)),
@@ -650,6 +695,12 @@ export const rentalApi = {
       securityDeposit: Number(payload.securityDeposit) || 0,
       paymentFrequency: payload.paymentFrequency || 'MONTHLY',
       gracePeriodDays: Number(payload.gracePeriodDays) || 0,
+      ...(payload.rentFreeMonths !== undefined && {
+        rentFreeMonths: Number(payload.rentFreeMonths) || 0,
+      }),
+      ...(payload.rentDueDay !== undefined && {
+        rentDueDay: payload.rentDueDay === '' || payload.rentDueDay == null ? null : Number(payload.rentDueDay),
+      }),
       notes: payload.notes || null,
       leaseStart: payload.leaseStart,
       leaseEnd: payload.leaseEnd || null,

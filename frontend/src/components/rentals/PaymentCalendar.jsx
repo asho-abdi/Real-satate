@@ -15,7 +15,7 @@
  *   onPaymentSaved – called after a successful create/update so the parent can reload
  */
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { MdAdd, MdCheck, MdCreditCard, MdVisibility } from 'react-icons/md';
 import { AnimatePresence, motion } from 'framer-motion';
 import { MdClose } from 'react-icons/md';
@@ -84,6 +84,10 @@ const STATUS_STYLE = {
     badge: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200',
     dot: 'bg-emerald-500',
   },
+  ADVANCE_PAID: {
+    badge: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200',
+    dot: 'bg-emerald-500',
+  },
   PARTIAL: {
     badge: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-200',
     dot: 'bg-amber-400',
@@ -96,11 +100,25 @@ const STATUS_STYLE = {
     badge: 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-200',
     dot: 'bg-orange-500',
   },
+  UNPAID: {
+    badge: 'bg-rose-50 text-rose-700 dark:bg-rose-900/30 dark:text-rose-200',
+    dot: 'bg-rose-400',
+  },
+  RENT_FREE: {
+    badge: 'bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-200',
+    dot: 'bg-sky-500',
+  },
   UPCOMING: {
     badge: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300',
     dot: 'bg-slate-400',
   },
 };
+
+function statusLabel(status) {
+  if (status === 'RENT_FREE') return 'Rent-Free';
+  if (status === 'ADVANCE_PAID') return 'Advance Paid';
+  return status;
+}
 
 function StatusBadge({ status }) {
   const s = STATUS_STYLE[status] || STATUS_STYLE.UPCOMING;
@@ -112,7 +130,7 @@ function StatusBadge({ status }) {
       )}
     >
       <span className={cn('h-1.5 w-1.5 rounded-full', s.dot)} />
-      {status}
+      {statusLabel(status)}
     </span>
   );
 }
@@ -191,7 +209,9 @@ export default function PaymentCalendar({
 }) {
   const [payModal, setPayModal] = useState(null);   // { row } – pay/edit
   const [viewModal, setViewModal] = useState(null); // { row } – view receipt
+  const [advanceModal, setAdvanceModal] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [apiSchedule, setApiSchedule] = useState(null);
   const [payForm, setPayForm] = useState({
     amountPaid: '',
     method: 'CASH',
@@ -202,9 +222,62 @@ export default function PaymentCalendar({
     officeMpesaNumber: '',
     notes: '',
   });
+  const [advanceForm, setAdvanceForm] = useState({
+    monthsCovered: '6',
+    amount: '',
+    method: 'CASH',
+    paymentDate: new Date().toISOString().slice(0, 10),
+    reference: '',
+    receivedByName: '',
+    agentName: '',
+    officeMpesaNumber: '',
+    notes: '',
+  });
+
+  const reloadSchedule = async () => {
+    if (!tenantId && !businessId) return;
+    try {
+      const data = await rentalApi.getLeaseSchedule({
+        ...(tenantId ? { tenantId } : {}),
+        ...(businessId ? { businessId } : {}),
+      });
+      setApiSchedule(data);
+    } catch {
+      /* fall back to local schedule */
+    }
+  };
+
+  useEffect(() => {
+    reloadSchedule();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tenantId, businessId]);
 
   // ── build schedule ──────────────────────────────────────────────
   const schedule = useMemo(() => {
+    if (apiSchedule?.periods?.length) {
+      return apiSchedule.periods.map((p, i) => {
+        const record = payments.find((row) => {
+          if (row.month !== p.month) return false;
+          if (tenantId) return row.tenantId === tenantId;
+          if (businessId) return row.businessId === businessId;
+          return true;
+        });
+        return {
+          idx: i + 1,
+          key: p.month,
+          label: monthLabel(p.month),
+          due: p.dueDate ? new Date(p.dueDate) : dueDate(leaseStart || p.month, p.month),
+          monthlyDue: Number(p.amountDue) || 0,
+          paid: Number(p.amountPaid) || 0,
+          outstanding: Number(p.outstanding) || 0,
+          status: p.status,
+          isRentFree: Boolean(p.isRentFree),
+          isAdvance: Boolean(p.isAdvance),
+          record: record || (p.paymentId ? { id: p.paymentId, paymentDate: p.paymentDate, method: p.method } : null),
+        };
+      });
+    }
+
     const startDate = leaseStart ? new Date(leaseStart) : (() => {
       const d = new Date();
       d.setMonth(d.getMonth() - 11);
@@ -235,7 +308,10 @@ export default function PaymentCalendar({
       const paid = Number(record?.amountPaid) || 0;
       const monthlyDue = Number(record?.amountDue) || Number(amountDue) || 0;
       const outstanding = Math.max(0, monthlyDue - paid);
-      const status = calcStatus(monthlyDue, paid, due);
+      const status =
+        record?.status === 'RENT_FREE' || record?.isRentFree
+          ? 'RENT_FREE'
+          : calcStatus(monthlyDue, paid, due);
 
       rows.push({
         idx: idx++,
@@ -246,26 +322,44 @@ export default function PaymentCalendar({
         paid,
         outstanding,
         status,
+        isRentFree: status === 'RENT_FREE',
         record: record || null,
       });
       cursor = addMonths(cursor, 1);
     }
     return rows;
-  }, [payments, tenantId, businessId, amountDue, leaseStart, leaseEnd]);
+  }, [apiSchedule, payments, tenantId, businessId, amountDue, leaseStart, leaseEnd]);
 
-  // Dashboard table: overdue months only (upcoming months stay hidden)
+  // Overdue only — never treat rent-free or prepaid as overdue
   const overdueRows = useMemo(
-    () => schedule.filter((r) => r.status === 'OVERDUE'),
+    () =>
+      schedule.filter(
+        (r) =>
+          (r.status === 'OVERDUE' || (r.status === 'PARTIAL' && r.outstanding > 0 && new Date(r.due) < new Date())) &&
+          !r.isRentFree &&
+          r.status !== 'RENT_FREE',
+      ),
     [schedule],
   );
 
   // ── summary stats ───────────────────────────────────────────────
   const summary = useMemo(() => {
     const totalPaid = schedule.reduce((s, r) => s + r.paid, 0);
-    const totalOutstanding = overdueRows.reduce((s, r) => s + r.outstanding, 0);
-    const next = schedule.find((r) => r.status === 'DUE' || r.status === 'UPCOMING');
-    return { totalPaid, totalOutstanding, next };
-  }, [schedule, overdueRows]);
+    const totalOutstanding =
+      apiSchedule?.summary?.outstanding != null
+        ? Number(apiSchedule.summary.outstanding)
+        : overdueRows.reduce((s, r) => s + r.outstanding, 0);
+    const next = schedule.find((r) =>
+      ['DUE', 'UNPAID', 'OVERDUE', 'PARTIAL'].includes(r.status),
+    );
+    return {
+      totalPaid,
+      totalOutstanding,
+      next,
+      paidThrough: apiSchedule?.summary?.paidThrough || null,
+      rentFreeCount: apiSchedule?.summary?.rentFreeCount || schedule.filter((r) => r.isRentFree).length,
+    };
+  }, [schedule, overdueRows, apiSchedule]);
 
   // ── open pay modal ───────────────────────────────────────────────
   const openPay = (row) => {
@@ -325,9 +419,45 @@ export default function PaymentCalendar({
       }
       toast.success('Payment recorded');
       setPayModal(null);
+      await reloadSchedule();
       if (onPaymentSaved) onPaymentSaved();
     } catch (err) {
       toast.error(err.message || 'Could not save payment');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const saveAdvance = async () => {
+    const months =
+      advanceForm.monthsCovered === 'custom'
+        ? Number(advanceForm.customMonths) || 0
+        : Number(advanceForm.monthsCovered) || 0;
+    if (months < 1) {
+      toast.error('Select how many months to cover');
+      return;
+    }
+    setSaving(true);
+    try {
+      await rentalApi.recordAdvanceRent({
+        tenantId: tenantId || null,
+        businessId: businessId || null,
+        monthsCovered: months,
+        amount: advanceForm.amount !== '' ? Number(advanceForm.amount) : undefined,
+        method: advanceForm.method,
+        paymentDate: advanceForm.paymentDate,
+        reference: advanceForm.reference || null,
+        receivedByName: advanceForm.receivedByName || null,
+        agentName: advanceForm.agentName || null,
+        officeMpesaNumber: advanceForm.officeMpesaNumber || null,
+        notes: advanceForm.notes || null,
+      });
+      toast.success(`Advance rent recorded for ${months} month(s)`);
+      setAdvanceModal(false);
+      await reloadSchedule();
+      if (onPaymentSaved) onPaymentSaved();
+    } catch (err) {
+      toast.error(err.message || 'Could not record advance rent');
     } finally {
       setSaving(false);
     }
@@ -350,11 +480,13 @@ export default function PaymentCalendar({
           label="Paid This Lease"
           value={formatCurrency(summary.totalPaid)}
           accent="text-emerald-600 dark:text-emerald-400"
+          sub={summary.paidThrough ? `Paid through ${monthLabel(summary.paidThrough)}` : undefined}
         />
         <StatCard
           label="Outstanding"
           value={formatCurrency(summary.totalOutstanding)}
           accent={summary.totalOutstanding > 0 ? 'text-rose-600 dark:text-rose-400' : undefined}
+          sub={summary.rentFreeCount ? `${summary.rentFreeCount} rent-free month(s)` : undefined}
         />
         <StatCard
           label="Next Due"
@@ -364,23 +496,40 @@ export default function PaymentCalendar({
       </div>
 
       {/* table header + record button */}
-      <div className="mb-3 flex items-center justify-between gap-3">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <h4 className="text-sm font-semibold text-[var(--text)]">
           Overdue Payments ({overdueRows.length}
           {overdueRows.length === 1 ? ' month' : ' months'})
         </h4>
-        <button
-          type="button"
-          onClick={() => {
-            const firstOverdue = overdueRows[0];
-            if (firstOverdue) openPay(firstOverdue);
-            else toast('No overdue months');
-          }}
-          className="flex items-center gap-1.5 rounded-xl bg-brand-700 px-3 py-2 text-xs font-semibold text-white transition hover:bg-brand-800 dark:bg-brand-400 dark:text-ink-950 dark:hover:bg-brand-300"
-        >
-          <MdAdd className="h-4 w-4" />
-          Record Payment
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              setAdvanceForm((f) => ({
+                ...f,
+                monthsCovered: '6',
+                amount: '',
+                paymentDate: new Date().toISOString().slice(0, 10),
+              }));
+              setAdvanceModal(true);
+            }}
+            className="flex items-center gap-1.5 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-xs font-semibold text-[var(--text)] transition hover:bg-[var(--surface-2)]"
+          >
+            Advance rent
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              const firstOverdue = overdueRows[0];
+              if (firstOverdue) openPay(firstOverdue);
+              else toast('No overdue months');
+            }}
+            className="flex items-center gap-1.5 rounded-xl bg-brand-700 px-3 py-2 text-xs font-semibold text-white transition hover:bg-brand-800 dark:bg-brand-400 dark:text-ink-950 dark:hover:bg-brand-300"
+          >
+            <MdAdd className="h-4 w-4" />
+            Record Payment
+          </button>
+        </div>
       </div>
 
       {overdueRows.length === 0 ? (
@@ -446,14 +595,18 @@ export default function PaymentCalendar({
                       {row.record?.paymentDate ? formatDate(row.record.paymentDate) : '—'}
                     </td>
                     <td className="px-4 py-3">
-                      <button
-                        type="button"
-                        onClick={() => openPay(row)}
-                        className="flex items-center gap-1 rounded-lg bg-brand-700 px-2.5 py-1.5 text-xs font-semibold text-white transition hover:bg-brand-800 dark:bg-brand-400 dark:text-ink-950"
-                      >
-                        <MdCreditCard className="h-3.5 w-3.5" />
-                        Pay Now
-                      </button>
+                      {row.isRentFree || row.status === 'RENT_FREE' || row.outstanding <= 0 ? (
+                        <span className="text-xs text-[var(--text-muted)]">—</span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => openPay(row)}
+                          className="flex items-center gap-1 rounded-lg bg-brand-700 px-2.5 py-1.5 text-xs font-semibold text-white transition hover:bg-brand-800 dark:bg-brand-400 dark:text-ink-950"
+                        >
+                          <MdCreditCard className="h-3.5 w-3.5" />
+                          Pay Now
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -713,6 +866,89 @@ export default function PaymentCalendar({
             </div>
           </div>
         ) : null}
+      </InlineModal>
+
+      <InlineModal
+        open={advanceModal}
+        onClose={() => !saving && setAdvanceModal(false)}
+        title="Record Advance Rent"
+        footer={
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setAdvanceModal(false)}
+              disabled={saving}
+              className="h-10 rounded-xl border border-[var(--border)] px-4 text-sm font-medium text-[var(--text-muted)] transition hover:bg-[var(--surface-2)] disabled:opacity-60"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={saveAdvance}
+              disabled={saving}
+              className="flex h-10 items-center gap-2 rounded-xl bg-brand-700 px-5 text-sm font-semibold text-white transition hover:bg-brand-800 disabled:opacity-60 dark:bg-brand-400 dark:text-ink-950"
+            >
+              {saving ? 'Saving…' : 'Record Advance'}
+            </button>
+          </div>
+        }
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-[var(--text-muted)]">
+            Records one cash receipt and allocates it across the next unpaid rental periods.
+            Rent-free months are skipped. Amount defaults to months × rent if left blank.
+          </p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Select
+              label="Advance period"
+              value={advanceForm.monthsCovered}
+              onChange={(e) => setAdvanceForm({ ...advanceForm, monthsCovered: e.target.value })}
+            >
+              <option value="1">1 Month</option>
+              <option value="3">3 Months</option>
+              <option value="6">6 Months</option>
+              <option value="12">12 Months</option>
+              <option value="custom">Custom</option>
+            </Select>
+            {advanceForm.monthsCovered === 'custom' ? (
+              <Input
+                label="Custom months"
+                type="number"
+                min="1"
+                value={advanceForm.customMonths || ''}
+                onChange={(e) =>
+                  setAdvanceForm({
+                    ...advanceForm,
+                    customMonths: e.target.value,
+                    monthsCovered: e.target.value || 'custom',
+                  })
+                }
+              />
+            ) : (
+              <Input
+                label="Amount (optional)"
+                type="number"
+                min="0"
+                step="0.01"
+                value={advanceForm.amount}
+                onChange={(e) => setAdvanceForm({ ...advanceForm, amount: e.target.value })}
+                hint={`Default ${formatCurrency((Number(amountDue) || 0) * Number(advanceForm.monthsCovered || 0))}`}
+              />
+            )}
+            <Input
+              label="Payment Date"
+              type="date"
+              value={advanceForm.paymentDate}
+              onChange={(e) => setAdvanceForm({ ...advanceForm, paymentDate: e.target.value })}
+            />
+            <div className="sm:col-span-2">
+              <PaymentMethodFields
+                value={advanceForm}
+                onChange={(next) => setAdvanceForm({ ...advanceForm, ...next })}
+              />
+            </div>
+          </div>
+        </div>
       </InlineModal>
     </div>
   );
