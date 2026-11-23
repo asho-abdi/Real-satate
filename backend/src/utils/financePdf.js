@@ -338,10 +338,28 @@ function streamFinanceA4Pdf(res, docMeta, company = {}) {
 
   doc.font('Helvetica-Bold').fontSize(10).fillColor(A4.ink).text('Notes', M, y);
   y += 12;
-  doc.font('Helvetica').fontSize(9).fillColor(A4.muted).text('Thank you!', M, y);
-  y += 14;
+  const guestNote = [
+    'Dear Guest,',
+    '',
+    'Thank you for choosing to stay with us at HODO SOUK. Please find attached the invoice for your recent stay with details of the charges. If you have any questions or require further clarification, feel free to contact us. We will be happy to assist you.',
+    '',
+    'We appreciate your business and hope to welcome you again soon.',
+    '',
+    'Kind regards,',
+    'HODO SOUK SYRAD HOTEL & SUITES',
+    'Email: infohodosouk@gmail.com',
+  ].join('\n');
+  doc.font('Helvetica').fontSize(8.5).fillColor(A4.muted).text(guestNote, M, y, {
+    width: CW,
+    lineGap: 1.5,
+  });
+  y = doc.y + 10;
   if (company.officeMpesaNumber) {
-    doc.text(`Telephone / M-PESA: ${company.officeMpesaNumber}`, M, y);
+    doc.font('Helvetica').fontSize(9).fillColor(A4.ink).text(
+      `Telephone / M-PESA: ${company.officeMpesaNumber}`,
+      M,
+      y,
+    );
     y += 12;
   }
   if (balance > 0 && company.officeMpesaNumber) {
@@ -362,6 +380,7 @@ function streamFinanceA4Pdf(res, docMeta, company = {}) {
         (line) =>
           line &&
           !/^thank you/i.test(line) &&
+          !/^dear /i.test(line) &&
           !/^nights stayed/i.test(line) &&
           !/^rate per night/i.test(line) &&
           !/^no security deposit/i.test(line) &&
