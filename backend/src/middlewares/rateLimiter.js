@@ -1,10 +1,14 @@
 import rateLimit from 'express-rate-limit';
 import env from '../config/env.js';
 
-/** Skip aggressive limits in local development (Vite HMR + Strict Mode burn the budget fast). */
+/**
+ * General API budget. A single admin screen loads many reads (lists, schedules,
+ * unit profiles), so the production floor stays high enough for normal work.
+ * Login and password reset keep their own tighter limiters.
+ */
 export const apiRateLimiter = rateLimit({
   windowMs: env.RATE_LIMIT_WINDOW_MS,
-  max: env.isProduction ? env.RATE_LIMIT_MAX : Math.max(env.RATE_LIMIT_MAX, 5000),
+  max: env.isProduction ? Math.max(env.RATE_LIMIT_MAX, 3000) : Math.max(env.RATE_LIMIT_MAX, 5000),
   standardHeaders: true,
   legacyHeaders: false,
   skip: () => !env.isProduction && env.RATE_LIMIT_MAX <= 0,

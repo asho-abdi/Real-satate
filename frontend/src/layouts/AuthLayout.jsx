@@ -15,22 +15,18 @@ export default function AuthLayout() {
     <div className="flex min-h-screen bg-[var(--bg)]">
       {/* Brand panel */}
       <aside className="relative hidden w-[46%] max-w-[640px] flex-col justify-between overflow-hidden bg-[var(--navy)] px-12 py-12 text-white lg:flex xl:px-16">
-        {/* Quiet architectural line motif echoing the logo's tower */}
-        <svg
+        {/* City skyline photo, faded into the navy so text stays readable */}
+        <img
+          src="/brand/login-cityscape.webp"
+          alt=""
           aria-hidden="true"
-          className="pointer-events-none absolute -right-24 bottom-0 h-[78%] w-auto text-white/[0.05]"
-          viewBox="0 0 400 560"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-        >
-          <path d="M120 560V140l160-110v530" />
-          <path d="M280 30l100 70v460" />
-          <path d="M160 160v400M200 135v425M240 110v450" />
-          {Array.from({ length: 10 }).map((_, i) => (
-            <path key={i} d={`M300 ${130 + i * 42}h60`} />
-          ))}
-        </svg>
+          draggable="false"
+          className="pointer-events-none absolute inset-0 h-full w-full select-none object-cover object-center opacity-[0.22] mix-blend-luminosity"
+        />
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 bg-gradient-to-b from-[var(--navy)]/70 via-[var(--navy)]/35 to-[var(--navy-dark)]/90"
+        />
         <div className="pointer-events-none absolute inset-x-0 bottom-0 h-1 bg-[var(--gold)]" aria-hidden="true" />
 
         <div className="relative">
