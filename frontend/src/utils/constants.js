@@ -180,8 +180,9 @@ export const NAV_SECTIONS = [
     items: [
       { label: 'Buildings', to: '/buildings', icon: 'MdBusiness' },
       { label: 'Availability for SIHAM', to: '/availability', icon: 'MdDoorFront' },
-      // Siham has apartments; Hodo BnB guest bookings stay at /bookings (not in sidebar).
       { label: 'Apartments for SIHAM', to: '/apartments', icon: 'MdApartment' },
+      // Hodo Souk BnB / guest stays
+      { label: 'Guest Bookings (Hodo)', to: '/bookings', icon: 'MdHotel' },
     ],
   },
   {

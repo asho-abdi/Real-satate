@@ -16,7 +16,7 @@ export const STAFF_PAGES = [
     label: 'Commercial Spaces',
     description: 'Shop and office rentals and sales',
   },
-  { key: 'bookings', label: 'Guest Bookings', description: 'Guest stays and bookings' },
+  { key: 'bookings', label: 'Guest Bookings (Hodo)', description: 'Hodo Souk guest stays and BnB bookings' },
   { key: 'expenses', label: 'Money Movements', description: 'Expenses and cash movements' },
   { key: 'payments', label: 'Payments', description: 'Collect and record payments' },
   { key: 'outstanding', label: 'Outstanding', description: 'Unpaid balances due' },
