@@ -29,6 +29,7 @@ import {
   UsageChoiceCards,
 } from '../../components/units/FlatFormLayout.jsx';
 import api from '../../services/api.js';
+import { findSihamBuilding } from '../../utils/buildings.js';
 
 function RoomThumb({ url }) {
   const [src, setSrc] = useState('');
@@ -351,6 +352,7 @@ export default function Rooms() {
   const [floorId, setFloorId] = useState('');
   const [status, setStatus] = useState('');
   const [usage, setUsage] = useState('');
+  const [sihamLocked, setSihamLocked] = useState(false);
   const [editRoom, setEditRoom] = useState(null);
   const [viewPhotosRoom, setViewPhotosRoom] = useState(null);
   const [roomForm, setRoomForm] = useState({
@@ -384,6 +386,15 @@ export default function Rooms() {
       setBuildings(b);
       setFloors(f);
       setRooms(u);
+
+      const siham = findSihamBuilding(b);
+      if (siham?.id) {
+        setSihamLocked(true);
+        setBuildingId(siham.id);
+        setFloorId('');
+      } else {
+        setSihamLocked(false);
+      }
     } catch (err) {
       toast.error(err.message || 'Failed to load rooms');
     } finally {
@@ -531,8 +542,12 @@ export default function Rooms() {
   return (
     <div>
       <PageHeader
-        title="Availability"
-        subtitle="Overview of unit availability and statuses across all buildings and floors."
+        title={sihamLocked ? 'Availability for SIHAM' : 'Availability'}
+        subtitle={
+          sihamLocked
+            ? 'Unit availability and statuses for the SIHAM building only.'
+            : 'Overview of unit availability and statuses across all buildings and floors.'
+        }
       />
 
       {/* stat cards */}
@@ -591,13 +606,18 @@ export default function Rooms() {
           <Select
             label="Building"
             value={buildingId}
+            disabled={sihamLocked}
             onChange={(e) => {
+              if (sihamLocked) return;
               setBuildingId(e.target.value);
               setFloorId('');
             }}
           >
-            <option value="">All Buildings</option>
-            {buildings.map((b) => (
+            {sihamLocked ? null : <option value="">All Buildings</option>}
+            {(sihamLocked
+              ? buildings.filter((b) => b.id === buildingId || findSihamBuilding([b]))
+              : buildings
+            ).map((b) => (
               <option key={b.id} value={b.id}>
                 {b.name}
               </option>

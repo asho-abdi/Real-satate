@@ -16,6 +16,7 @@ import StatementModal from '../../components/finance/StatementModal.jsx';
 import { formatCurrency, formatDate, cn } from '../../utils/format.js';
 import { rentalApi, resolveIdentityAttachment } from '../../services/rentalApi.js';
 import IdentityDocumentField from '../../components/ui/IdentityDocumentField.jsx';
+import { findSihamBuilding } from '../../utils/buildings.js';
 
 const emptyForm = {
   fullName: '',
@@ -32,16 +33,6 @@ const emptyForm = {
 };
 
 const today = () => new Date().toISOString().slice(0, 10);
-
-/** Prefer SIHAM when present — apartments belong to that building. */
-function findSihamBuilding(buildings = []) {
-  return (
-    buildings.find((b) => {
-      const hay = `${b.name || ''} ${b.code || ''}`.toLowerCase();
-      return hay.includes('siham');
-    }) || null
-  );
-}
 
 export default function Apartments() {
   const { globalSearch = '' } = useOutletContext() || {};
