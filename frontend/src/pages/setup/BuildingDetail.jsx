@@ -31,6 +31,10 @@ import {
   LeasePricingFields,
   UsageChoiceCards,
 } from '../../components/units/FlatFormLayout.jsx';
+import {
+  BUILDING_PROPERTY_TYPES,
+  buildingHasFeature,
+} from '../../utils/buildingFeatures.js';
 
 const SHOP_STATUS_ORDER = ['Available', 'Rented', 'Sold', 'Reserved', 'Maintenance'];
 
@@ -144,6 +148,11 @@ export default function BuildingDetail() {
   useEffect(() => {
     load();
   }, [load]);
+
+  const allowGuestUnits = useMemo(
+    () => buildingHasFeature(building, BUILDING_PROPERTY_TYPES.GUEST_BOOKINGS),
+    [building],
+  );
 
   useEffect(() => {
     if (floorFromUrl && floors.some((f) => f.id === floorFromUrl)) {
@@ -811,6 +820,7 @@ export default function BuildingDetail() {
             <UsageChoiceCards
               value={roomForm.usage}
               shopOnly={roomForm.unitType === 'Commercial Shop'}
+              allowGuest={allowGuestUnits}
               onChange={(usage) =>
                 setRoomForm({
                   ...roomForm,
@@ -825,7 +835,12 @@ export default function BuildingDetail() {
                 })
               }
             />
-            {editingRoomId ? (
+            {!allowGuestUnits ? (
+              <p className="mt-2 text-xs text-[var(--text-muted)]">
+                Guest / Airbnb units are disabled for this building. Enable Guest Bookings under
+                Buildings if this property has short-stay rooms.
+              </p>
+            ) : editingRoomId ? (
               <p className="mt-2 text-xs text-[var(--text-muted)]">
                 You can correct usage here (e.g. Residential → Guest / Airbnb). Save to apply.
               </p>

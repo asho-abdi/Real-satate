@@ -61,6 +61,7 @@ export default function AppRoutes() {
             <Route path="/units/:id" element={<UnitProfile />} />
 
             <Route path="/bookings/new" element={<Navigate to="/bookings?tab=new" replace />} />
+            <Route path="/bookings/calendar" element={<Navigate to="/bookings" replace />} />
             <Route path="/bookings" element={<Bookings />} />
 
             <Route path="/apartments" element={<Apartments />} />

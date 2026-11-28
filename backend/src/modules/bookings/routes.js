@@ -22,6 +22,17 @@ import {
 } from '../../utils/paymentMethod.js';
 import { ensurePaymentReceipt } from '../../services/financeReceipt.service.js';
 import { createDeposit, settleDeposit } from '../../services/deposit.service.js';
+import {
+  findOverlappingBooking,
+  assertUnitAvailableForStay,
+  getBookingCalendar,
+  rescheduleBooking,
+  startOfDay as startOfCalendarDay,
+} from '../../services/bookingAvailability.service.js';
+import { logActivity } from '../../services/activity.service.js';
+import { assertUnitAllowsGuestBooking } from '../../services/buildingFeatures.service.js';
+import { BUILDING_PROPERTY_TYPES } from '../../constants/buildingFeatures.js';
+import { buildingHasPropertyType } from '../../constants/buildingFeatures.js';
 
 const router = Router();
 router.use(authenticate);
@@ -219,9 +230,7 @@ function derivePaymentStatus(amountPaid, totalAmount) {
 }
 
 function startOfDay(d) {
-  const x = new Date(d);
-  x.setHours(0, 0, 0, 0);
-  return x;
+  return startOfCalendarDay(d);
 }
 
 async function nextBookingCode(tx = prisma) {
@@ -235,21 +244,38 @@ async function nextBookingCode(tx = prisma) {
 }
 
 async function hasOverlappingBooking(tx, unitId, checkIn, checkOut, excludeId = null) {
-  const start = startOfDay(checkIn);
-  const end = startOfDay(checkOut);
-  const overlapping = await tx.booking.findFirst({
-    where: {
-      unitId,
-      deletedAt: null,
-      status: { in: ['CONFIRMED', 'CHECKED_IN'] },
-      ...(excludeId ? { id: { not: excludeId } } : {}),
-      checkIn: { lt: end },
-      checkOut: { gt: start },
-    },
-    select: { id: true, code: true },
-  });
-  return overlapping;
+  return findOverlappingBooking(tx, unitId, checkIn, checkOut, excludeId);
 }
+
+router.get(
+  '/calendar',
+  authorize('bookings:read'),
+  asyncHandler(async (req, res) => {
+    const data = await getBookingCalendar(req.user, req.query || {});
+    return success(res, data);
+  }),
+);
+
+router.get(
+  '/availability',
+  authorize('bookings:read'),
+  asyncHandler(async (req, res) => {
+    const { unitId, checkIn, checkOut, excludeId } = req.query || {};
+    if (!unitId || !checkIn || !checkOut) {
+      throw new AppError('unitId, checkIn, and checkOut are required', 400);
+    }
+    await assertUnitBuildingAccess(req.user, unitId, req.user.buildingIds);
+    try {
+      await assertUnitAvailableForStay(prisma, unitId, checkIn, checkOut, excludeId || null);
+      return success(res, { available: true });
+    } catch (err) {
+      if (err instanceof AppError && err.statusCode === 409) {
+        return success(res, { available: false, reason: err.message });
+      }
+      throw err;
+    }
+  }),
+);
 
 router.get(
   '/',
@@ -333,12 +359,10 @@ router.post(
     });
     if (!unit) throw new AppError('Unit not found', 404);
     await assertUnitBuildingAccess(req.user, unit.id, req.user.buildingIds);
-    if (unit.usage !== 'GUEST') {
-      throw new AppError('Bookings are only allowed on guest units', 400);
-    }
-    if (unit.status !== 'AVAILABLE') {
-      throw new AppError(`Unit is ${unit.status.toLowerCase()} and cannot be booked`, 400);
-    }
+    await assertUnitAllowsGuestBooking(unit.id);
+    // Occupancy is date-range based (calendar). OCCUPIED/RESERVED rooms may still
+    // accept future stays that do not overlap; MAINTENANCE/SOLD are rejected inside
+    // assertUnitAvailableForStay (also re-checked in the create transaction).
 
     const discVal =
       discountValue !== undefined && discountValue !== null && discountValue !== ''
@@ -393,13 +417,7 @@ router.post(
     const paymentStatus = derivePaymentStatus(paid, totals.totalAmount);
 
     const booking = await prisma.$transaction(async (tx) => {
-      const overlap = await hasOverlappingBooking(tx, unitId, checkIn, checkOut);
-      if (overlap) {
-        throw new AppError(
-          `Unit already has an active booking (${overlap.code}) for these dates`,
-          409,
-        );
-      }
+      await assertUnitAvailableForStay(tx, unitId, checkIn, checkOut);
 
       const code = await nextBookingCode(tx);
 
@@ -1100,6 +1118,33 @@ router.post(
 );
 
 router.post(
+  '/:id/reschedule',
+  authorize('bookings:update'),
+  asyncHandler(async (req, res) => {
+    const booking = await prisma.booking.findFirst({
+      where: { id: req.params.id, deletedAt: null },
+    });
+    if (!booking) throw new AppError('Booking not found', 404);
+    await assertUnitBuildingAccess(req.user, booking.unitId, req.user.buildingIds);
+
+    const { unitId, checkIn, checkOut } = req.body || {};
+    if (unitId) {
+      await assertUnitBuildingAccess(req.user, unitId, req.user.buildingIds);
+      await assertUnitAllowsGuestBooking(unitId);
+    } else {
+      await assertUnitAllowsGuestBooking(booking.unitId);
+    }
+
+    const updated = await rescheduleBooking(
+      booking.id,
+      { unitId, checkIn, checkOut },
+      { userId: req.user.id, bookingInclude },
+    );
+    return success(res, serializeBooking(updated));
+  }),
+);
+
+router.post(
   '/:id/cancel',
   authorize('bookings:update'),
   asyncHandler(async (req, res) => {
@@ -1134,6 +1179,16 @@ router.post(
           data: { status: 'AVAILABLE' },
         });
       }
+
+      await logActivity({
+        entityType: 'BOOKING',
+        entityId: booking.id,
+        unitId: booking.unitId,
+        action: 'BOOKING_CANCELLED',
+        summary: `Cancelled booking ${booking.code}`,
+        actorId: req.user.id,
+        tx,
+      });
 
       return b;
     });

@@ -12,6 +12,11 @@ import { BOOKING_PERIODS, DISCOUNT_TYPES } from '../../utils/constants.js';
 import { calcDailyRent, calcPeriodBookingTotal } from '../../utils/rentCalc.js';
 import { formatCurrency } from '../../utils/format.js';
 import { rentalApi, resolveIdentityAttachment } from '../../services/rentalApi.js';
+import { useBuildingWorkspaceOptional } from '../../context/BuildingWorkspaceContext.jsx';
+import {
+  BUILDING_PROPERTY_TYPES,
+  buildingHasFeature,
+} from '../../utils/buildingFeatures.js';
 
 const HOUR_OPTIONS = Array.from({ length: 15 }, (_, i) => {
   const h = 10 + i;
@@ -49,6 +54,7 @@ const fieldClass =
 
 /** Guest booking form — sectioned stay / guest / pricing layout. */
 export default function NewBooking({ onSuccess } = {}) {
+  const workspace = useBuildingWorkspaceOptional();
   const [buildings, setBuildings] = useState([]);
   const [floors, setFloors] = useState([]);
   const [guestRooms, setGuestRooms] = useState([]);
@@ -105,8 +111,23 @@ export default function NewBooking({ onSuccess } = {}) {
 
   const buildingsWithGuests = useMemo(() => {
     const ids = new Set(guestRooms.map((r) => r.buildingId));
-    return buildings.filter((b) => ids.has(b.id));
+    return buildings.filter(
+      (b) =>
+        ids.has(b.id) &&
+        buildingHasFeature(b, BUILDING_PROPERTY_TYPES.GUEST_BOOKINGS),
+    );
   }, [buildings, guestRooms]);
+
+  useEffect(() => {
+    if (!workspace?.selectedBuildingId) return;
+    if (
+      buildingHasFeature(workspace.selectedBuilding, BUILDING_PROPERTY_TYPES.GUEST_BOOKINGS)
+    ) {
+      setBuildingId(workspace.selectedBuildingId);
+      setFloorId('');
+      setRoomId('');
+    }
+  }, [workspace?.selectedBuildingId, workspace?.selectedBuilding]);
 
   const guestRoomsInBuilding = useMemo(() => {
     if (!buildingId) return [];
@@ -122,8 +143,13 @@ export default function NewBooking({ onSuccess } = {}) {
 
   const availableGuestRooms = useMemo(() => {
     if (!buildingId || !floorId) return [];
+    // Date overlap is enforced by the API; OCCUPIED/RESERVED rooms can take
+    // future stays that do not conflict. Block maintenance/sold here only.
     return guestRoomsInBuilding.filter(
-      (r) => r.floorId === floorId && r.status === 'Available',
+      (r) =>
+        r.floorId === floorId &&
+        r.status !== 'Maintenance' &&
+        r.status !== 'Sold',
     );
   }, [guestRoomsInBuilding, buildingId, floorId]);
 
@@ -193,8 +219,8 @@ export default function NewBooking({ onSuccess } = {}) {
       toast.error('Only Guest / Airbnb rooms can be booked here');
       return;
     }
-    if (room.status !== 'Available') {
-      toast.error('Selected room is not available');
+    if (room.status === 'Maintenance' || room.status === 'Sold') {
+      toast.error('Selected room cannot be booked');
       return;
     }
     if (!customer.fullName.trim() || !customer.phone.trim() || !customer.idNumber.trim()) {
@@ -260,9 +286,18 @@ export default function NewBooking({ onSuccess } = {}) {
 
   if (loading) return null;
 
+  const guestDisabledForWorkspace =
+    Boolean(workspace?.selectedBuilding) && !workspace.hasGuestBookings;
+
   return (
     <Card title="New booking">
-      {buildings.length === 0 ? (
+      {guestDisabledForWorkspace ? (
+        <p className="mb-5 text-sm text-[var(--text-muted)]">
+          <strong>{workspace.selectedBuilding.name}</strong> does not support guest bookings.
+          Switch the working building to a guest house property, or enable Guest Bookings on this
+          building under Buildings.
+        </p>
+      ) : buildings.length === 0 ? (
         <p className="mb-5 text-sm text-[var(--text-muted)]">
           No buildings yet. Go to <strong>Buildings</strong> and add your first building, then add
           floors and rooms.
@@ -275,6 +310,7 @@ export default function NewBooking({ onSuccess } = {}) {
         </p>
       ) : null}
 
+      {!guestDisabledForWorkspace ? (
       <div className="space-y-5">
         <FormSection
           step={1}
@@ -692,6 +728,7 @@ export default function NewBooking({ onSuccess } = {}) {
           </FormSection>
         </div>
       </div>
+      ) : null}
     </Card>
   );
 }

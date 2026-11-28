@@ -7,6 +7,11 @@ import { asyncHandler } from '../../utils/asyncHandler.js';
 import { success } from '../../utils/apiResponse.js';
 import { AppError } from '../../utils/AppError.js';
 import { buildingIdFilter } from '../../services/access.service.js';
+import {
+  DEFAULT_BUILDING_PROPERTY_TYPES,
+  normalizePropertyTypes,
+} from '../../constants/buildingFeatures.js';
+import { serializeBuildingPropertyTypes } from '../../services/buildingFeatures.service.js';
 
 const router = Router();
 router.use(authenticate);
@@ -30,7 +35,7 @@ router.get(
       },
       orderBy: { code: 'asc' },
     });
-    return success(res, data);
+    return success(res, data.map(serializeBuildingPropertyTypes));
   }),
 );
 
@@ -53,7 +58,7 @@ router.get(
       },
     });
     if (!building) throw new AppError('Building not found', 404);
-    return success(res, building);
+    return success(res, serializeBuildingPropertyTypes(building));
   }),
 );
 
@@ -82,7 +87,8 @@ router.post(
   '/',
   authorize('buildings:create'),
   asyncHandler(async (req, res) => {
-    const { code, name, address, floorsCount, notes, transactionType } = req.body || {};
+    const { code, name, address, floorsCount, notes, transactionType, propertyTypes } =
+      req.body || {};
     if (!code || !name) throw new AppError('code and name are required', 400);
     const building = await prisma.building.create({
       data: {
@@ -92,9 +98,13 @@ router.post(
         floorsCount: Number(floorsCount) || 0,
         notes: notes || null,
         transactionType: resolveOfferType(transactionType, 'FOR_RENT'),
+        propertyTypes: normalizePropertyTypes(
+          propertyTypes,
+          DEFAULT_BUILDING_PROPERTY_TYPES,
+        ),
       },
     });
-    return success(res, building, 201);
+    return success(res, serializeBuildingPropertyTypes(building), 201);
   }),
 );
 
@@ -108,7 +118,8 @@ router.patch(
     });
     if (!existing) throw new AppError('Building not found', 404);
 
-    const { code, name, address, floorsCount, notes, transactionType } = req.body || {};
+    const { code, name, address, floorsCount, notes, transactionType, propertyTypes } =
+      req.body || {};
     const building = await prisma.building.update({
       where: { id: existing.id },
       data: {
@@ -120,9 +131,15 @@ router.patch(
         ...(transactionType !== undefined && {
           transactionType: resolveOfferType(transactionType, existing.transactionType),
         }),
+        ...(propertyTypes !== undefined && {
+          propertyTypes: normalizePropertyTypes(
+            propertyTypes,
+            existing.propertyTypes || DEFAULT_BUILDING_PROPERTY_TYPES,
+          ),
+        }),
       },
     });
-    return success(res, building);
+    return success(res, serializeBuildingPropertyTypes(building));
   }),
 );
 

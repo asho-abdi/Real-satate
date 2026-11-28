@@ -5,8 +5,10 @@ import { MdClose, MdKeyboardDoubleArrowLeft, MdKeyboardDoubleArrowRight, MdLogou
 import { cn } from '../../utils/format.js';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { useLayout } from '../../context/LayoutContext.jsx';
+import { useBuildingWorkspaceOptional } from '../../context/BuildingWorkspaceContext.jsx';
 import Logo, { Wordmark } from '../brand/Logo.jsx';
 import { filterNavSections, resolveNavIcon } from './navItems.js';
+import BuildingWorkspaceSelect from './BuildingWorkspaceSelect.jsx';
 
 const resolveIcon = resolveNavIcon;
 
@@ -26,7 +28,8 @@ function roleLabel(user) {
 export default function Sidebar({ open, onClose, isMobile }) {
   const { user, logout } = useAuth();
   const { sidebarCollapsed, toggleSidebar } = useLayout();
-  const sections = filterNavSections(user);
+  const workspace = useBuildingWorkspaceOptional();
+  const sections = filterNavSections(user, workspace);
   const collapsed = !isMobile && sidebarCollapsed;
   const [tip, setTip] = useState(null);
 
@@ -68,6 +71,12 @@ export default function Sidebar({ open, onClose, isMobile }) {
           </button>
         ) : null}
       </div>
+
+      {!collapsed ? (
+        <div className="border-b border-white/[0.07] px-3 py-3">
+          <BuildingWorkspaceSelect tone="onDark" />
+        </div>
+      ) : null}
 
       {/* Navigation */}
       <nav

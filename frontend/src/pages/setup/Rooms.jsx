@@ -29,7 +29,7 @@ import {
   UsageChoiceCards,
 } from '../../components/units/FlatFormLayout.jsx';
 import api from '../../services/api.js';
-import { findSihamBuilding } from '../../utils/buildings.js';
+import { useBuildingWorkspaceOptional } from '../../context/BuildingWorkspaceContext.jsx';
 
 function RoomThumb({ url }) {
   const [src, setSrc] = useState('');
@@ -343,6 +343,7 @@ function FloorSection({ building, floor, rooms, onStatusChange, onEditRoom, onVi
 
 export default function Rooms() {
   const { globalSearch = '' } = useOutletContext() || {};
+  const workspace = useBuildingWorkspaceOptional();
   const [buildings, setBuildings] = useState([]);
   const [floors, setFloors] = useState([]);
   const [rooms, setRooms] = useState([]);
@@ -352,7 +353,6 @@ export default function Rooms() {
   const [floorId, setFloorId] = useState('');
   const [status, setStatus] = useState('');
   const [usage, setUsage] = useState('');
-  const [sihamLocked, setSihamLocked] = useState(false);
   const [editRoom, setEditRoom] = useState(null);
   const [viewPhotosRoom, setViewPhotosRoom] = useState(null);
   const [roomForm, setRoomForm] = useState({
@@ -386,15 +386,6 @@ export default function Rooms() {
       setBuildings(b);
       setFloors(f);
       setRooms(u);
-
-      const siham = findSihamBuilding(b);
-      if (siham?.id) {
-        setSihamLocked(true);
-        setBuildingId(siham.id);
-        setFloorId('');
-      } else {
-        setSihamLocked(false);
-      }
     } catch (err) {
       toast.error(err.message || 'Failed to load rooms');
     } finally {
@@ -406,6 +397,13 @@ export default function Rooms() {
     load();
   }, []);
 
+  // Follow the global working building (workspace).
+  useEffect(() => {
+    if (!workspace?.selectedBuildingId) return;
+    setBuildingId(workspace.selectedBuildingId);
+    setFloorId('');
+  }, [workspace?.selectedBuildingId]);
+
   const buildingFloors = useMemo(() => {
     if (!buildingId) return floors;
     return floors.filter((f) => f.buildingId === buildingId);
@@ -413,8 +411,10 @@ export default function Rooms() {
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
+    const allowGuest = workspace?.hasGuestBookings !== false;
     return rooms.filter((r) => {
       if (buildingId && r.buildingId !== buildingId) return false;
+      if (!allowGuest && r.usage === 'guest') return false;
       if (floorId && r.floorId !== floorId) return false;
       if (status && r.status !== status) return false;
       if (usage && r.usage !== usage) return false;
@@ -425,7 +425,7 @@ export default function Rooms() {
         String(r.floor || '').toLowerCase().includes(q)
       );
     });
-  }, [rooms, search, buildingId, floorId, status, usage]);
+  }, [rooms, search, buildingId, floorId, status, usage, workspace?.hasGuestBookings]);
 
   const stats = useMemo(() => {
     const total = filtered.length;
@@ -542,11 +542,15 @@ export default function Rooms() {
   return (
     <div>
       <PageHeader
-        title={sihamLocked ? 'Availability for SIHAM' : 'Availability'}
+        title={
+          workspace?.selectedBuilding
+            ? `Availability · ${workspace.shortLabel || workspace.selectedBuilding.name}`
+            : 'Availability'
+        }
         subtitle={
-          sihamLocked
-            ? 'Unit availability and statuses for the SIHAM building only.'
-            : 'Overview of unit availability and statuses across all buildings and floors.'
+          workspace?.selectedBuilding
+            ? `Unit availability for ${workspace.selectedBuilding.name} only.`
+            : 'Overview of unit availability and statuses across buildings and floors.'
         }
       />
 
@@ -606,18 +610,16 @@ export default function Rooms() {
           <Select
             label="Building"
             value={buildingId}
-            disabled={sihamLocked}
+            disabled={Boolean(workspace?.selectedBuildingId)}
             onChange={(e) => {
-              if (sihamLocked) return;
+              if (workspace?.selectedBuildingId) return;
               setBuildingId(e.target.value);
               setFloorId('');
+              workspace?.setSelectedBuildingId?.(e.target.value);
             }}
           >
-            {sihamLocked ? null : <option value="">All Buildings</option>}
-            {(sihamLocked
-              ? buildings.filter((b) => b.id === buildingId || findSihamBuilding([b]))
-              : buildings
-            ).map((b) => (
+            {!workspace?.selectedBuildingId ? <option value="">All Buildings</option> : null}
+            {buildings.map((b) => (
               <option key={b.id} value={b.id}>
                 {b.name}
               </option>
@@ -647,8 +649,9 @@ export default function Rooms() {
           <Select label="Usage" value={usage} onChange={(e) => setUsage(e.target.value)}>
             <option value="">All Usage</option>
             <option value="shop">Shop</option>
+            <option value="office">Office</option>
             <option value="apartment">Apartment</option>
-            <option value="guest">Guest</option>
+            {workspace?.hasGuestBookings !== false ? <option value="guest">Guest</option> : null}
           </Select>
         </div>
       </Card>

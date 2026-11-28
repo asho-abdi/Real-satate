@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
-import { Link, useOutletContext } from 'react-router-dom';
+import { Link, Navigate, useOutletContext } from 'react-router-dom';
 import { MdWarning } from 'react-icons/md';
 import PageHeader from '../../components/ui/PageHeader.jsx';
 import Card from '../../components/ui/Card.jsx';
@@ -17,6 +17,7 @@ import { rentalApi, resolveIdentityAttachment } from '../../services/rentalApi.j
 import IdentityDocumentField from '../../components/ui/IdentityDocumentField.jsx';
 import PaymentMethodFields from '../../components/payments/PaymentMethodFields.jsx';
 import StatementModal from '../../components/finance/StatementModal.jsx';
+import { useBuildingWorkspaceOptional } from '../../context/BuildingWorkspaceContext.jsx';
 
 const emptyForm = {
   dealType: 'RENTAL',
@@ -112,6 +113,7 @@ function moduleCopy(filterType) {
  */
 export default function CommercialRentals({ initialFilter = 'ALL' }) {
   const { globalSearch = '' } = useOutletContext() || {};
+  const workspace = useBuildingWorkspaceOptional();
   const [typeFilter, setTypeFilter] = useState(
     ['SHOP', 'OFFICE', 'ALL'].includes(String(initialFilter).toUpperCase())
       ? String(initialFilter).toUpperCase()
@@ -198,6 +200,15 @@ export default function CommercialRentals({ initialFilter = 'ALL' }) {
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    if (!workspace?.selectedBuildingId) return;
+    setFilterBuildingId(workspace.selectedBuildingId);
+    setRegBuildingId(workspace.selectedBuildingId);
+    setRegFloorId('');
+    setRoomId('');
+    setFilterFloorId('');
+  }, [workspace?.selectedBuildingId]);
 
   useEffect(() => {
     if (String(globalSearch || '').trim()) setTab('tenants');
@@ -431,6 +442,10 @@ export default function CommercialRentals({ initialFilter = 'ALL' }) {
     }
   };
 
+  if (workspace?.selectedBuilding && !workspace.hasCommercial) {
+    return <Navigate to="/dashboard" replace />;
+  }
+
   if (loading) {
     return (
       <div className="flex justify-center py-20">
@@ -439,9 +454,21 @@ export default function CommercialRentals({ initialFilter = 'ALL' }) {
     );
   }
 
+  const buildingLocked = Boolean(workspace?.selectedBuildingId);
+  const headerTitle = workspace?.selectedBuilding
+    ? `${copy.title} · ${workspace.shortLabel || workspace.selectedBuilding.name}`
+    : copy.title;
+
   return (
     <div>
-      <PageHeader title={copy.title} subtitle={copy.subtitle} />
+      <PageHeader
+        title={headerTitle}
+        subtitle={
+          workspace?.selectedBuilding
+            ? `${copy.subtitle} Scoped to ${workspace.selectedBuilding.name}.`
+            : copy.subtitle
+        }
+      />
 
       <div className="mb-4 flex flex-wrap gap-2">
         {[
@@ -518,12 +545,17 @@ export default function CommercialRentals({ initialFilter = 'ALL' }) {
               value={regBuildingId}
               placeholder="Select"
               searchPlaceholder="Search building…"
-              options={buildings.map((b) => ({
+              disabled={buildingLocked}
+              options={(buildingLocked
+                ? buildings.filter((b) => b.id === workspace.selectedBuildingId)
+                : buildings
+              ).map((b) => ({
                 value: b.id,
                 label: b.name,
                 searchText: `${b.code || ''} ${b.name || ''}`,
               }))}
               onChange={(next) => {
+                if (buildingLocked) return;
                 setRegBuildingId(next);
                 setRegFloorId('');
                 setRoomId('');
@@ -675,13 +707,18 @@ export default function CommercialRentals({ initialFilter = 'ALL' }) {
                 value={filterBuildingId}
                 placeholder="All Buildings"
                 searchPlaceholder="Search building…"
-                allowClear
-                options={buildings.map((b) => ({
+                allowClear={!buildingLocked}
+                disabled={buildingLocked}
+                options={(buildingLocked
+                  ? buildings.filter((b) => b.id === workspace.selectedBuildingId)
+                  : buildings
+                ).map((b) => ({
                   value: b.id,
                   label: b.name,
                   searchText: `${b.code || ''} ${b.name || ''}`,
                 }))}
                 onChange={(next) => {
+                  if (buildingLocked) return;
                   setFilterBuildingId(next);
                   setFilterFloorId('');
                 }}
@@ -701,12 +738,12 @@ export default function CommercialRentals({ initialFilter = 'ALL' }) {
                 onChange={(next) => setFilterFloorId(next)}
               />
               <div className="flex items-end">
-                {(search || filterBuildingId || filterFloorId) ? (
+                {(search || (!buildingLocked && filterBuildingId) || filterFloorId) ? (
                   <button
                     type="button"
                     onClick={() => {
                       setSearch('');
-                      setFilterBuildingId('');
+                      if (!buildingLocked) setFilterBuildingId('');
                       setFilterFloorId('');
                     }}
                     className="h-10 rounded-xl border border-[var(--border)] px-4 text-sm text-[var(--text-muted)] hover:bg-[var(--surface-2)]"

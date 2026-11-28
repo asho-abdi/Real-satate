@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
-import { useOutletContext, Link } from 'react-router-dom';
+import { useOutletContext, Link, Navigate } from 'react-router-dom';
 import { MdWarning } from 'react-icons/md';
 import PageHeader from '../../components/ui/PageHeader.jsx';
 import Card from '../../components/ui/Card.jsx';
@@ -16,7 +16,7 @@ import StatementModal from '../../components/finance/StatementModal.jsx';
 import { formatCurrency, formatDate, cn } from '../../utils/format.js';
 import { rentalApi, resolveIdentityAttachment } from '../../services/rentalApi.js';
 import IdentityDocumentField from '../../components/ui/IdentityDocumentField.jsx';
-import { findSihamBuilding } from '../../utils/buildings.js';
+import { useBuildingWorkspaceOptional } from '../../context/BuildingWorkspaceContext.jsx';
 
 const emptyForm = {
   fullName: '',
@@ -36,6 +36,7 @@ const today = () => new Date().toISOString().slice(0, 10);
 
 export default function Apartments() {
   const { globalSearch = '' } = useOutletContext() || {};
+  const workspace = useBuildingWorkspaceOptional();
 
   // data
   const [buildings, setBuildings] = useState([]);
@@ -45,7 +46,6 @@ export default function Apartments() {
   const [tenants, setTenants] = useState([]);
   const [payments, setPayments] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [sihamLocked, setSihamLocked] = useState(false);
 
   // tabs
   const [tab, setTab] = useState('tenants');
@@ -92,15 +92,6 @@ export default function Apartments() {
       setAllRooms(allU);
       setTenants(t);
       setPayments(p.filter((x) => x.tenantType === 'apartment'));
-
-      const siham = findSihamBuilding(b);
-      if (siham?.id) {
-        setSihamLocked(true);
-        setFilterBuildingId(siham.id);
-        setRegBuildingId(siham.id);
-      } else {
-        setSihamLocked(false);
-      }
     } catch (err) {
       toast.error(err.message || 'Failed to load apartments');
     } finally {
@@ -113,10 +104,19 @@ export default function Apartments() {
   }, [load]);
 
   useEffect(() => {
+    if (!workspace?.selectedBuildingId) return;
+    setFilterBuildingId(workspace.selectedBuildingId);
+    setRegBuildingId(workspace.selectedBuildingId);
+    setRegFloorId('');
+    setRoomId('');
+    setFilterFloorId('');
+  }, [workspace?.selectedBuildingId]);
+
+  useEffect(() => {
     if (String(globalSearch || '').trim()) setTab('tenants');
   }, [globalSearch]);
 
-  // ── filter helpers ──────────────────────────────────────────────
+  // -- filter helpers ----------------------------------------------
   const filterFloors = useMemo(
     () => (filterBuildingId ? floors.filter((f) => f.buildingId === filterBuildingId) : floors),
     [floors, filterBuildingId],
@@ -153,7 +153,7 @@ export default function Apartments() {
     });
   }, [activeTenants, pastTenants, tab, globalSearch, search, filterBuildingId, filterFloorId]);
 
-  // ── registration helpers ─────────────────────────────────────────
+  // -- registration helpers -----------------------------------------
   const regFloors = useMemo(
     () => floors.filter((f) => f.buildingId === regBuildingId),
     [floors, regBuildingId],
@@ -221,7 +221,7 @@ export default function Apartments() {
     }
   };
 
-  // ── termination helpers ──────────────────────────────────────────
+  // -- termination helpers ------------------------------------------
   const openEdit = (tenant) => {
     setEditModal({ tenant });
     setEditForm({
@@ -296,6 +296,10 @@ export default function Apartments() {
     }
   };
 
+  if (workspace && workspace.selectedBuilding && !workspace.hasApartments) {
+    return <Navigate to="/dashboard" replace />;
+  }
+
   if (loading) {
     return (
       <div className="flex justify-center py-20">
@@ -304,13 +308,19 @@ export default function Apartments() {
     );
   }
 
+  const buildingLocked = Boolean(workspace?.selectedBuildingId);
+
   return (
     <div>
       <PageHeader
-        title="Apartments for SIHAM"
+        title={
+          workspace?.selectedBuilding
+            ? `Apartments � ${workspace.shortLabel || workspace.selectedBuilding.name}`
+            : 'Apartments'
+        }
         subtitle={
-          sihamLocked
-            ? 'Siham residential tenants and monthly rent calendar.'
+          workspace?.selectedBuilding
+            ? `Residential tenants for ${workspace.selectedBuilding.name}.`
             : 'Residential tenants and monthly rent calendar.'
         }
       />
@@ -338,7 +348,7 @@ export default function Apartments() {
         ))}
       </div>
 
-      {/* ── Register form ─────────────────────────────────────── */}
+      {/* -- Register form --------------------------------------- */}
       {tab === 'register' ? (
         <Card title="Register Tenant">
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -346,10 +356,10 @@ export default function Apartments() {
               label="Building"
               value={regBuildingId}
               placeholder="Select"
-              searchPlaceholder="Search building…"
-              disabled={sihamLocked}
-              options={(sihamLocked
-                ? buildings.filter((b) => b.id === regBuildingId || findSihamBuilding([b]))
+              searchPlaceholder="Search building�"
+              disabled={buildingLocked}
+              options={(buildingLocked
+                ? buildings.filter((b) => b.id === regBuildingId)
                 : buildings
               ).map((b) => ({
                 value: b.id,
@@ -357,7 +367,7 @@ export default function Apartments() {
                 searchText: `${b.code || ''} ${b.name || ''}`,
               }))}
               onChange={(next) => {
-                if (sihamLocked) return;
+                if (buildingLocked) return;
                 setRegBuildingId(next);
                 setRegFloorId('');
                 setRoomId('');
@@ -367,7 +377,7 @@ export default function Apartments() {
               label="Floor"
               value={regFloorId}
               placeholder="Select"
-              searchPlaceholder="Search floor…"
+              searchPlaceholder="Search floor�"
               disabled={!regBuildingId}
               options={regFloors.map((f) => ({
                 value: f.id,
@@ -383,11 +393,11 @@ export default function Apartments() {
               label="Apartment (Available)"
               value={roomId}
               placeholder="Select"
-              searchPlaceholder="Search apartment…"
+              searchPlaceholder="Search apartment�"
               disabled={!regBuildingId}
               options={apartments.map((r) => ({
                 value: r.id,
-                label: `${r.roomNumber} · ${formatCurrency(r.monthlyRent)}`,
+                label: `${r.roomNumber} � ${formatCurrency(r.monthlyRent)}`,
                 searchText: `${r.roomNumber || ''} ${r.unitType || ''}`,
               }))}
               onChange={(next) => onRoom(next)}
@@ -455,7 +465,7 @@ export default function Apartments() {
               type="date"
               value={form.leaseStart}
               onChange={(e) => setForm({ ...form, leaseStart: e.target.value })}
-              hint="Actual lease start — can be in the past. Registration date is recorded separately."
+              hint="Actual lease start � can be in the past. Registration date is recorded separately."
             />
             <Input
               label="Lease end"
@@ -482,12 +492,12 @@ export default function Apartments() {
         </Card>
       ) : (
         <>
-          {/* ── Filter bar ──────────────────────────────────────── */}
+          {/* -- Filter bar ---------------------------------------- */}
           <Card className="mb-4">
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <Input
                 label="Search"
-                placeholder="Name, phone, room…"
+                placeholder="Name, phone, room�"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
@@ -495,11 +505,11 @@ export default function Apartments() {
                 label="Building"
                 value={filterBuildingId}
                 placeholder="All Buildings"
-                searchPlaceholder="Search building…"
-                allowClear={!sihamLocked}
-                disabled={sihamLocked}
-                options={(sihamLocked
-                  ? buildings.filter((b) => b.id === filterBuildingId || findSihamBuilding([b]))
+                searchPlaceholder="Search building�"
+                allowClear={!buildingLocked}
+                disabled={buildingLocked}
+                options={(buildingLocked
+                  ? buildings.filter((b) => b.id === filterBuildingId)
                   : buildings
                 ).map((b) => ({
                   value: b.id,
@@ -507,7 +517,7 @@ export default function Apartments() {
                   searchText: `${b.code || ''} ${b.name || ''}`,
                 }))}
                 onChange={(next) => {
-                  if (sihamLocked) return;
+                  if (buildingLocked) return;
                   setFilterBuildingId(next);
                   setFilterFloorId('');
                 }}
@@ -516,7 +526,7 @@ export default function Apartments() {
                 label="Floor"
                 value={filterFloorId}
                 placeholder="All Floors"
-                searchPlaceholder="Search floor…"
+                searchPlaceholder="Search floor�"
                 allowClear
                 disabled={filterFloors.length === 0}
                 options={filterFloors.map((f) => ({
@@ -527,12 +537,12 @@ export default function Apartments() {
                 onChange={(next) => setFilterFloorId(next)}
               />
               <div className="flex items-end">
-                {(search || (!sihamLocked && filterBuildingId) || filterFloorId) ? (
+                {(search || (!buildingLocked && filterBuildingId) || filterFloorId) ? (
                   <button
                     type="button"
                     onClick={() => {
                       setSearch('');
-                      if (!sihamLocked) setFilterBuildingId('');
+                      if (!buildingLocked) setFilterBuildingId('');
                       setFilterFloorId('');
                     }}
                     className="h-10 rounded-xl border border-[var(--border)] px-4 text-sm text-[var(--text-muted)] hover:bg-[var(--surface-2)]"
@@ -544,7 +554,7 @@ export default function Apartments() {
             </div>
           </Card>
 
-          {/* ── Tenant cards ─────────────────────────────────────── */}
+          {/* -- Tenant cards --------------------------------------- */}
           <div className="space-y-4">
             {displayedTenants.length === 0 ? (
               <Card>
@@ -556,7 +566,7 @@ export default function Apartments() {
               displayedTenants.map((t) => (
                 <Card
                   key={t.id}
-                  title={`${t.fullName} · ${t.roomNumber}`}
+                  title={`${t.fullName} � ${t.roomNumber}`}
                   action={
                     <div className="flex flex-wrap items-center gap-2">
                       {t.unitId || t.roomId ? (
@@ -596,11 +606,11 @@ export default function Apartments() {
                 >
                   <p className="mb-1 text-sm text-[var(--text-muted)]">
                     {t.building}
-                    {t.floor ? ` · ${t.floor}` : ''} · {t.phone} · Rent{' '}
+                    {t.floor ? ` � ${t.floor}` : ''} � {t.phone} � Rent{' '}
                     {formatCurrency(t.monthlyRent)}
-                    {t.discount ? ` (−${formatCurrency(t.discount)})` : ''} · Since{' '}
+                    {t.discount ? ` (-${formatCurrency(t.discount)})` : ''} � Since{' '}
                     {formatDate(t.leaseStart)}
-                    {t.leaseEnd ? ` · Ended ${formatDate(t.leaseEnd)}` : ''}
+                    {t.leaseEnd ? ` � Ended ${formatDate(t.leaseEnd)}` : ''}
                   </p>
                   {t.identityDocument ? (
                     <div className="mb-2">
@@ -638,7 +648,7 @@ export default function Apartments() {
         </>
       )}
 
-      {/* ── Edit Tenant modal ─────────────────────────────────── */}
+      {/* -- Edit Tenant modal ----------------------------------- */}
       <Modal
         open={Boolean(editModal)}
         onClose={() => !savingEdit && setEditModal(null)}
@@ -649,7 +659,7 @@ export default function Apartments() {
               Cancel
             </Button>
             <Button onClick={saveEdit} disabled={savingEdit}>
-              {savingEdit ? 'Saving…' : 'Save Changes'}
+              {savingEdit ? 'Saving�' : 'Save Changes'}
             </Button>
           </div>
         }
@@ -706,7 +716,7 @@ export default function Apartments() {
         ) : null}
       </Modal>
 
-      {/* ── Terminate Lease modal ─────────────────────────────── */}
+      {/* -- Terminate Lease modal ------------------------------- */}
       <Modal
         open={Boolean(termModal)}
         onClose={() => !terminating && setTermModal(null)}
@@ -727,7 +737,7 @@ export default function Apartments() {
               onClick={confirmTerminate}
               className="h-10 rounded-xl bg-rose-600 px-6 text-base font-medium text-white transition hover:bg-rose-700 disabled:opacity-60"
             >
-              {terminating ? 'Terminating…' : 'Confirm Termination'}
+              {terminating ? 'Terminating�' : 'Confirm Termination'}
             </button>
           </div>
         }
@@ -758,7 +768,7 @@ export default function Apartments() {
                   value={termForm.notes}
                   onChange={(e) => setTermForm({ ...termForm, notes: e.target.value })}
                   rows={3}
-                  placeholder="e.g. Tenant relocated, lease expired…"
+                  placeholder="e.g. Tenant relocated, lease expired�"
                   className="w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2.5 text-sm text-[var(--text)] outline-none placeholder:text-[var(--text-muted)] focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20"
                 />
               </div>

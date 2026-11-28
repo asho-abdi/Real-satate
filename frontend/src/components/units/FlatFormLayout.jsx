@@ -52,8 +52,16 @@ const USAGE_CARDS = [
   },
 ];
 
-export function UsageChoiceCards({ value, onChange, shopOnly = false, disabled = false }) {
-  const options = shopOnly ? USAGE_CARDS.filter((c) => c.value === 'shop') : USAGE_CARDS;
+export function UsageChoiceCards({
+  value,
+  onChange,
+  shopOnly = false,
+  allowGuest = true,
+  disabled = false,
+}) {
+  const options = shopOnly
+    ? USAGE_CARDS.filter((c) => c.value === 'shop')
+    : USAGE_CARDS.filter((c) => allowGuest || c.value !== 'guest');
 
   return (
     <div className="grid gap-3 sm:grid-cols-3">

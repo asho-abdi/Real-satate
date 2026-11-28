@@ -300,6 +300,8 @@ model Building {
   floorsCount     Int             @default(0)
   notes           String?
   transactionType TransactionType @default(FOR_RENT)
+  /// Portfolio modules enabled for this building: APARTMENTS | GUEST_BOOKINGS | COMMERCIAL
+  propertyTypes   String[]        @default(["APARTMENTS", "GUEST_BOOKINGS", "COMMERCIAL"])
   deletedAt       DateTime?
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt

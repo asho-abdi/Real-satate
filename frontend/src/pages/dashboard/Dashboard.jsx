@@ -34,6 +34,7 @@ import EmptyState from '../../components/ui/EmptyState.jsx';
 import Skeleton, { SkeletonCard } from '../../components/ui/Skeleton.jsx';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { useTheme } from '../../context/ThemeContext.jsx';
+import { useBuildingWorkspaceOptional } from '../../context/BuildingWorkspaceContext.jsx';
 import { rentalApi } from '../../services/rentalApi.js';
 import { formatCurrency, formatDate, cn, getAppCurrency } from '../../utils/format.js';
 import { labelUnitType } from '../../utils/labels.js';
@@ -336,18 +337,37 @@ function SegmentBars({ stats }) {
 }
 
 const QUICK_ACTIONS = [
-  { to: '/bookings?tab=new', label: 'New guest booking', hint: 'Check a guest in', icon: MdHotel },
+  {
+    to: '/bookings?tab=new',
+    label: 'New guest booking',
+    hint: 'Check a guest in',
+    icon: MdHotel,
+    feature: 'GUEST_BOOKINGS',
+  },
   { to: '/payments', label: 'Record payment', hint: 'Rent & charges', icon: MdPayments },
   { to: '/availability', label: 'Check availability', hint: 'Rooms & units', icon: MdMeetingRoom },
-  { to: '/apartments', label: 'Add tenant', hint: 'Apartments', icon: MdApartment },
+  {
+    to: '/apartments',
+    label: 'Add tenant',
+    hint: 'Apartments',
+    icon: MdApartment,
+    feature: 'APARTMENTS',
+  },
   { to: '/expenses', label: 'Log expense', hint: 'Money movements', icon: MdReceiptLong },
   { to: '/buildings', label: 'Manage buildings', hint: 'Portfolio setup', icon: MdBusiness },
 ];
 
 function QuickActions() {
+  const workspace = useBuildingWorkspaceOptional();
+  const actions = QUICK_ACTIONS.filter((a) => {
+    if (!a.feature) return true;
+    if (!workspace?.hasFeature) return true;
+    return workspace.hasFeature(a.feature);
+  });
+
   return (
     <div className="grid grid-cols-2 gap-2 px-5 pb-5">
-      {QUICK_ACTIONS.map(({ to, label, hint, icon: Icon }) => (
+      {actions.map(({ to, label, hint, icon: Icon }) => (
         <Link
           key={to}
           to={to}
@@ -788,7 +808,7 @@ export default function Dashboard() {
 
       {leaseOverview ? (
         <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
-          <StatCard
+        <StatCard
             label="Active leases"
             value={leaseOverview.activeLeases ?? 0}
             hint={
@@ -797,27 +817,27 @@ export default function Dashboard() {
                 : 'Residential + commercial'
             }
             icon={MdApartment}
-          />
-          <StatCard
+        />
+        <StatCard
             label="Expected lease rent"
             value={formatCurrency(leaseOverview.expectedRent ?? 0)}
             hint={`Collected ${formatCurrency(leaseOverview.collected ?? 0)}`}
             icon={MdPayments}
-          />
-          <StatCard
+        />
+        <StatCard
             label="Lease outstanding"
             value={formatCurrency(leaseOverview.outstanding ?? 0)}
             hint={`${leaseOverview.overdueAccounts ?? 0} overdue account(s)`}
             icon={MdWarningAmber}
             to="/outstanding"
-          />
-          <StatCard
+        />
+        <StatCard
             label="Advance / rent-free"
             value={formatCurrency(leaseOverview.advanceReceived ?? 0)}
             hint={`${leaseOverview.rentFreeNow ?? 0} currently rent-free`}
             icon={MdEventAvailable}
-          />
-        </div>
+        />
+      </div>
       ) : null}
 
       {/* Today strip */}

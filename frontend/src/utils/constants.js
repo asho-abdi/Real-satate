@@ -179,16 +179,30 @@ export const NAV_SECTIONS = [
     title: 'Portfolio',
     items: [
       { label: 'Buildings', to: '/buildings', icon: 'MdBusiness' },
-      { label: 'Availability for SIHAM', to: '/availability', icon: 'MdDoorFront' },
-      { label: 'Apartments for SIHAM', to: '/apartments', icon: 'MdApartment' },
-      // Hodo Souk BnB / guest stays
-      { label: 'Guest Bookings (Hodo)', to: '/bookings', icon: 'MdHotel' },
+      { label: 'Availability', to: '/availability', icon: 'MdDoorFront' },
+      {
+        label: 'Apartments',
+        to: '/apartments',
+        icon: 'MdApartment',
+        feature: 'APARTMENTS',
+      },
+      {
+        label: 'Guest Bookings',
+        to: '/bookings',
+        icon: 'MdHotel',
+        feature: 'GUEST_BOOKINGS',
+      },
     ],
   },
   {
     title: 'Commercial Spaces',
     items: [
-      { label: 'Commercial Spaces', to: '/commercial-spaces', icon: 'MdStorefront' },
+      {
+        label: 'Commercial Spaces',
+        to: '/commercial-spaces',
+        icon: 'MdStorefront',
+        feature: 'COMMERCIAL',
+      },
     ],
   },
   {

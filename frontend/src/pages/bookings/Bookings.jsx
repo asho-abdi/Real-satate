@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useOutletContext, useSearchParams } from 'react-router-dom';
+import { Navigate, useOutletContext, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import PageHeader from '../../components/ui/PageHeader.jsx';
 import Card from '../../components/ui/Card.jsx';
@@ -18,6 +18,8 @@ import FinanceDocActions from '../../components/finance/FinanceDocActions.jsx';
 import { bookingDocPayload, bookingDepositDocPayload } from '../../utils/financeDocs.js';
 import PaymentStatusBadge from '../../components/realty/PaymentStatusBadge.jsx';
 import NewBooking from './NewBooking.jsx';
+import AvailabilityCalendar from './AvailabilityCalendar.jsx';
+import { useBuildingWorkspaceOptional } from '../../context/BuildingWorkspaceContext.jsx';
 
 const ACTIVE_STATUSES = new Set(['Confirmed', 'Reserved', 'CheckedIn']);
 const PAST_STATUSES = new Set(['CheckedOut', 'Cancelled']);
@@ -39,9 +41,17 @@ function DetailRow({ label, value }) {
 
 export default function Bookings() {
   const { globalSearch = '' } = useOutletContext() || {};
+  const workspace = useBuildingWorkspaceOptional();
   const [searchParams, setSearchParams] = useSearchParams();
   const tabFromUrl = searchParams.get('tab');
-  const initialTab = tabFromUrl === 'new' ? 'new' : tabFromUrl === 'past' ? 'past' : 'active';
+  const initialTab =
+    tabFromUrl === 'new'
+      ? 'new'
+      : tabFromUrl === 'past'
+        ? 'past'
+        : tabFromUrl === 'active'
+          ? 'active'
+          : 'calendar';
 
   const [tab, setTab] = useState(initialTab);
   const [bookings, setBookings] = useState([]);
@@ -92,12 +102,9 @@ export default function Bookings() {
   }, [globalSearch]);
 
   useEffect(() => {
+    const t = searchParams.get('tab');
     const next =
-      searchParams.get('tab') === 'new'
-        ? 'new'
-        : searchParams.get('tab') === 'past'
-          ? 'past'
-          : 'active';
+      t === 'new' ? 'new' : t === 'past' ? 'past' : t === 'active' ? 'active' : 'calendar';
     setTab(next);
   }, [searchParams]);
 
@@ -120,16 +127,38 @@ export default function Bookings() {
     setTab(id);
     if (id === 'new') setSearchParams({ tab: 'new' }, { replace: true });
     else if (id === 'past') setSearchParams({ tab: 'past' }, { replace: true });
+    else if (id === 'active') setSearchParams({ tab: 'active' }, { replace: true });
     else setSearchParams({}, { replace: true });
   };
 
+  const openBookingFromCalendar = async (bookingId) => {
+    let row = bookings.find((b) => b.id === bookingId);
+    if (!row) {
+      try {
+        const rows = await rentalApi.listBookings();
+        setBookings(rows);
+        row = rows.find((b) => b.id === bookingId);
+      } catch (err) {
+        toast.error(err.message || 'Failed to open booking');
+        return;
+      }
+    }
+    if (row) setDetailModal(row);
+  };
+
+  const scopedBookings = useMemo(() => {
+    const bid = workspace?.selectedBuildingId;
+    if (!bid) return bookings;
+    return bookings.filter((b) => b.buildingId === bid || b.unit?.building?.id === bid);
+  }, [bookings, workspace?.selectedBuildingId]);
+
   const activeBookings = useMemo(
-    () => bookings.filter((b) => ACTIVE_STATUSES.has(b.status)),
-    [bookings],
+    () => scopedBookings.filter((b) => ACTIVE_STATUSES.has(b.status)),
+    [scopedBookings],
   );
   const pastBookings = useMemo(
-    () => bookings.filter((b) => PAST_STATUSES.has(b.status)),
-    [bookings],
+    () => scopedBookings.filter((b) => PAST_STATUSES.has(b.status)),
+    [scopedBookings],
   );
 
   const buildingOptions = useMemo(() => {
@@ -428,7 +457,11 @@ export default function Bookings() {
       ? Math.max(0, Number(detailModal.total) - Number(detailModal.amountPaid || 0))
       : 0;
 
-  if (loading) {
+  if (workspace?.selectedBuilding && !workspace.hasGuestBookings) {
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  if (loading && tab !== 'calendar' && tab !== 'new') {
     return (
       <div className="flex justify-center py-20">
         <Spinner />
@@ -439,13 +472,18 @@ export default function Bookings() {
   return (
     <div>
       <PageHeader
-        title="Guest Bookings"
-        subtitle="Guest rooms, short stays, and check-in / check-out."
+        title={
+          workspace?.selectedBuilding
+            ? `Guest Bookings · ${workspace.shortLabel || workspace.selectedBuilding.name}`
+            : 'Guest Bookings'
+        }
+        subtitle="Availability calendar, short stays, and check-in / check-out."
       />
 
-      {/* tab strip — same pattern as Shops / Apartments */}
+      {/* tab strip — calendar is the primary PMS view */}
       <div className="mb-6 flex flex-wrap gap-2">
         {[
+          { id: 'calendar', label: 'Availability Calendar' },
           { id: 'active', label: `Active Bookings (${activeBookings.length})` },
           { id: 'past', label: `Past Bookings (${pastBookings.length})` },
           { id: 'new', label: 'New Booking' },
@@ -466,7 +504,12 @@ export default function Bookings() {
         ))}
       </div>
 
-      {tab === 'new' ? (
+      {tab === 'calendar' ? (
+        <AvailabilityCalendar
+          onOpenBooking={openBookingFromCalendar}
+          onBookingsChanged={load}
+        />
+      ) : tab === 'new' ? (
         <NewBooking onSuccess={onBookingCreated} />
       ) : (
         <>

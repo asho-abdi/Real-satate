@@ -13,6 +13,12 @@ import Select from '../../components/ui/Select.jsx';
 import Badge from '../../components/ui/Badge.jsx';
 import { TRANSACTION_TYPES } from '../../utils/constants.js';
 import { labelStatus } from '../../utils/labels.js';
+import {
+  ALL_BUILDING_PROPERTY_TYPES,
+  BUILDING_PROPERTY_TYPE_OPTIONS,
+  normalizePropertyTypes,
+} from '../../utils/buildingFeatures.js';
+import { useBuildingWorkspaceOptional } from '../../context/BuildingWorkspaceContext.jsx';
 
 const emptyForm = {
   name: '',
@@ -21,10 +27,12 @@ const emptyForm = {
   floorsCount: 4,
   notes: '',
   transactionType: 'FOR_RENT',
+  propertyTypes: [...ALL_BUILDING_PROPERTY_TYPES],
 };
 
 export default function Buildings() {
   const { globalSearch = '' } = useOutletContext() || {};
+  const workspace = useBuildingWorkspaceOptional();
   const [buildings, setBuildings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
@@ -71,13 +79,27 @@ export default function Buildings() {
       floorsCount: b.floorsCount ?? 4,
       notes: b.notes || '',
       transactionType: b.transactionType || 'FOR_RENT',
+      propertyTypes: normalizePropertyTypes(b.propertyTypes),
     });
     setOpen(true);
+  };
+
+  const togglePropertyType = (value) => {
+    setForm((prev) => {
+      const set = new Set(prev.propertyTypes || []);
+      if (set.has(value)) set.delete(value);
+      else set.add(value);
+      return { ...prev, propertyTypes: normalizePropertyTypes([...set]) };
+    });
   };
 
   const save = async () => {
     if (!form.name.trim() || !form.code.trim()) {
       toast.error('Name and code are required');
+      return;
+    }
+    if (!form.propertyTypes?.length) {
+      toast.error('Select at least one property type for this building');
       return;
     }
     try {
@@ -88,6 +110,7 @@ export default function Buildings() {
         floorsCount: Number(form.floorsCount) || 0,
         notes: form.notes.trim() || null,
         transactionType: form.transactionType || 'FOR_RENT',
+        propertyTypes: normalizePropertyTypes(form.propertyTypes),
       };
       if (editing) {
         await rentalApi.updateBuilding(editing.id, payload);
@@ -100,6 +123,7 @@ export default function Buildings() {
       setEditing(null);
       setForm(emptyForm);
       await load();
+      workspace?.refreshBuildings?.();
     } catch (err) {
       toast.error(err.message || 'Could not save building');
     }
@@ -149,6 +173,15 @@ export default function Buildings() {
                     {' · '}
                     {b._count?.units ?? 0} unit{(b._count?.units ?? 0) === 1 ? '' : 's'}
                     {b.notes ? ` · ${b.notes}` : ''}
+                  </p>
+                  <p className="mt-2 text-xs text-[var(--text-muted)]">
+                    Features:{' '}
+                    {normalizePropertyTypes(b.propertyTypes)
+                      .map(
+                        (t) =>
+                          BUILDING_PROPERTY_TYPE_OPTIONS.find((o) => o.value === t)?.label || t,
+                      )
+                      .join(' · ') || '—'}
                   </p>
                 </div>
                 <div className="flex shrink-0 flex-wrap gap-2">
@@ -237,6 +270,33 @@ export default function Buildings() {
             value={form.notes}
             onChange={(e) => setForm({ ...form, notes: e.target.value })}
           />
+          <fieldset className="sm:col-span-2">
+            <legend className="mb-2 text-sm font-medium text-[var(--text)]">
+              Property types for this building
+            </legend>
+            <div className="flex flex-wrap gap-3">
+              {BUILDING_PROPERTY_TYPE_OPTIONS.map((opt) => {
+                const checked = (form.propertyTypes || []).includes(opt.value);
+                return (
+                  <label
+                    key={opt.value}
+                    className="inline-flex items-center gap-2 rounded-lg border border-[var(--border)] px-3 py-2 text-sm text-[var(--text)]"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => togglePropertyType(opt.value)}
+                    />
+                    {opt.label}
+                  </label>
+                );
+              })}
+            </div>
+            <p className="mt-2 text-xs text-[var(--text-muted)]">
+              SIHAM-style buildings should enable Apartments + Commercial only. Guest house
+              buildings can also enable Guest Bookings.
+            </p>
+          </fieldset>
         </div>
       </Modal>
     </div>

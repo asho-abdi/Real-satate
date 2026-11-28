@@ -15,13 +15,21 @@ import {
   commercialTypeFromUsage,
   resolveCommercialFields,
 } from '../../utils/commercialType.js';
+import { assertBuildingAllowsGuestUnits } from '../../services/buildingFeatures.service.js';
 
 const router = Router();
 router.use(authenticate);
 
 const unitInclude = {
   building: {
-    select: { id: true, code: true, name: true, address: true, transactionType: true },
+    select: {
+      id: true,
+      code: true,
+      name: true,
+      address: true,
+      transactionType: true,
+      propertyTypes: true,
+    },
   },
   floor: { select: { id: true, name: true, level: true } },
   images: { orderBy: [{ isPrimary: 'desc' }, { sortOrder: 'asc' }, { createdAt: 'asc' }] },
@@ -312,6 +320,9 @@ router.post(
 
     const resolved = resolveCommercialFields({ usage, commercialType, unitType });
     const usageUpper = resolved.usage;
+    if (usageUpper === 'GUEST') {
+      assertBuildingAllowsGuestUnits(building);
+    }
     const txType = transactionType
       ? String(transactionType).toUpperCase()
       : building.transactionType || 'FOR_RENT';
@@ -411,6 +422,16 @@ router.patch(
           })
         : null;
     const nextUsage = resolved?.usage || existing.usage;
+
+    if (nextUsage === 'GUEST') {
+      const building =
+        existing.building ||
+        (await prisma.building.findFirst({
+          where: { id: existing.buildingId, deletedAt: null },
+        }));
+      if (!building) throw new AppError('Building not found', 404);
+      assertBuildingAllowsGuestUnits(building);
+    }
 
     // Allow correcting wrong usage, but block when it would conflict with live occupancy
     if (nextUsage !== existing.usage) {

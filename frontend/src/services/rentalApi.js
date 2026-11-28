@@ -139,6 +139,7 @@ function mapBooking(b) {
     id: b.id,
     code: b.code,
     roomId: b.unitId,
+    buildingId: b.unitId ? b.unit?.buildingId || b.unit?.building?.id : b.buildingId,
     roomNumber: b.unit?.roomNumber || b.roomNumber,
     building: b.unit?.building?.name || b.building,
     floor: b.unit?.floor?.name || b.floor,
@@ -359,6 +360,14 @@ export const rentalApi = {
     get('/bookings', search ? { search } : undefined).then((rows) =>
       (rows || []).map(mapBooking),
     ),
+  getBookingCalendar: (params) => get('/bookings/calendar', params || undefined),
+  checkBookingAvailability: (params) => get('/bookings/availability', params || undefined),
+  rescheduleBooking: (id, data) =>
+    post(`/bookings/${id}/reschedule`, {
+      unitId: data.unitId || data.roomId || undefined,
+      checkIn: data.checkIn,
+      checkOut: data.checkOut,
+    }).then(mapBooking),
   createBooking: (payload) =>
     post('/bookings', {
       unitId: payload.unitId || payload.roomId,

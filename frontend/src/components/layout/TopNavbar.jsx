@@ -34,6 +34,8 @@ import Logo from '../brand/Logo.jsx';
 import Spinner from '../ui/Spinner.jsx';
 import { filterNavSections, resolveNavIcon } from './navItems.js';
 import { initialsOf } from './Sidebar.jsx';
+import BuildingWorkspaceSelect from './BuildingWorkspaceSelect.jsx';
+import { useBuildingWorkspaceOptional } from '../../context/BuildingWorkspaceContext.jsx';
 
 const TYPE_META = {
   building: { label: 'Building', icon: MdApartment },
@@ -218,9 +220,10 @@ export default function TopNavbar({ onMenuClick, search, onSearchChange }) {
   const { isDark, toggleTheme } = useTheme();
   const { notifications, unreadCount, markRead, markAllRead } = useNotifications();
   const { isTopbar, isSidebar, setNavLayout } = useLayout();
+  const workspace = useBuildingWorkspaceOptional();
   const navigate = useNavigate();
   const location = useLocation();
-  const sections = filterNavSections(user);
+  const sections = filterNavSections(user, workspace);
   const trail = useRouteTrail(location.pathname);
 
   const [openMenu, setOpenMenu] = useState(null);
@@ -415,7 +418,10 @@ export default function TopNavbar({ onMenuClick, search, onSearchChange }) {
           </nav>
         ) : null}
 
-        <div className="ml-auto flex shrink-0 items-center gap-1 sm:gap-1.5">
+        <div className="ml-auto flex shrink-0 items-center gap-2 sm:gap-3">
+          <div className="hidden min-w-[160px] max-w-[220px] sm:block lg:min-w-[200px]">
+            <BuildingWorkspaceSelect />
+          </div>
           {/* Desktop search */}
           <div className="relative hidden md:block" data-search-root>
             <div className="relative">
