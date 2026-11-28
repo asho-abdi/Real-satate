@@ -5,7 +5,7 @@ export const STAFF_PAGES = [
   { key: 'today', label: 'Today', description: 'Daily office board' },
   { key: 'buildings', label: 'Buildings', description: 'Property buildings setup' },
   { key: 'units', label: 'Availability', description: 'Rooms, shops, availability' },
-  { key: 'apartments', label: 'Apartments', description: 'Apartment tenants' },
+  { key: 'apartments', label: 'Apartments for SIHAM', description: 'Siham building apartment tenants' },
   {
     key: 'commercial-spaces',
     label: 'Commercial Spaces',

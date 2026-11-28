@@ -33,6 +33,16 @@ const emptyForm = {
 
 const today = () => new Date().toISOString().slice(0, 10);
 
+/** Prefer SIHAM when present — apartments belong to that building. */
+function findSihamBuilding(buildings = []) {
+  return (
+    buildings.find((b) => {
+      const hay = `${b.name || ''} ${b.code || ''}`.toLowerCase();
+      return hay.includes('siham');
+    }) || null
+  );
+}
+
 export default function Apartments() {
   const { globalSearch = '' } = useOutletContext() || {};
 
@@ -44,6 +54,7 @@ export default function Apartments() {
   const [tenants, setTenants] = useState([]);
   const [payments, setPayments] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [sihamLocked, setSihamLocked] = useState(false);
 
   // tabs
   const [tab, setTab] = useState('tenants');
@@ -90,6 +101,15 @@ export default function Apartments() {
       setAllRooms(allU);
       setTenants(t);
       setPayments(p.filter((x) => x.tenantType === 'apartment'));
+
+      const siham = findSihamBuilding(b);
+      if (siham?.id) {
+        setSihamLocked(true);
+        setFilterBuildingId(siham.id);
+        setRegBuildingId(siham.id);
+      } else {
+        setSihamLocked(false);
+      }
     } catch (err) {
       toast.error(err.message || 'Failed to load apartments');
     } finally {
@@ -112,12 +132,18 @@ export default function Apartments() {
   );
 
   const activeTenants = useMemo(
-    () => tenants.filter((t) => t.status === 'Active'),
-    [tenants],
+    () =>
+      tenants.filter(
+        (t) => t.status === 'Active' && (!filterBuildingId || t.buildingId === filterBuildingId),
+      ),
+    [tenants, filterBuildingId],
   );
   const pastTenants = useMemo(
-    () => tenants.filter((t) => t.status !== 'Active'),
-    [tenants],
+    () =>
+      tenants.filter(
+        (t) => t.status !== 'Active' && (!filterBuildingId || t.buildingId === filterBuildingId),
+      ),
+    [tenants, filterBuildingId],
   );
 
   const displayedTenants = useMemo(() => {
@@ -289,7 +315,14 @@ export default function Apartments() {
 
   return (
     <div>
-      <PageHeader title="Apartments" subtitle="Residential tenants and monthly rent calendar." />
+      <PageHeader
+        title="Apartments for SIHAM"
+        subtitle={
+          sihamLocked
+            ? 'Siham residential tenants and monthly rent calendar.'
+            : 'Residential tenants and monthly rent calendar.'
+        }
+      />
 
       {/* tab strip */}
       <div className="mb-6 flex flex-wrap gap-2">
@@ -323,12 +356,17 @@ export default function Apartments() {
               value={regBuildingId}
               placeholder="Select"
               searchPlaceholder="Search building…"
-              options={buildings.map((b) => ({
+              disabled={sihamLocked}
+              options={(sihamLocked
+                ? buildings.filter((b) => b.id === regBuildingId || findSihamBuilding([b]))
+                : buildings
+              ).map((b) => ({
                 value: b.id,
                 label: b.name,
                 searchText: `${b.code || ''} ${b.name || ''}`,
               }))}
               onChange={(next) => {
+                if (sihamLocked) return;
                 setRegBuildingId(next);
                 setRegFloorId('');
                 setRoomId('');
@@ -467,13 +505,18 @@ export default function Apartments() {
                 value={filterBuildingId}
                 placeholder="All Buildings"
                 searchPlaceholder="Search building…"
-                allowClear
-                options={buildings.map((b) => ({
+                allowClear={!sihamLocked}
+                disabled={sihamLocked}
+                options={(sihamLocked
+                  ? buildings.filter((b) => b.id === filterBuildingId || findSihamBuilding([b]))
+                  : buildings
+                ).map((b) => ({
                   value: b.id,
                   label: b.name,
                   searchText: `${b.code || ''} ${b.name || ''}`,
                 }))}
                 onChange={(next) => {
+                  if (sihamLocked) return;
                   setFilterBuildingId(next);
                   setFilterFloorId('');
                 }}
@@ -493,12 +536,12 @@ export default function Apartments() {
                 onChange={(next) => setFilterFloorId(next)}
               />
               <div className="flex items-end">
-                {(search || filterBuildingId || filterFloorId) ? (
+                {(search || (!sihamLocked && filterBuildingId) || filterFloorId) ? (
                   <button
                     type="button"
                     onClick={() => {
                       setSearch('');
-                      setFilterBuildingId('');
+                      if (!sihamLocked) setFilterBuildingId('');
                       setFilterFloorId('');
                     }}
                     className="h-10 rounded-xl border border-[var(--border)] px-4 text-sm text-[var(--text-muted)] hover:bg-[var(--surface-2)]"

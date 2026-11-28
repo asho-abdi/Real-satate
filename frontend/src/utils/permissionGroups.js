@@ -47,7 +47,7 @@ export const PERMISSION_GROUPS = [
   },
   {
     id: 'apartments',
-    title: 'Apartments',
+    title: 'Apartments for SIHAM',
     description: 'Long-term apartment tenants',
     resources: ['tenants'],
   },
